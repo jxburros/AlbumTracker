@@ -307,9 +307,15 @@ export const SettingsView = () => {
                             const c = prompt("Paste Firebase config JSON:\n\nExample:\n{\n  \"apiKey\": \"YOUR_API_KEY\",\n  \"authDomain\": \"...\",\n  \"projectId\": \"...\",\n  \"storageBucket\": \"...\",\n  \"messagingSenderId\": \"...\",\n  \"appId\": \"...\"\n}");
                             if (c) {
                                 try {
-                                    actions.connectCloud(JSON.parse(c));
+                                    const config = JSON.parse(c);
+                                    // Validate required fields
+                                    if (!config.apiKey || !config.authDomain || !config.projectId) {
+                                        alert("Missing required fields. Please ensure your Firebase config includes apiKey, authDomain, and projectId.");
+                                        return;
+                                    }
+                                    actions.connectCloud(config);
                                 } catch (e) {
-                                    alert("Invalid JSON format. Please check your Firebase config and try again.");
+                                    alert(`Invalid JSON format: ${e.message}\n\nPlease check your Firebase config and try again. Make sure to copy the entire configuration object.`);
                                 }
                             }
                         }}
