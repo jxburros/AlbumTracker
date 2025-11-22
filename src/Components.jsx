@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy } from 'lucide-react';
 import { useStore } from './Store';
 import { THEME, COLORS, formatMoney, STAGES, cn } from './utils';
@@ -55,15 +55,19 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
 };
 
 export const Editor = ({ task, onClose }) => {
-    if (!task) return null;
     const { actions, data } = useStore();
-    const [form, setForm] = useState({...task});
+    const [form, setForm] = useState(task ? {...task} : {});
     const [tab, setTab] = useState('details');
     const [sub, setSub] = useState('');
 
-    useEffect(() => setForm({...task}), [task]);
+    useEffect(() => {
+        if (task) setForm({...task});
+    }, [task]);
+
+    if (!task) return null;
 
     const save = async () => {
+        // eslint-disable-next-line no-unused-vars
         const { children, ...clean } = form;
         ['estimatedCost', 'quotedCost', 'actualCost'].forEach(k => { if (isNaN(clean[k])) clean[k] = 0; });
         await actions.update('tasks', form.id, clean);
@@ -107,9 +111,9 @@ export const Editor = ({ task, onClose }) => {
                              ))}
                           </div>
                        )}
-                       <input value={form.title} onChange={e => setForm({...form, title: e.target.value})} className={cn("w-full", THEME.punk.input)} placeholder="TITLE" />
+                       <input value={form.title || ''} onChange={e => setForm({...form, title: e.target.value})} className={cn("w-full", THEME.punk.input)} placeholder="TITLE" />
                        <div className="grid grid-cols-2 gap-4">
-                           <div><label className="text-xs font-bold opacity-50">Stage</label><select value={form.stageId} onChange={e => setForm({...form, stageId: e.target.value})} className={cn("w-full", THEME.punk.input)}>{data.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                           <div><label className="text-xs font-bold opacity-50">Stage</label><select value={form.stageId || ''} onChange={e => setForm({...form, stageId: e.target.value})} className={cn("w-full", THEME.punk.input)}>{data.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                            <div><label className="text-xs font-bold opacity-50">Due</label><input type="date" value={form.dueDate || ''} onChange={e => setForm({...form, dueDate: e.target.value})} className={cn("w-full", THEME.punk.input)} /></div>
                        </div>
                        <div className="border-t-4 border-black pt-4">
@@ -127,7 +131,7 @@ export const Editor = ({ task, onClose }) => {
                                 <div key={k}><label className="text-[10px] font-bold uppercase opacity-50">{k}</label><input type="number" value={form[`${k.toLowerCase()}Cost`] || 0} onChange={e => setForm({...form, [`${k.toLowerCase()}Cost`]: parseFloat(e.target.value) || 0})} className={cn("w-full text-sm", THEME.punk.input)} /></div>
                             ))}
                         </div>
-                        <div><label className="text-[10px] font-bold uppercase opacity-50">Vendor</label><select value={form.vendorId} onChange={e => setForm({...form, vendorId: e.target.value})} className={cn("w-full text-sm", THEME.punk.input)}><option value="">--</option>{data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+                        <div><label className="text-[10px] font-bold uppercase opacity-50">Vendor</label><select value={form.vendorId || ''} onChange={e => setForm({...form, vendorId: e.target.value})} className={cn("w-full text-sm", THEME.punk.input)}><option value="">--</option>{data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                     </div>
                 )}
                 {tab === 'photos' && (

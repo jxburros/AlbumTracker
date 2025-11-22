@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from './Store';
-import { THEME, COLORS, formatMoney, STAGES, cn } from './utils';
+import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
 export const ListView = ({ onEdit }) => {
@@ -82,7 +82,7 @@ export const CalendarView = ({ onEdit }) => {
                 </div>
             </div>
             <div className="grid grid-cols-7 gap-px bg-black border-4 border-black text-center font-black text-white mb-px">
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => <div key={d} className="py-3">{d}</div>)}
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="py-3">{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-px bg-black border-4 border-black flex-1 overflow-y-auto shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
                 {Array.from({ length: firstDay }).map((_, i) => <div key={`e-${i}`} className="bg-gray-100 h-24"></div>)}
@@ -106,7 +106,6 @@ export const CalendarView = ({ onEdit }) => {
 
 export const GalleryView = () => {
     const { data, actions } = useStore();
-    const [uploading, setUploading] = useState(false);
 
     const handleUpload = (e) => {
         const file = e.target.files[0];
