@@ -1,0 +1,69 @@
+name: Sync Deploy Branch
+
+# This workflow automatically syncs the deploy branch with the main branch
+# whenever changes are pushed to main, keeping only essential deployment files
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  sync-deploy-branch:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+          
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Create or checkout deploy branch
+        run: |
+          # Check if deploy branch exists remotely
+          if git ls-remote --heads origin deploy | grep -q deploy; then
+            echo "Deploy branch exists, checking out..."
+            git fetch origin deploy
+            git checkout deploy
+          else
+            echo "Creating new deploy branch..."
+            git checkout -b deploy
+          fi
+          
+      - name: Sync with main branch
+        run: |
+          # Merge main into deploy
+          git merge origin/main --no-edit --allow-unrelated-histories || true
+          
+      - name: Remove development files
+        run: |
+          # Remove files not needed for deployment
+          # Keep only essential files for production deployment
+          
+          # Remove development documentation (keep deployment docs)
+          rm -f .eslintrc.cjs
+          
+          # Keep these files for deployment reference
+          # - README.md (updated with deployment info)
+          # - FIREBASE_SETUP.md (needed for setup)
+          # - DEPLOYMENT.md (needed for deployment)
+          # - package.json (needed for builds)
+          # - package-lock.json (needed for installs)
+          
+          # Commit changes if any
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "Remove development files from deploy branch [skip ci]"
+          fi
+          
+      - name: Push deploy branch
+        run: |
+          git push origin deploy --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
