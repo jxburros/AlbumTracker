@@ -2,15 +2,30 @@ import { useState } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
+import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView } from './SpecViews';
 import { THEME, cn } from './utils';
 
 function AppInner() {
-  const [tab, setTab] = useState('list');
+  const [tab, setTab] = useState('songs');
   const [editing, setEditing] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedSong, setSelectedSong] = useState(null);
+  const [selectedRelease, setSelectedRelease] = useState(null);
   const { data } = useStore();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
+
+  // Handle song selection
+  const handleSelectSong = (song) => {
+    setSelectedSong(song);
+    setTab('songDetail');
+  };
+
+  // Handle release selection
+  const handleSelectRelease = (release) => {
+    setSelectedRelease(release);
+    setTab('releaseDetail');
+  };
 
   return (
     <div
@@ -24,7 +39,7 @@ function AppInner() {
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
         activeTab={tab}
-        setActiveTab={setTab}
+        setActiveTab={(t) => { setTab(t); setSelectedSong(null); setSelectedRelease(null); }}
       />
 
       <main
@@ -47,6 +62,15 @@ function AppInner() {
         )}
 
         <div className="flex-1 overflow-y-auto pt-16 md:pt-0">
+          {/* New Spec Views */}
+          {tab === 'songs' && <SongListView onSelectSong={handleSelectSong} />}
+          {tab === 'songDetail' && selectedSong && <SongDetailView song={selectedSong} onBack={() => { setSelectedSong(null); setTab('songs'); }} />}
+          {tab === 'globalTasks' && <GlobalTasksView />}
+          {tab === 'releases' && <ReleasesListView onSelectRelease={handleSelectRelease} />}
+          {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} />}
+          {tab === 'timeline' && <CombinedTimelineView />}
+          
+          {/* Original Views */}
           {tab === 'list' && <ListView onEdit={setEditing} />}
           {tab === 'calendar' && <CalendarView onEdit={setEditing} />}
           {tab === 'gallery' && <GalleryView />}
