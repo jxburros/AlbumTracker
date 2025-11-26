@@ -15,9 +15,15 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   const colorClass = COLORS[settings.themeColor || 'pink'].split(' ')[2]; 
 
   const menu = [
+      // New Spec Views (primary)
+      { id: 'songs', label: 'Songs', icon: 'Music' },
+      { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
+      { id: 'releases', label: 'Releases', icon: 'Download' },
+      { id: 'timeline', label: 'Timeline', icon: 'Calendar' },
+      // Original views (secondary)
       { id: 'list', label: 'Plan', icon: 'List' },
       { id: 'active', label: 'Active', icon: 'Zap' },
-      { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
+      { id: 'calendar', label: 'Calendar', icon: 'PieChart' },
       { id: 'gallery', label: 'Photos', icon: 'Image' },
       { id: 'team', label: 'Team', icon: 'Users' },
       { id: 'misc', label: 'Expenses', icon: 'Receipt' },
@@ -43,11 +49,12 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
          ))}
       </nav>
       <div className={cn("p-4 m-4 bg-gray-50", THEME.punk.card)}>
-          <div className="text-xs font-black uppercase opacity-50 mb-2">Total Spent</div>
-          <div className={cn("text-2xl font-black", colorClass)}>{formatMoney(stats.act)}</div>
-          <div className="flex justify-between text-xs font-bold mt-1">
-             <span>Min: {formatMoney(stats.min)}</span>
-             <span>Max: {formatMoney(stats.max)}</span>
+          <div className="text-xs font-black uppercase opacity-50 mb-2">Rollout Cost</div>
+          <div className={cn("text-2xl font-black", colorClass)}>{formatMoney(stats.grandTotal || stats.act || 0)}</div>
+          <div className="text-xs font-bold mt-1 space-y-1">
+             <div className="flex justify-between"><span>Songs:</span><span>{formatMoney(stats.songsTotal || 0)}</span></div>
+             <div className="flex justify-between"><span>Global:</span><span>{formatMoney(stats.globalTasksTotal || 0)}</span></div>
+             <div className="flex justify-between"><span>Releases:</span><span>{formatMoney(stats.releasesTotal || 0)}</span></div>
           </div>
       </div>
     </div>
