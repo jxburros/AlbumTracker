@@ -127,6 +127,8 @@ export const SongDetailView = ({ song, onBack }) => {
     setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
   };
 
+  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
+
   const handleSave = async () => { await actions.updateSong(song.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
 
