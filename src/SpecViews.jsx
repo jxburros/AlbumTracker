@@ -66,6 +66,7 @@ export const SongListView = ({ onSelectSong }) => {
               <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
               <th className="p-3 text-center">Single?</th>
               <th className="p-3 text-left">Video Type</th>
+              <th className="p-3 text-left">Exclusive</th>
               <th className="p-3 text-center">Stems?</th>
               <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
             </tr>
@@ -81,6 +82,7 @@ export const SongListView = ({ onSelectSong }) => {
                   <td className="p-3">{song.releaseDate || '-'}</td>
                   <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
                   <td className="p-3">{song.videoType}</td>
+                  <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
                   <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
                   <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
                 </tr>
@@ -99,6 +101,8 @@ export const SongDetailView = ({ song, onBack }) => {
   const [form, setForm] = useState({ ...song });
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '' });
+
+  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
   const handleSave = async () => { await actions.updateSong(song.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
@@ -178,6 +182,16 @@ export const SongDetailView = ({ song, onBack }) => {
               <input type="checkbox" checked={form.stemsNeeded || false} onChange={e => { handleFieldChange('stemsNeeded', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
               Stems Needed
             </label>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
+            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              {exclusivityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
+            <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform names, time windows, etc." className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
@@ -470,6 +484,8 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
 
+  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
+
   const currentRelease = data.releases.find(r => r.id === release.id) || release;
 
   const handleSave = async () => { await actions.updateRelease(release.id, form); };
@@ -523,12 +539,26 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             <input type="date" value={form.releaseDate || ''} onChange={e => handleFieldChange('releaseDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
+            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              {exclusivityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="flex items-center gap-2 font-bold">
+            <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
+            Includes Physical Copies
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
+            <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform partners, windows, or audience restrictions" className={cn("w-full", THEME.punk.input)} />
           </div>
         </div>
       </div>

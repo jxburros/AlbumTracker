@@ -393,6 +393,8 @@ export const StoreProvider = ({ children }) => {
          videoType: song.videoType || 'None',
          stemsNeeded: song.stemsNeeded || false,
          estimatedCost: song.estimatedCost || 0,
+         exclusiveType: song.exclusiveType || 'None',
+         exclusiveNotes: song.exclusiveNotes || '',
          extraVersionsNeeded: song.extraVersionsNeeded || '',
          deadlines: deadlines,
          customTasks: []
@@ -581,13 +583,16 @@ export const StoreProvider = ({ children }) => {
        const newRelease = {
          id: crypto.randomUUID(),
          name: release.name || 'New Release',
-         type: release.type || 'Album',
-         releaseDate: release.releaseDate || '',
-         estimatedCost: release.estimatedCost || 0,
-         notes: release.notes || '',
-         requiredRecordings: [],
-         tasks: releaseTasks  // Auto-spawned tasks
-       };
+        type: release.type || 'Album',
+        releaseDate: release.releaseDate || '',
+        estimatedCost: release.estimatedCost || 0,
+        notes: release.notes || '',
+        exclusiveType: release.exclusiveType || 'None',
+        exclusiveNotes: release.exclusiveNotes || '',
+        hasPhysicalCopies: release.hasPhysicalCopies || false,
+        requiredRecordings: [],
+        tasks: releaseTasks  // Auto-spawned tasks
+      };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_releases'), { ...newRelease, createdAt: serverTimestamp() });
        } else {

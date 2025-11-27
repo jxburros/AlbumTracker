@@ -74,13 +74,13 @@ export const CalendarView = ({ onEdit }) => {
 
     return (
         <div className="h-full flex flex-col p-6 pb-24">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
-                <div className="flex gap-2">
-                    <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2 bg-white", THEME.punk.btn)}><Icon name="ChevronLeft" /></button>
-                    <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2 bg-white", THEME.punk.btn)}><Icon name="ChevronRight" /></button>
-                </div>
-            </div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
+        <div className="flex gap-2 bg-pink-100 border-4 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+          <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2", THEME.punk.btn)}><Icon name="ChevronLeft" /></button>
+          <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2", THEME.punk.btn)}><Icon name="ChevronRight" /></button>
+        </div>
+      </div>
             <div className="grid grid-cols-7 gap-px bg-black border-4 border-black text-center font-black text-white mb-px">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="py-3">{d}</div>)}
             </div>
