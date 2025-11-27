@@ -20,10 +20,10 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
       { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
       { id: 'releases', label: 'Releases', icon: 'Download' },
       { id: 'timeline', label: 'Timeline', icon: 'Calendar' },
+      { id: 'dashboard', label: 'Dashboard', icon: 'PieChart' },
       // Original views (secondary)
-      { id: 'list', label: 'Plan', icon: 'List' },
       { id: 'active', label: 'Active', icon: 'Zap' },
-      { id: 'calendar', label: 'Calendar', icon: 'PieChart' },
+      { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
       { id: 'gallery', label: 'Photos', icon: 'Image' },
       { id: 'team', label: 'Team', icon: 'Users' },
       { id: 'misc', label: 'Expenses', icon: 'Receipt' },

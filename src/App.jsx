@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
-import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView } from './SpecViews';
+import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView } from './SpecViews';
 import { THEME, cn } from './utils';
 
 function AppInner() {
@@ -69,6 +69,9 @@ function AppInner() {
           {tab === 'releases' && <ReleasesListView onSelectRelease={handleSelectRelease} />}
           {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} />}
           {tab === 'timeline' && <CombinedTimelineView />}
+          
+          {/* Task Dashboard - replaces confusing Plan view */}
+          {tab === 'dashboard' && <TaskDashboardView />}
           
           {/* Original Views */}
           {tab === 'list' && <ListView onEdit={setEditing} />}

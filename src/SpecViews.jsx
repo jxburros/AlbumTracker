@@ -770,3 +770,314 @@ export const CombinedTimelineView = () => {
     </div>
   );
 };
+
+// Task Dashboard View - Shows tasks in progress, due soon, and macro overview
+export const TaskDashboardView = () => {
+  const { data } = useStore();
+  const [view, setView] = useState('upcoming'); // 'upcoming', 'inProgress', 'overview'
+  
+  // Get today's date for comparison
+  const today = new Date().toISOString().split('T')[0];
+  const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  // Collect all tasks from all sources
+  const allTasks = useMemo(() => {
+    const tasks = [];
+    
+    // Song tasks
+    (data.songs || []).forEach(song => {
+      (song.deadlines || []).forEach(task => {
+        tasks.push({
+          id: 'song-' + task.id,
+          type: task.type,
+          category: task.category || 'Production',
+          date: task.date,
+          status: task.status,
+          estimatedCost: task.estimatedCost,
+          source: 'Song',
+          sourceName: song.title,
+          sourceType: 'song',
+          sourceId: song.id
+        });
+      });
+      (song.customTasks || []).forEach(task => {
+        tasks.push({
+          id: 'custom-' + task.id,
+          type: task.title,
+          category: 'Custom',
+          date: task.date,
+          status: task.status,
+          estimatedCost: task.estimatedCost,
+          source: 'Song',
+          sourceName: song.title,
+          sourceType: 'song',
+          sourceId: song.id
+        });
+      });
+    });
+    
+    // Global tasks
+    (data.globalTasks || []).forEach(task => {
+      tasks.push({
+        id: 'global-' + task.id,
+        type: task.taskName,
+        category: task.category,
+        date: task.date,
+        status: task.status,
+        estimatedCost: task.estimatedCost,
+        source: 'Global',
+        sourceName: task.taskName,
+        sourceType: 'global',
+        sourceId: task.id
+      });
+    });
+    
+    // Release tasks
+    (data.releases || []).forEach(release => {
+      (release.tasks || []).forEach(task => {
+        tasks.push({
+          id: 'release-' + task.id,
+          type: task.type,
+          category: task.category,
+          date: task.date,
+          status: task.status,
+          estimatedCost: task.estimatedCost,
+          source: 'Release',
+          sourceName: release.name,
+          sourceType: 'release',
+          sourceId: release.id
+        });
+      });
+    });
+    
+    return tasks;
+  }, [data.songs, data.globalTasks, data.releases]);
+
+  // Filter tasks based on view
+  const filteredTasks = useMemo(() => {
+    let filtered = [...allTasks];
+    
+    if (view === 'upcoming') {
+      // Tasks due in next 30 days that are not done
+      filtered = filtered.filter(t => 
+        t.date && 
+        t.date >= today && 
+        t.date <= nextMonth && 
+        t.status !== 'Done'
+      );
+      filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    } else if (view === 'inProgress') {
+      // Tasks that are in progress
+      filtered = filtered.filter(t => t.status === 'In Progress');
+      filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }
+    
+    return filtered;
+  }, [allTasks, view, today, nextMonth]);
+
+  // Calculate overview statistics
+  const stats = useMemo(() => {
+    const notStarted = allTasks.filter(t => t.status === 'Not Started').length;
+    const inProgress = allTasks.filter(t => t.status === 'In Progress').length;
+    const done = allTasks.filter(t => t.status === 'Done').length;
+    const delayed = allTasks.filter(t => t.status === 'Delayed').length;
+    const dueSoon = allTasks.filter(t => t.date && t.date >= today && t.date <= nextWeek && t.status !== 'Done').length;
+    const overdue = allTasks.filter(t => t.date && t.date < today && t.status !== 'Done').length;
+    const totalCost = allTasks.reduce((sum, t) => sum + (t.estimatedCost || 0), 0);
+    
+    return { notStarted, inProgress, done, delayed, dueSoon, overdue, total: allTasks.length, totalCost };
+  }, [allTasks, today, nextWeek]);
+
+  // Group tasks by category for overview
+  const categoryGroups = useMemo(() => {
+    const groups = {};
+    allTasks.forEach(task => {
+      const cat = task.category || 'Other';
+      if (!groups[cat]) groups[cat] = { total: 0, done: 0, inProgress: 0 };
+      groups[cat].total++;
+      if (task.status === 'Done') groups[cat].done++;
+      if (task.status === 'In Progress') groups[cat].inProgress++;
+    });
+    return groups;
+  }, [allTasks]);
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Done': return 'bg-green-200 text-green-800';
+      case 'In Progress': return 'bg-blue-200 text-blue-800';
+      case 'Delayed': return 'bg-red-200 text-red-800';
+      default: return 'bg-gray-200 text-gray-800';
+    }
+  };
+
+  const isOverdue = (date) => date && date < today;
+  const isDueSoon = (date) => date && date >= today && date <= nextWeek;
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>Task Dashboard</h2>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setView('upcoming')} 
+            className={cn("px-4 py-2", THEME.punk.btn, view === 'upcoming' ? "bg-black text-white" : "bg-white")}
+          >
+            Upcoming
+          </button>
+          <button 
+            onClick={() => setView('inProgress')} 
+            className={cn("px-4 py-2", THEME.punk.btn, view === 'inProgress' ? "bg-black text-white" : "bg-white")}
+          >
+            In Progress
+          </button>
+          <button 
+            onClick={() => setView('overview')} 
+            className={cn("px-4 py-2", THEME.punk.btn, view === 'overview' ? "bg-black text-white" : "bg-white")}
+          >
+            Overview
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+        <div className={cn("p-4 text-center", THEME.punk.card)}>
+          <div className="text-3xl font-black text-gray-600">{stats.total}</div>
+          <div className="text-xs font-bold uppercase">Total Tasks</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-blue-50")}>
+          <div className="text-3xl font-black text-blue-600">{stats.inProgress}</div>
+          <div className="text-xs font-bold uppercase">In Progress</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-yellow-50")}>
+          <div className="text-3xl font-black text-yellow-600">{stats.dueSoon}</div>
+          <div className="text-xs font-bold uppercase">Due This Week</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-red-50")}>
+          <div className="text-3xl font-black text-red-600">{stats.overdue}</div>
+          <div className="text-xs font-bold uppercase">Overdue</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-green-50")}>
+          <div className="text-3xl font-black text-green-600">{stats.done}</div>
+          <div className="text-xs font-bold uppercase">Completed</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card)}>
+          <div className="text-2xl font-black text-pink-600">{formatMoney(stats.totalCost)}</div>
+          <div className="text-xs font-bold uppercase">Total Est. Cost</div>
+        </div>
+      </div>
+
+      {view === 'overview' ? (
+        /* Overview by Category */
+        <div className={cn("p-6", THEME.punk.card)}>
+          <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Progress by Category</h3>
+          <div className="space-y-4">
+            {Object.entries(categoryGroups).map(([category, data]) => (
+              <div key={category} className="flex items-center gap-4">
+                <div className="w-32 font-bold text-sm truncate">{category}</div>
+                <div className="flex-1 h-6 bg-gray-200 relative overflow-hidden">
+                  <div 
+                    className="absolute inset-y-0 left-0 bg-green-500 transition-all"
+                    style={{ width: `${(data.done / data.total) * 100}%` }}
+                  />
+                  <div 
+                    className="absolute inset-y-0 bg-blue-500 transition-all"
+                    style={{ 
+                      left: `${(data.done / data.total) * 100}%`,
+                      width: `${(data.inProgress / data.total) * 100}%` 
+                    }}
+                  />
+                </div>
+                <div className="w-24 text-xs font-bold text-right">
+                  {data.done}/{data.total} done
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Status Distribution */}
+          <h3 className="font-black uppercase mt-8 mb-4 border-b-4 border-black pb-2">Status Distribution</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-3 bg-gray-100 border-4 border-black">
+              <div className="text-2xl font-black">{stats.notStarted}</div>
+              <div className="text-xs font-bold uppercase">Not Started</div>
+            </div>
+            <div className="p-3 bg-blue-100 border-4 border-black">
+              <div className="text-2xl font-black">{stats.inProgress}</div>
+              <div className="text-xs font-bold uppercase">In Progress</div>
+            </div>
+            <div className="p-3 bg-green-100 border-4 border-black">
+              <div className="text-2xl font-black">{stats.done}</div>
+              <div className="text-xs font-bold uppercase">Done</div>
+            </div>
+            <div className="p-3 bg-red-100 border-4 border-black">
+              <div className="text-2xl font-black">{stats.delayed}</div>
+              <div className="text-xs font-bold uppercase">Delayed</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Task List */
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                <th className="p-3 text-left">Date</th>
+                <th className="p-3 text-left">Task</th>
+                <th className="p-3 text-left">Category</th>
+                <th className="p-3 text-left">Source</th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-right">Est. Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="p-10 text-center opacity-50">
+                    {view === 'upcoming' ? 'No upcoming tasks in the next 30 days.' : 'No tasks in progress.'}
+                  </td>
+                </tr>
+              ) : filteredTasks.map(task => (
+                <tr 
+                  key={task.id} 
+                  className={cn(
+                    "border-b border-gray-200",
+                    isOverdue(task.date) ? "bg-red-50" : isDueSoon(task.date) ? "bg-yellow-50" : ""
+                  )}
+                >
+                  <td className="p-3">
+                    <span className={cn(
+                      "font-bold",
+                      isOverdue(task.date) ? "text-red-600" : isDueSoon(task.date) ? "text-yellow-600" : ""
+                    )}>
+                      {task.date || '-'}
+                    </span>
+                    {isOverdue(task.date) && <span className="ml-2 text-xs bg-red-500 text-white px-1">OVERDUE</span>}
+                    {isDueSoon(task.date) && !isOverdue(task.date) && <span className="ml-2 text-xs bg-yellow-500 text-white px-1">SOON</span>}
+                  </td>
+                  <td className="p-3 font-bold">{task.type}</td>
+                  <td className="p-3"><span className="px-2 py-1 text-xs bg-gray-200">{task.category}</span></td>
+                  <td className="p-3">
+                    <span className={cn(
+                      "px-2 py-1 text-xs font-bold",
+                      task.source === 'Song' ? "bg-blue-100" : task.source === 'Release' ? "bg-green-100" : "bg-orange-100"
+                    )}>
+                      {task.source}: {task.sourceName}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <span className={cn("px-2 py-1 text-xs font-bold", getStatusColor(task.status))}>
+                      {task.status}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right">{formatMoney(task.estimatedCost || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
