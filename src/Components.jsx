@@ -118,7 +118,7 @@ export const Editor = ({ task, onClose }) => {
             <div className="p-4 border-b-4 border-black flex justify-between bg-gray-100">
                 <span className="font-bold uppercase">Edit {form.isCategory ? 'Category' : 'Task'}</span>
                 <div className="flex gap-2">
-                    <button onClick={() => { actions.update('tasks', form.id, {archived: true}); onClose(); }} className="p-2 hover:bg-red-100 text-red-500"><Icon name="Trash2"/></button>
+                    <button onClick={() => { actions.archiveItem('tasks', form.id, 'Editor archive'); onClose(); }} className="p-2 hover:bg-red-100 text-red-500"><Icon name="Trash2"/></button>
                     <button onClick={onClose} className="p-2 hover:bg-gray-200"><Icon name="X"/></button>
                 </div>
             </div>
@@ -144,8 +144,24 @@ export const Editor = ({ task, onClose }) => {
                             <div><label className="text-xs font-bold opacity-50">Stage</label><select value={form.stageId || ''} onChange={e => setForm({...form, stageId: e.target.value})} className={cn("w-full", THEME.punk.input)}>{data.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                             <div><label className="text-xs font-bold opacity-50">Due</label><input type="date" value={form.dueDate || ''} onChange={e => setForm({...form, dueDate: e.target.value})} className={cn("w-full", THEME.punk.input)} /></div>
                         </div>
-                         <button onClick={() => setForm({...form, assignees: Array.from(new Set([...(form.assignees || []), artistName]))})} className={cn("px-3 py-2 text-xs", THEME.punk.btn)}>
-                           Assign me ({artistName})
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-bold opacity-50">Notes</label>
+                            <textarea value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} className={cn("w-full h-20", THEME.punk.input)} placeholder="Context, exclusivity, platform info" />
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="text-xs font-bold opacity-50">Exclusivity</label>
+                              <input value={form.exclusiveType || ''} onChange={e => setForm({ ...form, exclusiveType: e.target.value })} className={cn("w-full", THEME.punk.input)} placeholder="Platform exclusive, radio-only, etc." />
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold opacity-50">Instruments / Platforms</label>
+                              <input value={form.instruments || ''} onChange={e => setForm({ ...form, instruments: e.target.value })} className={cn("w-full", THEME.punk.input)} placeholder="Guitar, synth, TikTok, YouTube" />
+                            </div>
+                          </div>
+                        </div>
+                        <button onClick={() => setForm({...form, assignees: Array.from(new Set([...(form.assignees || []), artistName]))})} className={cn("px-3 py-2 text-xs", THEME.punk.btn)}>
+                          Assign me ({artistName})
                          </button>
                          <div className="border-t-4 border-black pt-4">
                             <div className="flex gap-2">
@@ -190,7 +206,7 @@ export const UnifiedTaskEditor = ({
     teamMembers = []
 }) => {
     const [form, setForm] = useState({ ...task });
-    const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: 0 });
+    const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: 0, instrument: '' });
     const [budgetError, setBudgetError] = useState(false);
 
     useEffect(() => {
@@ -216,12 +232,13 @@ export const UnifiedTaskEditor = ({
             return;
         }
         setBudgetError(false);
-        const updatedMembers = [...(form.assignedMembers || []), { 
-            memberId: newAssignment.memberId, 
-            cost: parseFloat(newAssignment.cost) || 0 
+        const updatedMembers = [...(form.assignedMembers || []), {
+            memberId: newAssignment.memberId,
+            cost: parseFloat(newAssignment.cost) || 0,
+            instrument: newAssignment.instrument || ''
         }];
         handleChange('assignedMembers', updatedMembers);
-        setNewAssignment({ memberId: '', cost: 0 });
+        setNewAssignment({ memberId: '', cost: 0, instrument: '' });
     };
 
     const removeAssignment = (index) => {
@@ -335,7 +352,7 @@ export const UnifiedTaskEditor = ({
                                 const member = teamMembers.find(tm => tm.id === m.memberId);
                                 return (
                                     <span key={idx} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold flex items-center gap-2">
-                                        {member?.name || 'Member'} ({formatMoney(m.cost)})
+                                {member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})
                                         <button onClick={() => removeAssignment(idx)} className="text-red-600">×</button>
                                     </span>
                                 );
@@ -350,12 +367,18 @@ export const UnifiedTaskEditor = ({
                                 <option value="">Select member...</option>
                                 {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                             </select>
-                            <input 
-                                type="number" 
-                                value={newAssignment.cost || ''} 
+                            <input
+                                type="number"
+                                value={newAssignment.cost || ''}
                                 onChange={e => setNewAssignment(prev => ({ ...prev, cost: e.target.value }))} 
                                 placeholder="Cost" 
-                                className={cn("w-20 text-xs", THEME.punk.input)} 
+                                className={cn("w-20 text-xs", THEME.punk.input)}
+                            />
+                            <input
+                                value={newAssignment.instrument || ''}
+                                onChange={e => setNewAssignment(prev => ({ ...prev, instrument: e.target.value }))}
+                                placeholder="Instrument"
+                                className={cn("w-32 text-xs", THEME.punk.input)}
                             />
                             <button onClick={addAssignment} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
                         </div>

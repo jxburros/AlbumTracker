@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS } from './Store';
+import { useStore, STATUS_OPTIONS, getTaskDueDate, getPrimaryDate } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
+import { DetailPane } from './ItemComponents';
 
 export const ListView = ({ onEdit }) => {
     const { data, actions } = useStore();
@@ -68,100 +69,126 @@ export const CalendarView = ({ onEdit }) => {
     const items = useMemo(() => {
         const map = {};
         
+        const linkedReleaseIdsForSong = (songId) => {
+            const directLinks = (data.releases || []).filter(r => (r.attachedSongIds || []).includes(songId)).map(r => r.id);
+            const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId)).map(r => r.id);
+            const coreLink = data.songs.find(s => s.id === songId)?.coreReleaseId;
+            return Array.from(new Set([...(coreLink ? [coreLink] : []), ...directLinks, ...versionLinks]));
+        };
+        const linkedReleaseIdsForVersion = (songId, versionId) => {
+            const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId && v.versionId === versionId)).map(r => r.id);
+            return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...versionLinks]));
+        };
+        const linkedReleaseIdsForVideo = (songId, videoId) => {
+            const videoLinks = (data.releases || []).filter(r => (r.attachedVideoIds || []).includes(videoId)).map(r => r.id);
+            return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...videoLinks]));
+        };
+
         // Legacy tasks
-        data.tasks.filter(t => t.dueDate && !t.archived).forEach(t => { 
-            map[t.dueDate] = map[t.dueDate] || []; 
-            map[t.dueDate].push({ ...t, _kind: 'task' }); 
+        data.tasks.filter(t => !t.archived).forEach(t => {
+            const due = getTaskDueDate(t);
+            if (!due) return;
+            map[due] = map[due] || [];
+            map[due].push({ ...t, dueDate: due, _kind: 'task' });
         });
-        
+
         // Events
-        data.events.forEach(e => { 
-            if (e.date) { 
-                map[e.date] = map[e.date] || []; 
-                map[e.date].push({ ...e, _kind: 'event' }); 
-            } 
+        data.events.forEach(e => {
+            const eventDate = getPrimaryDate(e, data.releases || []);
+            if (eventDate) {
+                map[eventDate] = map[eventDate] || [];
+                map[eventDate].push({ ...e, date: eventDate, _kind: 'event' });
+            }
         });
-        
+
         // Releases
         (data.releases || []).forEach(r => {
-            if (r.releaseDate) {
-                map[r.releaseDate] = map[r.releaseDate] || [];
-                map[r.releaseDate].push({
+            const primaryReleaseDate = getPrimaryDate(r, data.releases || []);
+            if (primaryReleaseDate) {
+                map[primaryReleaseDate] = map[primaryReleaseDate] || [];
+                map[primaryReleaseDate].push({
                     id: `release-${r.id}`,
                     _releaseId: r.id,
                     title: `${r.name} Release`,
-                    date: r.releaseDate,
+                    date: primaryReleaseDate,
                     _kind: 'release',
                     releaseType: r.type
                 });
             }
         });
-        
+
         // Songs (release dates)
         (data.songs || []).forEach(song => {
-            if (song.releaseDate) {
-                map[song.releaseDate] = map[song.releaseDate] || [];
-                map[song.releaseDate].push({
+            const songDate = getPrimaryDate(song, data.releases || [], linkedReleaseIdsForSong(song.id));
+            if (songDate) {
+                map[songDate] = map[songDate] || [];
+                map[songDate].push({
                     id: `song-${song.id}`,
                     _songId: song.id,
                     title: `🎵 ${song.title}`,
-                    date: song.releaseDate,
+                    date: songDate,
                     _kind: 'song'
                 });
             }
-            
+
             // Song tasks
             (song.deadlines || []).forEach(task => {
-                if (task.date) {
-                    map[task.date] = map[task.date] || [];
-                    map[task.date].push({
-                        id: `song-task-${song.id}-${task.id}`,
+                const due = getTaskDueDate(task) || songDate;
+                if (!due) return;
+                map[due] = map[due] || [];
+                map[due].push({
+                    id: `song-task-${song.id}-${task.id}`,
+                    _songId: song.id,
+                    title: `${task.type} - ${song.title}`,
+                    date: due,
+                    status: task.status,
+                    _kind: 'song-task'
+                });
+            });
+
+            // Song versions (non-core versions with their own release dates)
+            (song.versions || []).filter(v => v.id !== 'core').forEach(v => {
+                const versionDate = getPrimaryDate(v, data.releases || [], linkedReleaseIdsForVersion(song.id, v.id));
+                if (versionDate) {
+                    map[versionDate] = map[versionDate] || [];
+                    map[versionDate].push({
+                        id: `version-${song.id}-${v.id}`,
                         _songId: song.id,
-                        title: `${task.type} - ${song.title}`,
-                        date: task.date,
-                        status: task.status,
-                        _kind: 'song-task'
+                        _versionId: v.id,
+                        title: `🎵 ${v.name}`,
+                        date: versionDate,
+                        _kind: 'version'
                     });
                 }
             });
-            
-            // Song versions (non-core versions with their own release dates)
-            (song.versions || []).filter(v => v.id !== 'core' && v.releaseDate).forEach(v => {
-                map[v.releaseDate] = map[v.releaseDate] || [];
-                map[v.releaseDate].push({
-                    id: `version-${song.id}-${v.id}`,
-                    _songId: song.id,
-                    _versionId: v.id,
-                    title: `🎵 ${v.name}`,
-                    date: v.releaseDate,
-                    _kind: 'version'
-                });
-            });
-            
+
             // Videos
             (song.videos || []).forEach(video => {
-                if (video.releaseDate) {
-                    map[video.releaseDate] = map[video.releaseDate] || [];
-                    map[video.releaseDate].push({
+                const videoDate = getPrimaryDate(video, data.releases || [], linkedReleaseIdsForVideo(song.id, video.id));
+                if (videoDate) {
+                    map[videoDate] = map[videoDate] || [];
+                    map[videoDate].push({
                         id: `video-${song.id}-${video.id}`,
                         _songId: song.id,
                         _videoId: video.id,
                         title: `📹 ${video.title}`,
-                        date: video.releaseDate,
+                        date: videoDate,
                         _kind: 'video'
                     });
                 }
             });
         });
-        
+
         // Global tasks
-        (data.globalTasks || []).filter(t => t.date && !t.isArchived).forEach(t => {
-            map[t.date] = map[t.date] || [];
-            map[t.date].push({
+        (data.globalTasks || []).filter(t => !t.isArchived).forEach(t => {
+            const taskDate = getTaskDueDate(t);
+            if (!taskDate) return;
+            map[taskDate] = map[taskDate] || [];
+            map[taskDate].push({
                 id: `global-${t.id}`,
                 _globalTaskId: t.id,
                 title: `📋 ${t.taskName}`,
-                date: t.date,
+                date: taskDate,
                 status: t.status,
                 _kind: 'global-task'
             });
@@ -196,6 +223,13 @@ export const CalendarView = ({ onEdit }) => {
             onEdit(item);
         } else {
             setSelectedItem(item);
+        }
+    };
+
+    const updateSelectedEvent = (field, value) => {
+        if (selectedItem?._kind === 'event') {
+            actions.update('events', selectedItem.id, { [field]: value });
+            setSelectedItem(prev => prev ? { ...prev, [field]: value } : prev);
         }
     };
 
@@ -302,6 +336,32 @@ export const CalendarView = ({ onEdit }) => {
                         {/* Phase 5: Custom tasks for events */}
                         {selectedItem._kind === 'event' && (
                             <>
+                                <DetailPane title="Event Detail Pane">
+                                    <div className="space-y-2 text-xs">
+                                        <div>
+                                            <label className="block font-black uppercase mb-1">Notes</label>
+                                            <textarea value={selectedItem.notes || ''} onChange={e => updateSelectedEvent('notes', e.target.value)} className={cn("w-full h-16", THEME.punk.input)} placeholder="Venue, exclusivity, ticketing" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block font-black uppercase mb-1">Exclusivity</label>
+                                                <input value={selectedItem.exclusiveType || ''} onChange={e => updateSelectedEvent('exclusiveType', e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Fans-first, livestream only" />
+                                            </div>
+                                            <div>
+                                                <label className="block font-black uppercase mb-1">Platforms</label>
+                                                <input value={(selectedItem.platforms || []).join(', ')} onChange={e => updateSelectedEvent('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {['Estimated', 'Quoted', 'Paid'].map(k => (
+                                                <div key={k}>
+                                                    <label className="block font-black uppercase mb-1">{k}</label>
+                                                    <input type="number" value={selectedItem[`${k.toLowerCase()}Cost`] || 0} onChange={e => updateSelectedEvent(`${k.toLowerCase()}Cost`, parseFloat(e.target.value) || 0)} className={cn("w-full", THEME.punk.input)} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </DetailPane>
                                 <div className="mt-4 border-t-2 border-black pt-4">
                                     <div className="font-bold text-xs uppercase mb-2">Custom Tasks</div>
                                     {(selectedItem.customTasks || []).length === 0 ? (
@@ -534,25 +594,27 @@ export const GalleryView = () => {
 
 export const TeamView = () => {
     const { data, actions } = useStore();
-    const [newMember, setNewMember] = useState({ 
-        name: '', 
-        role: '', 
-        type: 'individual', 
-        phone: '', 
-        email: '', 
-        notes: '', 
-        companyId: '',
+    const [newMember, setNewMember] = useState({
+        name: '',
+        role: '',
+        roles: [],
+        type: 'individual',
+        contacts: { phone: '', email: '', website: '' },
+        notes: '',
+        links: { groups: [], organizations: [], members: [] },
         isMusician: false,
         instruments: []
     });
     const [editingMember, setEditingMember] = useState(null);
-    const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'company'
-    const companies = (data.teamMembers || []).filter(m => m.type === 'company');
+    const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'group', 'organization'
+    const companies = (data.teamMembers || []).filter(m => m.type === 'company' || m.type === 'organization');
+    const groups = (data.teamMembers || []).filter(m => m.type === 'group');
+    const individuals = (data.teamMembers || []).filter(m => m.type === 'individual');
 
     const handleAdd = async () => {
         if (!newMember.name) return;
         await actions.addTeamMember(newMember);
-        setNewMember({ name: '', role: '', type: 'individual', phone: '', email: '', notes: '', companyId: '', isMusician: false, instruments: [] });
+        setNewMember({ name: '', role: '', roles: [], type: 'individual', contacts: { phone: '', email: '', website: '' }, notes: '', links: { groups: [], organizations: [], members: [] }, isMusician: false, instruments: [] });
     };
 
     const handleUpdateMember = async () => {
@@ -568,11 +630,43 @@ export const TeamView = () => {
             members = members.filter(m => m.isMusician);
         } else if (filter === 'individual') {
             members = members.filter(m => m.type === 'individual');
-        } else if (filter === 'company') {
-            members = members.filter(m => m.type === 'company');
+        } else if (filter === 'company' || filter === 'organization') {
+            members = members.filter(m => m.type === 'company' || m.type === 'organization');
+        } else if (filter === 'group') {
+            members = members.filter(m => m.type === 'group');
         }
         return members;
     }, [data.teamMembers, filter]);
+
+    const memberTaskLookup = useMemo(() => {
+        const map = {};
+        const push = (memberId, task, context) => {
+            if (!memberId) return;
+            if (!map[memberId]) map[memberId] = [];
+            map[memberId].push({ title: task.title || task.taskName || task.type, status: task.status, context });
+        };
+        const considerList = (list, context) => {
+            (list || []).forEach(task => {
+                (task.assignedMembers || []).forEach(am => push(am.memberId, task, context));
+            });
+        };
+
+        considerList(data.tasks || [], 'General Tasks');
+        considerList(data.globalTasks || [], 'Global Tasks');
+        (data.releases || []).forEach(rel => {
+            considerList(rel.tasks || [], `Release: ${rel.name}`);
+            considerList(rel.customTasks || [], `Release Custom: ${rel.name}`);
+        });
+        (data.songs || []).forEach(song => {
+            considerList(song.deadlines || [], `Song: ${song.title}`);
+            considerList(song.customTasks || [], `Song Custom: ${song.title}`);
+            (song.versions || []).forEach(v => {
+                considerList(v.tasks || [], `Version ${v.name} — ${song.title}`);
+                considerList(v.customTasks || [], `Version Custom ${v.name} — ${song.title}`);
+            });
+        });
+        return map;
+    }, [data.tasks, data.globalTasks, data.releases, data.songs]);
 
     return (
         <div className="p-6 pb-24">
@@ -583,7 +677,8 @@ export const TeamView = () => {
                         <option value="all">All Members</option>
                         <option value="musicians">Musicians Only</option>
                         <option value="individual">Individuals</option>
-                        <option value="company">Companies</option>
+                        <option value="group">Groups</option>
+                        <option value="organization">Organizations</option>
                     </select>
                 </div>
             </div>
@@ -592,21 +687,41 @@ export const TeamView = () => {
                 <h3 className="font-black uppercase mb-4 border-b-2 border-black pb-2">Add New Team Member</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                     <input value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} placeholder="Name" className={cn("w-full", THEME.punk.input)} />
-                    <input value={newMember.role} onChange={e => setNewMember({ ...newMember, role: e.target.value })} placeholder="Role" className={cn("w-full", THEME.punk.input)} />
+                    <input value={(newMember.roles || []).join(', ')} onChange={e => setNewMember({ ...newMember, roles: e.target.value.split(',').map(r => r.trim()).filter(Boolean), role: e.target.value.split(',').map(r => r.trim()).filter(Boolean)[0] || '' })} placeholder="Roles (comma-separated)" className={cn("w-full", THEME.punk.input)} />
                     <div className="flex gap-2 items-center">
                         <label className="text-xs font-bold uppercase">Type</label>
                         <select value={newMember.type} onChange={e => setNewMember({ ...newMember, type: e.target.value })} className={cn("w-full", THEME.punk.input)}>
                             <option value="individual">Individual</option>
-                            <option value="company">Company</option>
+                            <option value="group">Group</option>
+                            <option value="organization">Organization</option>
                         </select>
                     </div>
-                    <select value={newMember.companyId} onChange={e => setNewMember({ ...newMember, companyId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
-                        <option value="">Linked Company (optional)</option>
-                        {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <input value={newMember.phone} onChange={e => setNewMember({ ...newMember, phone: e.target.value })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
-                    <input value={newMember.email} onChange={e => setNewMember({ ...newMember, email: e.target.value })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
-                    
+                    <input value={newMember.contacts?.phone || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), phone: e.target.value } })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
+                    <input value={newMember.contacts?.email || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), email: e.target.value } })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
+                    <input value={newMember.contacts?.website || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), website: e.target.value } })} placeholder="Website" className={cn("w-full", THEME.punk.input)} />
+
+                    {/* Relationship links */}
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Groups</label>
+                        <select multiple value={newMember.links?.groups || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), groups: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Organizations</label>
+                        <select multiple value={newMember.links?.organizations || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), organizations: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    {newMember.type === 'group' && (
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold uppercase mb-1">Members</label>
+                            <select multiple value={newMember.links?.members || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), members: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                                {individuals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+
                     {/* Phase 8: Musician flag and instruments */}
                     <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 font-bold">
@@ -645,10 +760,21 @@ export const TeamView = () => {
                             <h3 className="font-bold text-lg">{v.name}</h3>
                             {v.isMusician && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">🎵 MUSICIAN</span>}
                         </div>
-                        <p className="text-sm opacity-80">{v.role || v.type}</p>
-                        {v.companyId && <p className="text-xs font-bold">Linked: {companies.find(c => c.id === v.companyId)?.name || 'Company'}</p>}
-                        {v.email && <p className="text-xs">📧 {v.email}</p>}
-                        {v.phone && <p className="text-xs">📞 {v.phone}</p>}
+                        <p className="text-sm opacity-80">{(v.roles && v.roles.length > 0 ? v.roles.join(', ') : v.role) || v.type}</p>
+                        {((v.contacts?.email || v.email) || (v.contacts?.phone || v.phone) || v.contacts?.website) && (
+                            <div className="text-xs space-y-1">
+                                {(v.contacts?.email || v.email) && <p>📧 {v.contacts?.email || v.email}</p>}
+                                {(v.contacts?.phone || v.phone) && <p>📞 {v.contacts?.phone || v.phone}</p>}
+                                {v.contacts?.website && <p>🔗 {v.contacts.website}</p>}
+                            </div>
+                        )}
+                        {v.links && (
+                            <div className="text-[10px] font-bold space-y-1">
+                                {(v.links.groups || []).length > 0 && <div>Groups: {(v.links.groups || []).map(id => groups.find(g => g.id === id)?.name || 'Group').join(', ')}</div>}
+                                {(v.links.organizations || []).length > 0 && <div>Orgs: {(v.links.organizations || []).map(id => companies.find(c => c.id === id)?.name || 'Org').join(', ')}</div>}
+                                {(v.links.members || []).length > 0 && <div>Members: {(v.links.members || []).map(id => individuals.find(m => m.id === id)?.name || 'Member').join(', ')}</div>}
+                            </div>
+                        )}
                         {v.isMusician && v.instruments && v.instruments.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
                                 {v.instruments.map(inst => (
@@ -659,8 +785,19 @@ export const TeamView = () => {
                             </div>
                         )}
                         {v.notes && <p className="text-xs opacity-70 mt-2">{v.notes}</p>}
+                        {(memberTaskLookup[v.id] || []).length > 0 && (
+                            <div className="mt-2 p-2 bg-gray-50 border border-black text-[11px] space-y-1">
+                                <div className="font-black uppercase">Linked Tasks</div>
+                                {memberTaskLookup[v.id].map((task, idx) => (
+                                    <div key={idx} className="flex justify-between gap-2">
+                                        <span>{task.title}</span>
+                                        <span className="text-[10px] uppercase">{task.context}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="absolute top-2 right-2 flex gap-1">
-                            <button onClick={() => setEditingMember({...v})} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
+                            <button onClick={() => setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) })} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
                             <button onClick={() => actions.deleteTeamMember(v.id)} className="text-red-500 hover:bg-red-100 p-1"><Icon name="Trash2" size={16}/></button>
                         </div>
                     </div>
@@ -685,24 +822,52 @@ export const TeamView = () => {
                                 <input value={editingMember.name || ''} onChange={e => setEditingMember(prev => ({ ...prev, name: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold uppercase mb-1">Role</label>
-                                <input value={editingMember.role || ''} onChange={e => setEditingMember(prev => ({ ...prev, role: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <label className="block text-xs font-bold uppercase mb-1">Roles</label>
+                                <input value={(editingMember.roles || []).join(', ')} onChange={e => {
+                                    const values = e.target.value.split(',').map(r => r.trim()).filter(Boolean);
+                                    setEditingMember(prev => ({ ...prev, roles: values, role: values[0] || '' }));
+                                }} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Type</label>
                                 <select value={editingMember.type} onChange={e => setEditingMember(prev => ({ ...prev, type: e.target.value }))} className={cn("w-full", THEME.punk.input)}>
                                     <option value="individual">Individual</option>
-                                    <option value="company">Company</option>
+                                    <option value="group">Group</option>
+                                    <option value="organization">Organization</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Phone</label>
-                                <input value={editingMember.phone || ''} onChange={e => setEditingMember(prev => ({ ...prev, phone: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <input value={editingMember.contacts?.phone || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), phone: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Email</label>
-                                <input value={editingMember.email || ''} onChange={e => setEditingMember(prev => ({ ...prev, email: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <input value={editingMember.contacts?.email || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), email: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Website</label>
+                                <input value={editingMember.contacts?.website || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), website: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Groups</label>
+                                <select multiple value={editingMember.links?.groups || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), groups: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Organizations</label>
+                                <select multiple value={editingMember.links?.organizations || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), organizations: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            {editingMember.type === 'group' && (
+                                <div>
+                                    <label className="block text-xs font-bold uppercase mb-1">Members</label>
+                                    <select multiple value={editingMember.links?.members || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), members: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                        {individuals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <input 
                                     type="checkbox" 
@@ -741,21 +906,138 @@ export const TeamView = () => {
 
 export const MiscView = () => {
     const { data, actions } = useStore();
-    const add = () => { const d = prompt('Desc:'); const a = prompt('Amount:'); if(d && a) actions.add('misc', {description:d, amount:parseFloat(a)}); };
+    const [expenseDraft, setExpenseDraft] = useState({ description: '', amount: '', category: 'General' });
+
+    const costedItems = useMemo(() => {
+        const rows = [];
+        const pushItem = (name, source, date, cost, notes = '') => {
+            if ((cost || 0) <= 0) return;
+            rows.push({ id: `${source}-${name}-${date}`, name, source, date: date || 'TBD', cost, notes });
+        };
+
+        data.tasks.forEach(t => pushItem(t.title, 'Standalone Task', t.dueDate, getEffectiveCost(t), t.notes));
+
+        (data.songs || []).forEach(song => {
+            (song.deadlines || []).forEach(task => pushItem(`${task.type} — ${song.title}`, 'Song Task', task.date, getEffectiveCost(task), task.notes));
+            (song.customTasks || []).forEach(task => pushItem(`${task.title} — ${song.title}`, 'Song Custom', task.date, getEffectiveCost(task), task.notes || task.description));
+            (song.versions || []).forEach(v => {
+                pushItem(`${v.name} — ${song.title}`, 'Version', v.releaseDate, getEffectiveCost(v), v.notes);
+                (v.tasks || []).forEach(task => pushItem(`${task.type} — ${v.name}`, 'Version Task', task.date, getEffectiveCost(task), task.notes));
+            });
+            (song.videos || []).forEach(video => {
+                pushItem(`${video.title} — ${song.title}`, 'Video', video.releaseDate, getEffectiveCost(video), video.notes);
+                (video.tasks || []).forEach(task => pushItem(`${task.type} — ${video.title}`, 'Video Task', task.date, getEffectiveCost(task), task.notes));
+            });
+        });
+
+        (data.globalTasks || []).forEach(task => pushItem(task.taskName, 'Global Task', task.date, getEffectiveCost(task), task.notes));
+        (data.releases || []).forEach(rel => {
+            pushItem(rel.name, 'Release', rel.releaseDate, getEffectiveCost(rel), rel.notes || rel.detailNotes);
+            (rel.tasks || []).forEach(task => pushItem(`${task.type} — ${rel.name}`, 'Release Task', task.date, getEffectiveCost(task), task.notes));
+            (rel.customTasks || []).forEach(task => pushItem(`${task.title} — ${rel.name}`, 'Release Custom', task.date, getEffectiveCost(task), task.description));
+        });
+
+        (data.events || []).forEach(evt => {
+            pushItem(evt.title, 'Event', evt.date, getEffectiveCost(evt), evt.notes);
+            (evt.customTasks || []).forEach(task => pushItem(`${task.title} — ${evt.title}`, 'Event Task', task.date, getEffectiveCost(task), task.notes));
+        });
+
+        (data.misc || []).forEach(m => pushItem(m.description, 'Misc', m.date, m.amount, 'Legacy expense'));
+
+        return rows.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }, [data]);
+
+    const addExpenseTask = () => {
+        const amount = parseFloat(expenseDraft.amount);
+        if (!expenseDraft.description || isNaN(amount)) return;
+        actions.add('tasks', {
+            title: expenseDraft.description,
+            paidCost: amount,
+            status: 'Done',
+            isHiddenExpense: true,
+            category: expenseDraft.category,
+            dueDate: new Date().toISOString().split('T')[0],
+            notes: 'Expense-only task'
+        });
+        setExpenseDraft({ description: '', amount: '', category: 'General' });
+    };
+
     return (
-        <div className="p-6">
-            <div className="flex justify-between mb-6"><h2 className={THEME.punk.textStyle}>Expenses</h2><button onClick={add} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add</button></div>
-            <div className={THEME.punk.card}>{data.misc.map(m => (<div key={m.id} className="flex justify-between p-3 border-b border-gray-100"><span>{m.description}</span><span className="font-bold">{formatMoney(m.amount)}</span></div>))}</div>
+        <div className="p-6 pb-24">
+            <div className="flex justify-between mb-6 items-center">
+                <h2 className={THEME.punk.textStyle}>Expenses</h2>
+                <div className="flex gap-2">
+                    <input value={expenseDraft.description} onChange={e => setExpenseDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("px-3 py-2 text-sm", THEME.punk.input)} />
+                    <input type="number" value={expenseDraft.amount} onChange={e => setExpenseDraft(prev => ({ ...prev, amount: e.target.value }))} placeholder="$" className={cn("px-3 py-2 text-sm w-28", THEME.punk.input)} />
+                    <input value={expenseDraft.category} onChange={e => setExpenseDraft(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className={cn("px-3 py-2 text-sm w-32", THEME.punk.input)} />
+                    <button onClick={addExpenseTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Expense Task</button>
+                </div>
+            </div>
+            <div className={cn("mb-4 p-3", THEME.punk.card)}>
+                <div className="grid grid-cols-4 text-[10px] font-black uppercase mb-2 border-b-4 border-black pb-2">
+                    <span>Item</span><span>Source</span><span>Date</span><span className="text-right">Cost</span>
+                </div>
+                <div className="divide-y divide-gray-200">
+                    {costedItems.length === 0 ? (
+                        <div className="p-4 text-center opacity-50">No costed tasks recorded.</div>
+                    ) : costedItems.map(item => (
+                        <div key={item.id} className="grid grid-cols-4 py-2 text-sm gap-2">
+                            <div>
+                                <div className="font-bold">{item.name}</div>
+                                {item.notes && <div className="text-[11px] opacity-60">{item.notes}</div>}
+                            </div>
+                            <div className="text-xs font-bold">{item.source}</div>
+                            <div className="text-xs">{item.date}</div>
+                            <div className="text-right font-black">{formatMoney(item.cost)}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 };
 
 export const ArchiveView = () => {
     const { data, actions } = useStore();
+    const archivedTasks = data.tasks.filter(t => t.archived);
+    const archivedGlobal = (data.globalTasks || []).filter(t => t.isArchived);
     return (
         <div className="p-6">
             <h2 className={cn("mb-6", THEME.punk.textStyle)}>Trash</h2>
-            <div className="space-y-2">{data.tasks.filter(t => t.archived).map(t => (<div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}><span>{t.title}</span><button onClick={()=>actions.update('tasks', t.id, {archived:false})} className="text-green-600 font-bold text-xs uppercase">Restore</button></div>))}</div>
+            <div className="space-y-2">
+              {archivedTasks.map(t => (
+                <div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}>
+                  <div>
+                    <div className="font-bold">{t.title}</div>
+                    <div className="text-xs opacity-60">Archived {t.archivedAt ? new Date(t.archivedAt).toLocaleString() : 'recently'} by {t.archivedBy || 'Unknown'}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>actions.restoreItem('tasks', t.id)} className="text-green-600 font-bold text-xs uppercase">Restore</button>
+                    <button onClick={()=>actions.delete('tasks', t.id)} className="text-red-600 font-bold text-xs uppercase">Delete</button>
+                  </div>
+                </div>
+              ))}
+              {archivedGlobal.map(t => (
+                <div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}>
+                  <div>
+                    <div className="font-bold">{t.title}</div>
+                    <div className="text-xs opacity-60">Global task archived {t.archivedAt ? new Date(t.archivedAt).toLocaleString() : ''}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>actions.updateGlobalTask(t.id, { isArchived: false, archived: false })} className="text-green-600 font-bold text-xs uppercase">Restore</button>
+                    <button onClick={()=>actions.deleteGlobalTask(t.id)} className="text-red-600 font-bold text-xs uppercase">Delete</button>
+                  </div>
+                </div>
+              ))}
+              {(data.auditLog || []).slice(0, 10).map(log => (
+                <div key={log.id} className={cn("p-3 text-xs", THEME.punk.card)}>
+                  <div className="font-bold uppercase">{log.action}</div>
+                  <div>{log.entityType} / {log.entityId}</div>
+                  <div className="opacity-60">{new Date(log.timestamp).toLocaleString()} — {log.actor}</div>
+                  {log.reason && <div className="italic">{log.reason}</div>}
+                </div>
+              ))}
+            </div>
         </div>
     );
 };
@@ -787,7 +1069,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `song-${song.id}-${d.id}`,
                     title: d.type,
-                    dueDate: d.date,
+                    dueDate: getTaskDueDate(d),
                     status: d.status,
                     source: 'Song',
                     sourceName: song.title,
@@ -802,7 +1084,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `song-custom-${song.id}-${t.id}`,
                     title: t.title,
-                    dueDate: t.date,
+                    dueDate: getTaskDueDate(t),
                     status: t.status,
                     source: 'Song',
                     sourceName: song.title,
@@ -820,7 +1102,7 @@ export const ActiveView = ({ onEdit }) => {
             tasks.push({
                 id: `global-${t.id}`,
                 title: t.taskName,
-                dueDate: t.date,
+                dueDate: getTaskDueDate(t),
                 status: t.status,
                 source: 'Global',
                 sourceName: t.category,
@@ -838,7 +1120,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `release-${release.id}-${t.id}`,
                     title: t.type,
-                    dueDate: t.date,
+                    dueDate: getTaskDueDate(t) || release.releaseDate,
                     status: t.status,
                     source: 'Release',
                     sourceName: release.name,
@@ -956,6 +1238,81 @@ export const SettingsView = () => {
     const accent = settings.themeColor || 'pink';
     const isConnected = mode === 'cloud';
     const isLoading = mode === 'loading';
+    const [templateDrafts, setTemplateDrafts] = useState(settings.templates || []);
+    const [importText, setImportText] = useState('');
+    const [migrationNotes, setMigrationNotes] = useState(settings.migrationNotes || '');
+    const [migrationRanAt, setMigrationRanAt] = useState(settings.migrationRanAt || '');
+
+    useEffect(() => {
+      setTemplateDrafts(settings.templates || []);
+    }, [settings.templates]);
+
+    const handleAddTemplate = () => {
+      const next = [...templateDrafts, { id: crypto.randomUUID(), name: 'New Template', era: settings.defaultEra || 'Modern', body: '' }];
+      setTemplateDrafts(next);
+      actions.saveSettings({ templates: next });
+    };
+
+    const handleTemplateChange = (id, key, value) => {
+      const updated = templateDrafts.map(t => t.id === id ? { ...t, [key]: value } : t);
+      setTemplateDrafts(updated);
+      actions.saveSettings({ templates: updated });
+    };
+
+    const handleTemplateDelete = (id) => {
+      const updated = templateDrafts.filter(t => t.id !== id);
+      setTemplateDrafts(updated);
+      actions.saveSettings({ templates: updated });
+    };
+
+    const handleImportTemplates = () => {
+      try {
+        const parsed = JSON.parse(importText);
+        if (Array.isArray(parsed)) {
+          setTemplateDrafts(parsed);
+          actions.saveSettings({ templates: parsed });
+          setImportText('');
+        }
+      } catch (e) {
+        alert('Unable to import templates. Please provide valid JSON.');
+      }
+    };
+
+    const exportTemplates = () => {
+      const blob = new Blob([JSON.stringify(templateDrafts, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'album-tracker-templates.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const migrationPreview = {
+      tasks: data.tasks.length,
+      songs: (data.songs || []).length,
+      releases: (data.releases || []).length,
+      globalTasks: (data.globalTasks || []).length,
+      templates: templateDrafts.length,
+      storage: mode === 'cloud' ? 'Cloud' : 'Local'
+    };
+
+    const backupAllData = () => {
+      const payload = { ...data, settings: { ...settings, templates: templateDrafts } };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `album-tracker-backup-${new Date().toISOString()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      actions.saveSettings({ lastBackup: new Date().toISOString() });
+    };
+
+    const runMigrationFlow = async () => {
+      const marker = await actions.runMigration(migrationNotes);
+      setMigrationRanAt(marker.migrationRanAt);
+    };
 
     return (
         <div className="p-6 max-w-xl">
@@ -977,6 +1334,19 @@ export const SettingsView = () => {
                         onChange={e => actions.saveSettings({ artistName: e.target.value })}
                         className={cn("w-full", THEME.punk.input)}
                     />
+                </div>
+
+                {/* Default Era */}
+                <div>
+                  <label className="font-bold block mb-1">Default Era</label>
+                  <select
+                    value={settings.defaultEraId || ''}
+                    onChange={e => actions.saveSettings({ defaultEraId: e.target.value })}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No default</option>
+                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                  </select>
                 </div>
 
                 {/* Theme Mode */}
@@ -1038,6 +1408,94 @@ export const SettingsView = () => {
                     </div>
                 </div>
 
+                {/* Default Era */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Default Era</h3>
+                  <select
+                    value={settings.defaultEra || 'Modern'}
+                    onChange={e => actions.saveSettings({ defaultEra: e.target.value })}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    {['Debut', 'Fearless', 'Speak Now', 'Red', '1989', 'Reputation', 'Lover', 'Folklore', 'Evermore', 'Midnights', 'Modern'].map(era => (
+                      <option key={era} value={era}>{era}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs opacity-70 mt-2">Used as the fallback era for new templates and migration previews.</p>
+                </div>
+
+                {/* Auto Task Toggles */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <h3 className="font-black text-xs uppercase">Auto-Generated Tasks</h3>
+                  {[{ key: 'autoTaskSongs', label: 'Auto-generate song tasks' }, { key: 'autoTaskVideos', label: 'Auto-generate video tasks' }, { key: 'autoTaskReleases', label: 'Auto-generate release tasks' }].map(toggle => (
+                    <label key={toggle.key} className="flex items-center gap-2 text-sm font-bold">
+                      <input
+                        type="checkbox"
+                        checked={settings[toggle.key] !== false}
+                        onChange={e => actions.saveSettings({ [toggle.key]: e.target.checked })}
+                      />
+                      {toggle.label}
+                    </label>
+                  ))}
+                </div>
+
+                {/* Templates */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-black text-xs uppercase">Templates</h3>
+                    <button onClick={handleAddTemplate} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>+ Add Template</button>
+                  </div>
+                  <div className="space-y-3">
+                    {templateDrafts.map(t => (
+                      <div key={t.id} className={cn("p-3 space-y-2", THEME.punk.card)}>
+                        <input value={t.name} onChange={e => handleTemplateChange(t.id, 'name', e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Template name" />
+                        <select value={t.era || settings.defaultEra || 'Modern'} onChange={e => handleTemplateChange(t.id, 'era', e.target.value)} className={cn("w-full", THEME.punk.input)}>
+                          {['Debut', 'Fearless', 'Speak Now', 'Red', '1989', 'Reputation', 'Lover', 'Folklore', 'Evermore', 'Midnights', 'Modern'].map(era => (
+                            <option key={era} value={era}>{era}</option>
+                          ))}
+                        </select>
+                        <textarea value={t.body || ''} onChange={e => handleTemplateChange(t.id, 'body', e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Template body" />
+                        <div className="flex justify-between text-xs">
+                          <span className="opacity-60">Last updated {t.updatedAt ? new Date(t.updatedAt).toLocaleString() : 'now'}</span>
+                          <button onClick={() => handleTemplateDelete(t.id)} className="text-red-600 font-bold uppercase">Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                    {templateDrafts.length === 0 && <div className={cn("p-3 text-xs", THEME.punk.card)}>No templates yet. Add one to start building repeatable tasks.</div>}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <button onClick={exportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>Export Templates</button>
+                      <button onClick={handleImportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-blue-600 text-white")}>Import Templates</button>
+                    </div>
+                    <textarea value={importText} onChange={e => setImportText(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Paste template JSON to import" />
+                  </div>
+                </div>
+
+                {/* Migration Onboarding */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <h3 className="font-black text-xs uppercase">Migration Onboarding</h3>
+                  <div className={cn("p-3 text-xs space-y-2", THEME.punk.card)}>
+                    <div className="font-bold">Preview</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(migrationPreview).map(([key, value]) => (
+                        <div key={key} className="flex justify-between border-b border-dashed border-black/30 pb-1">
+                          <span className="uppercase font-bold">{key}</span>
+                          <span>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-2">
+                      <label className="block font-bold mb-1">Notes</label>
+                      <textarea value={migrationNotes} onChange={e => setMigrationNotes(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Add any migration notes or blockers" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={backupAllData} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>Backup ({mode === 'cloud' ? 'Cloud' : 'Local'})</button>
+                      <button onClick={runMigrationFlow} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-amber-500 text-white")}>Run Migration</button>
+                    </div>
+                    {migrationRanAt && <div className="text-[10px] opacity-70">Last migration: {new Date(migrationRanAt).toLocaleString()}</div>}
+                  </div>
+                </div>
+
                 {/* Stages */}
                 <div className="pt-4 border-t-4 border-black">
                   <h3 className="font-black text-xs uppercase mb-2">Workflow Stages</h3>
@@ -1049,6 +1507,21 @@ export const SettingsView = () => {
                       </div>
                     ))}
                     <button onClick={() => actions.addStage({ name: `Stage ${ (data.stages?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Stage</button>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Tags</h3>
+                  <div className="space-y-2">
+                    {(data.tags || []).map(tag => (
+                      <div key={tag.id} className="flex items-center gap-2">
+                        <input value={tag.name} onChange={e => actions.updateTag(tag.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <input type="color" value={tag.color || '#000000'} onChange={e => actions.updateTag(tag.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
+                        <button onClick={() => actions.deleteTag(tag.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addTag({ name: `Tag ${(data.tags?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Tag</button>
                   </div>
                 </div>
 

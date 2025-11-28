@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
+import { ItemCard, ItemRow, ItemTimelineEntry, DetailPane } from './ItemComponents';
 
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
@@ -39,13 +40,6 @@ export const SongListView = ({ onSelectSong }) => {
     const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false });
     if (onSelectSong) onSelectSong(newSong);
   };
-
-  const toggleSort = (field) => {
-    if (sortBy === field) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (<span className="ml-1 text-xs">{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>);
 
   return (
     <div className="p-6 pb-24">
@@ -122,14 +116,14 @@ export const SongDetailView = ({ song, onBack }) => {
   };
 
   const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
     const budget = taskBudget(taskObj);
     const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
     const nextTotal = current + (parseFloat(entry.cost) || 0);
     if (budget > 0 && nextTotal > budget) return; // prevent over-allocation
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0, instrument: entry.instrument || '' }];
     updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0, instrument: '' } }));
   };
 
   const handleSave = async () => { await actions.updateSong(song.id, form); };
@@ -289,6 +283,31 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
         </div>
       </div>
+
+      <DetailPane title="Song Detail Pane">
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Narrative, collaborators, staging notes" />
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Exclusivity</label>
+              <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+                {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Primary Platforms</label>
+              <input value={(form.platforms || []).join(', ')} onChange={e => handleFieldChange('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Spotify, YouTube, Vinyl" className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Progress</label>
+              <div className="px-3 py-2 border-2 border-black bg-gray-50 text-sm font-black">{songTasks.length + songCustomTasks.length > 0 ? `${songTasks.filter(t => t.status === 'Done').length + songCustomTasks.filter(t => t.status === 'Done').length}/${songTasks.length + songCustomTasks.length}` : 'No tasks yet'}</div>
+            </div>
+          </div>
+        </div>
+      </DetailPane>
     </div>
 
       {/* Versions - Phase 1: Enhanced with video types, tasks, availability windows */}
@@ -412,6 +431,29 @@ export const SongDetailView = ({ song, onBack }) => {
                   })}
                 </div>
               </div>
+
+              <DetailPane title="Version Detail Pane">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+                    <textarea value={v.notes || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { notes: e.target.value })} className={cn("w-full h-20", THEME.punk.input)} placeholder="Mix differences, edits, era" />
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Platforms</label>
+                      <input value={(v.platforms || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { platforms: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="DSP list, YouTube, vinyl" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      {['Estimated', 'Quoted', 'Paid'].map(k => (
+                        <div key={k}>
+                          <label className="font-black uppercase block mb-1">{k}</label>
+                          <input type="number" value={v[`${k.toLowerCase()}Cost`] || 0} onChange={e => actions.updateSongVersion(song.id, v.id, { [`${k.toLowerCase()}Cost`]: parseFloat(e.target.value) || 0 })} className={cn("w-full", THEME.punk.input)} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </DetailPane>
               
               {/* Version Tasks Count - Tasks now shown in unified view below */}
               {v.id !== 'core' && (v.tasks || []).length > 0 && (
@@ -472,7 +514,7 @@ export const SongDetailView = ({ song, onBack }) => {
                         <div className="flex flex-wrap gap-1">
                           {(task.assignedMembers || []).map(m => {
                             const member = teamMembers.find(tm => tm.id === m.memberId);
-                            return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                            return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                           })}
                         </div>
                         <div className="flex gap-1 items-center">
@@ -481,6 +523,7 @@ export const SongDetailView = ({ song, onBack }) => {
                             {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                           </select>
                           <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                          <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                           <button onClick={() => addAssignment(task.id, task, (assignedMembers) => {
                             const updatedTasks = songTasks.map(t => t.id === task.id ? { ...t, assignedMembers } : t);
                             actions.updateSong(song.id, { deadlines: updatedTasks });
@@ -542,11 +585,11 @@ export const SongDetailView = ({ song, onBack }) => {
                   <div className="font-bold">{task.title}</div>
                   <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
                   {task.description && <div className="text-sm mt-1">{task.description}</div>}
-                  <div className="mt-2 space-y-1">
-                    <div className="flex flex-wrap gap-1">
-                      {(task.assignedMembers || []).map(m => {
-                        const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                    <div className="mt-2 space-y-1">
+                      <div className="flex flex-wrap gap-1">
+                        {(task.assignedMembers || []).map(m => {
+                          const member = teamMembers.find(tm => tm.id === m.memberId);
+                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                       })}
                     </div>
                     <div className="flex gap-1 items-center">
@@ -555,6 +598,7 @@ export const SongDetailView = ({ song, onBack }) => {
                         {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                       <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateSongCustomTask(song.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                       {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                     </div>
@@ -605,14 +649,14 @@ export const GlobalTasksView = () => {
   };
 
   const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
     const budget = taskBudget(taskObj);
     const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
     const nextTotal = current + (parseFloat(entry.cost) || 0);
     if (budget > 0 && nextTotal > budget) return;
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0, instrument: entry.instrument || '' }];
     updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0, instrument: '' } }));
   };
 
   const tasks = useMemo(() => {
@@ -754,7 +798,7 @@ export const GlobalTasksView = () => {
                   <div className="flex flex-wrap gap-1">
                     {(task.assignedMembers || []).map(m => {
                       const member = teamMembers.find(tm => tm.id === m.memberId);
-                      return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                      return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 border-2 border-black bg-purple-100 font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                     })}
                   </div>
                   <div className="flex gap-1 items-center">
@@ -763,6 +807,7 @@ export const GlobalTasksView = () => {
                       {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
                     <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                    <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                     <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateGlobalTask(task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                     {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                   </div>
@@ -974,6 +1019,19 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
+      <DetailPane title="Release Detail Pane">
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Distribution Platforms</label>
+            <input value={(form.platforms || []).join(', ')} onChange={e => handleFieldChange('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Additional Costs / Notes</label>
+            <textarea value={form.detailNotes || form.notes || ''} onChange={e => handleFieldChange('detailNotes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Physical production, marketing earmarks" />
+          </div>
+        </div>
+      </DetailPane>
+
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Required Recordings</h3>
@@ -1055,7 +1113,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                     <div className="flex flex-wrap gap-1">
                       {(task.assignedMembers || []).map(m => {
                         const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                       })}
                     </div>
                     <div className="flex gap-1 items-center">
@@ -1064,6 +1122,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                         {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                       <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateReleaseTask(release.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                       {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                     </div>
@@ -1165,14 +1224,32 @@ export const CombinedTimelineView = () => {
 
   const timelineItems = useMemo(() => {
     const items = [];
+    const resolvePrimary = (entity, extraReleaseIds = []) => getPrimaryDate(entity, data.releases || [], extraReleaseIds);
+    const resolveDue = (task) => getTaskDueDate(task);
+    const linkedReleaseIdsForSong = (songId) => {
+      const directLinks = (data.releases || []).filter(r => (r.attachedSongIds || []).includes(songId)).map(r => r.id);
+      const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId)).map(r => r.id);
+      const coreLink = data.songs.find(s => s.id === songId)?.coreReleaseId;
+      return Array.from(new Set([...(coreLink ? [coreLink] : []), ...directLinks, ...versionLinks]));
+    };
+    const linkedReleaseIdsForVersion = (songId, versionId) => {
+      const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId && v.versionId === versionId)).map(r => r.id);
+      return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...versionLinks]));
+    };
+    const linkedReleaseIdsForVideo = (songId, videoId) => {
+      const videoLinks = (data.releases || []).filter(r => (r.attachedVideoIds || []).includes(videoId)).map(r => r.id);
+      return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...videoLinks]));
+    };
+    const linkedReleaseIdsForStandaloneVideo = (videoId) => (data.releases || []).filter(r => (r.attachedStandaloneVideoIds || []).includes(videoId)).map(r => r.id);
 
     // Song Tasks (formerly deadlines)
     (data.songs || []).forEach(song => {
+      const primarySongDate = resolvePrimary(song, linkedReleaseIdsForSong(song.id));
       const songTasks = song.deadlines || [];
       songTasks.forEach(task => {
         items.push({
           id: 'song-task-' + task.id,
-          date: task.date,
+          date: resolveDue(task) || primarySongDate,
           sourceType: 'Song Task',
           label: task.type,
           name: song.title,
@@ -1190,7 +1267,7 @@ export const CombinedTimelineView = () => {
       customTasks.forEach(task => {
         items.push({
           id: 'custom-' + task.id,
-          date: task.date,
+          date: resolveDue(task) || primarySongDate,
           sourceType: 'Song Custom',
           label: task.title || 'Custom task',
           name: song.title,
@@ -1205,10 +1282,11 @@ export const CombinedTimelineView = () => {
       
       // Version tasks
       (song.versions || []).filter(v => v.id !== 'core').forEach(version => {
+        const versionPrimaryDate = resolvePrimary(version, linkedReleaseIdsForVersion(song.id, version.id));
         (version.tasks || []).forEach(task => {
           items.push({
             id: 'version-task-' + song.id + '-' + version.id + '-' + task.id,
-            date: task.date,
+            date: resolveDue(task) || versionPrimaryDate,
             sourceType: 'Version Task',
             label: task.type,
             name: `${version.name} (${song.title})`,
@@ -1224,10 +1302,12 @@ export const CombinedTimelineView = () => {
       
       // Video tasks
       (song.videos || []).forEach(video => {
+        const videoReleaseIds = linkedReleaseIdsForVideo(song.id, video.id);
+        const videoPrimaryDate = resolvePrimary(video, videoReleaseIds);
         (video.tasks || []).forEach(task => {
           items.push({
             id: 'video-task-' + song.id + '-' + video.id + '-' + task.id,
-            date: task.date,
+            date: resolveDue(task) || videoPrimaryDate,
             sourceType: 'Video Task',
             label: task.type,
             name: `${video.title} (${song.title})`,
@@ -1239,12 +1319,13 @@ export const CombinedTimelineView = () => {
             clickable: true
           });
         });
-        
+
         // Video release date
-        if (video.releaseDate) {
+        const videoDate = videoPrimaryDate;
+        if (videoDate) {
           items.push({
             id: 'video-release-' + song.id + '-' + video.id,
-            date: video.releaseDate,
+            date: videoDate,
             sourceType: 'Video',
             label: 'Video Release',
             name: video.title,
@@ -1296,12 +1377,51 @@ export const CombinedTimelineView = () => {
       }
     });
 
+    // Standalone videos
+    (data.standaloneVideos || []).forEach(video => {
+      const videoReleaseIds = linkedReleaseIdsForStandaloneVideo(video.id);
+      const videoDate = resolvePrimary(video, videoReleaseIds);
+      (video.tasks || []).forEach(task => {
+        const taskDate = resolveDue(task) || videoDate;
+        items.push({
+          id: 'standalone-video-task-' + video.id + '-' + task.id,
+          date: taskDate,
+          sourceType: 'Video Task',
+          label: task.type,
+          name: `${video.title} (Standalone)`,
+          category: 'Video',
+          status: task.status,
+          estimatedCost: task.estimatedCost,
+          notes: task.notes,
+          songId: null,
+          clickable: true
+        });
+      });
+
+      if (videoDate) {
+        items.push({
+          id: 'standalone-video-release-' + video.id,
+          date: videoDate,
+          sourceType: 'Video',
+          label: 'Video Release',
+          name: `${video.title} (Standalone)`,
+          category: 'Video',
+          status: null,
+          estimatedCost: video.estimatedCost,
+          notes: video.notes,
+          songId: null,
+          clickable: true
+        });
+      }
+    });
+
     // Events
     (data.events || []).forEach(event => {
-      if (event.date) {
+      const eventDate = resolvePrimary(event);
+      if (eventDate) {
         items.push({
           id: 'event-' + event.id,
-          date: event.date,
+          date: eventDate,
           sourceType: 'Event',
           label: event.type || 'Event',
           name: event.title,
@@ -1316,10 +1436,11 @@ export const CombinedTimelineView = () => {
       
       // Phase 5: Event custom tasks
       (event.customTasks || []).forEach(task => {
-        if (task.date) {
+        const taskDate = resolveDue(task) || eventDate;
+        if (taskDate) {
           items.push({
             id: 'event-task-' + event.id + '-' + task.id,
-            date: task.date,
+            date: taskDate,
             sourceType: 'Event Task',
             label: task.title,
             name: event.title,
@@ -1336,9 +1457,10 @@ export const CombinedTimelineView = () => {
 
     // Global Tasks
     (data.globalTasks || []).filter(t => !t.isArchived).forEach(task => {
+      const taskDate = resolveDue(task);
       items.push({
         id: 'global-' + task.id,
-        date: task.date,
+        date: taskDate,
         sourceType: 'Global',
         label: 'Task',
         name: task.taskName,
@@ -1354,12 +1476,13 @@ export const CombinedTimelineView = () => {
     // Releases and their tasks
     (data.releases || []).forEach(release => {
       // Release date itself
-      items.push({ 
-        id: 'release-' + release.id, 
-        date: release.releaseDate, 
-        sourceType: 'Release', 
-        label: 'Release', 
-        name: release.name, 
+      const releaseDate = resolvePrimary(release);
+      items.push({
+        id: 'release-' + release.id,
+        date: releaseDate,
+        sourceType: 'Release',
+        label: 'Release',
+        name: release.name,
         category: release.type, 
         status: null, 
         estimatedCost: release.estimatedCost, 
@@ -1370,12 +1493,13 @@ export const CombinedTimelineView = () => {
       
       // Release tasks
       (release.tasks || []).forEach(task => {
-        items.push({ 
-          id: 'release-task-' + task.id, 
-          date: task.date, 
-          sourceType: 'Release Task', 
-          label: task.type, 
-          name: release.name, 
+        const taskDate = resolveDue(task) || releaseDate;
+        items.push({
+          id: 'release-task-' + task.id,
+          date: taskDate,
+          sourceType: 'Release Task',
+          label: task.type,
+          name: release.name,
           category: task.category, 
           status: task.status, 
           estimatedCost: task.estimatedCost, 
@@ -1809,6 +1933,32 @@ export const VideosView = ({ onSelectSong }) => {
                             </button>
                           </div>
                         </div>
+                        <DetailPane title="Video Detail Pane">
+                          <div className="grid md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase mb-1">Notes</label>
+                              <textarea value={video.notes || ''} onChange={e => actions.updateSongVideo(song.id, video.id, { notes: e.target.value })} className={cn("w-full h-16", THEME.punk.input)} placeholder="Director, storyline, exclusivity" />
+                            </div>
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase mb-1">Exclusivity</label>
+                                <input value={video.exclusiveType || ''} onChange={e => actions.updateSongVideo(song.id, video.id, { exclusiveType: e.target.value })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube first, platform exclusive" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase mb-1">Platforms</label>
+                                <input value={(video.platforms || []).join(', ')} onChange={e => actions.updateSongVideo(song.id, video.id, { platforms: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, TikTok, IG" />
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                {['Estimated', 'Quoted', 'Paid'].map(k => (
+                                  <div key={k}>
+                                    <label className="font-black uppercase block mb-1">{k}</label>
+                                    <input type="number" value={video[`${k.toLowerCase()}Cost`] || 0} onChange={e => actions.updateSongVideo(song.id, video.id, { [`${k.toLowerCase()}Cost`]: parseFloat(e.target.value) || 0 })} className={cn("w-full", THEME.punk.input)} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </DetailPane>
                         {/* Custom tasks placeholder */}
                         <div className="text-[10px] text-gray-500 mt-1">Custom tasks: {(video.customTasks || []).length}</div>
                       </div>
