@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useStore } from './Store';
+import { useStore, STATUS_OPTIONS } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
@@ -60,6 +60,8 @@ export const CalendarView = ({ onEdit }) => {
     const [date, setDate] = useState(new Date());
     const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '' });
     const [selectedItem, setSelectedItem] = useState(null);
+    // Phase 5: Event custom tasks
+    const [newEventTask, setNewEventTask] = useState({ title: '', date: '', status: 'Not Started', estimatedCost: 0 });
     const year = date.getFullYear();
     const month = date.getMonth();
 
@@ -285,7 +287,7 @@ export const CalendarView = ({ onEdit }) => {
             {/* Detail Modal for clicked items */}
             {selectedItem && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedItem(null)}>
-                    <div className={cn("w-full max-w-md p-6 bg-white", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+                    <div className={cn("w-full max-w-md p-6 bg-white max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-start mb-4">
                             <h3 className="font-black uppercase">{selectedItem.title}</h3>
                             <button onClick={() => setSelectedItem(null)} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
@@ -297,13 +299,77 @@ export const CalendarView = ({ onEdit }) => {
                             {selectedItem.description && <div><span className="font-bold">Description:</span> {selectedItem.description}</div>}
                             {selectedItem.releaseType && <div><span className="font-bold">Release Type:</span> {selectedItem.releaseType}</div>}
                         </div>
+                        {/* Phase 5: Custom tasks for events */}
                         {selectedItem._kind === 'event' && (
-                            <button 
-                                onClick={() => { actions.delete('events', selectedItem.id); setSelectedItem(null); }} 
-                                className={cn("mt-4 px-4 py-2 w-full", THEME.punk.btn, "bg-red-500 text-white")}
-                            >
-                                Delete Event
-                            </button>
+                            <>
+                                <div className="mt-4 border-t-2 border-black pt-4">
+                                    <div className="font-bold text-xs uppercase mb-2">Custom Tasks</div>
+                                    {(selectedItem.customTasks || []).length === 0 ? (
+                                        <div className="text-xs opacity-50 mb-2">No custom tasks yet.</div>
+                                    ) : (
+                                        <div className="space-y-2 mb-3">
+                                            {(selectedItem.customTasks || []).map(task => (
+                                                <div key={task.id} className="flex items-center justify-between p-2 border border-black bg-gray-50 text-xs">
+                                                    <div>
+                                                        <div className="font-bold">{task.title}</div>
+                                                        <div className="opacity-60">{task.date} | {task.status}</div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => actions.deleteEventCustomTask(selectedItem.id, task.id)} 
+                                                        className="text-red-500 p-1"
+                                                    >
+                                                        <Icon name="Trash2" size={12} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* Add custom task form */}
+                                    <div className="space-y-2 p-2 bg-gray-100 border border-black">
+                                        <div className="text-xs font-bold uppercase">Add Task</div>
+                                        <input 
+                                            value={newEventTask.title} 
+                                            onChange={e => setNewEventTask(prev => ({ ...prev, title: e.target.value }))} 
+                                            placeholder="Task title" 
+                                            className={cn("w-full text-xs", THEME.punk.input)} 
+                                        />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input 
+                                                type="date" 
+                                                value={newEventTask.date} 
+                                                onChange={e => setNewEventTask(prev => ({ ...prev, date: e.target.value }))} 
+                                                className={cn("w-full text-xs", THEME.punk.input)} 
+                                            />
+                                            <select 
+                                                value={newEventTask.status} 
+                                                onChange={e => setNewEventTask(prev => ({ ...prev, status: e.target.value }))} 
+                                                className={cn("w-full text-xs", THEME.punk.input)}
+                                            >
+                                                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        <button 
+                                            onClick={async () => {
+                                                if (!newEventTask.title) return;
+                                                await actions.addEventCustomTask(selectedItem.id, newEventTask);
+                                                setNewEventTask({ title: '', date: '', status: 'Not Started', estimatedCost: 0 });
+                                                // Refresh selectedItem by getting updated event
+                                                const updated = data.events.find(e => e.id === selectedItem.id);
+                                                if (updated) setSelectedItem({ ...updated, _kind: 'event' });
+                                            }}
+                                            className={cn("w-full px-2 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}
+                                        >
+                                            + Add Task
+                                        </button>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => { actions.delete('events', selectedItem.id); setSelectedItem(null); }} 
+                                    className={cn("mt-4 px-4 py-2 w-full", THEME.punk.btn, "bg-red-500 text-white")}
+                                >
+                                    Delete Event
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>

@@ -452,6 +452,73 @@ export const StoreProvider = ({ children }) => {
      connectCloud: (config) => { localStorage.setItem('at_firebase_config', JSON.stringify(config)); window.location.reload(); },
      disconnect: () => { localStorage.removeItem('at_firebase_config'); window.location.reload(); },
 
+     // Phase 5: Enhanced event actions with custom tasks
+     addEventCustomTask: async (eventId, task) => {
+       const newTask = createUnifiedTask({
+         type: 'Custom',
+         title: task.title || 'New Task',
+         description: task.description || '',
+         date: task.date || '',
+         status: task.status || 'Not Started',
+         estimatedCost: task.estimatedCost || 0,
+         quotedCost: task.quotedCost || 0,
+         paidCost: task.paidCost || 0,
+         notes: task.notes || '',
+         parentType: 'event',
+         parentId: eventId
+       });
+       if (mode === 'cloud') {
+         const event = data.events.find(e => e.id === eventId);
+         if (event) {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId), {
+             customTasks: [...(event.customTasks || []), newTask]
+           });
+         }
+       } else {
+         setData(p => ({
+           ...p,
+           events: (p.events || []).map(e => e.id === eventId ? { ...e, customTasks: [...(e.customTasks || []), newTask] } : e)
+         }));
+       }
+       return newTask;
+     },
+
+     updateEventCustomTask: async (eventId, taskId, updates) => {
+       if (mode === 'cloud') {
+         const event = data.events.find(e => e.id === eventId);
+         if (event) {
+           const updatedTasks = (event.customTasks || []).map(t => t.id === taskId ? { ...t, ...updates } : t);
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId), { customTasks: updatedTasks });
+         }
+       } else {
+         setData(p => ({
+           ...p,
+           events: (p.events || []).map(e => e.id === eventId ? {
+             ...e,
+             customTasks: (e.customTasks || []).map(t => t.id === taskId ? { ...t, ...updates } : t)
+           } : e)
+         }));
+       }
+     },
+
+     deleteEventCustomTask: async (eventId, taskId) => {
+       if (mode === 'cloud') {
+         const event = data.events.find(e => e.id === eventId);
+         if (event) {
+           const updatedTasks = (event.customTasks || []).filter(t => t.id !== taskId);
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId), { customTasks: updatedTasks });
+         }
+       } else {
+         setData(p => ({
+           ...p,
+           events: (p.events || []).map(e => e.id === eventId ? {
+             ...e,
+             customTasks: (e.customTasks || []).filter(t => t.id !== taskId)
+           } : e)
+         }));
+       }
+     },
+
      addStage: async (stage) => {
        const newStage = { id: crypto.randomUUID(), name: stage.name || 'New Stage', order: stage.order || (data.stages.length + 1) };
        if (mode === 'cloud') {
@@ -1333,7 +1400,9 @@ export const StoreProvider = ({ children }) => {
         // Auto-generated tasks
         tasks: autoTasks,
         // Custom tasks on videos
-        customTasks: video.customTasks || []
+        customTasks: video.customTasks || [],
+        // Phase 8: Musicians assigned to video
+        musicians: video.musicians || []
       };
       setData(prev => ({
         ...prev,
@@ -1416,6 +1485,36 @@ export const StoreProvider = ({ children }) => {
           const updatedVideos = (song.videos || []).map(v => {
             if (v.id !== videoId) return v;
             return { ...v, customTasks: (v.customTasks || []).filter(t => t.id !== taskId) };
+          });
+          return { ...song, videos: updatedVideos };
+        })
+      }));
+    },
+
+    // Phase 8: Add musician to a video
+    addVideoMusician: async (songId, videoId, musician) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVideos = (song.videos || []).map(v => {
+            if (v.id !== videoId) return v;
+            return { ...v, musicians: [...(v.musicians || []), musician] };
+          });
+          return { ...song, videos: updatedVideos };
+        })
+      }));
+    },
+
+    // Phase 8: Remove musician from a video
+    removeVideoMusician: async (songId, videoId, musicianId) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVideos = (song.videos || []).map(v => {
+            if (v.id !== videoId) return v;
+            return { ...v, musicians: (v.musicians || []).filter(m => m.id !== musicianId) };
           });
           return { ...song, videos: updatedVideos };
         })

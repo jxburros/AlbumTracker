@@ -30,7 +30,7 @@ export const SongListView = ({ onSelectSong }) => {
   }, [data.songs, sortBy, sortDir, filterCategory, filterSingles]);
 
   const handleAddSong = async () => {
-    const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false, videoType: 'None' });
+    const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false });
     if (onSelectSong) onSelectSong(newSong);
   };
 
@@ -65,7 +65,6 @@ export const SongListView = ({ onSelectSong }) => {
               <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
               <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
               <th className="p-3 text-center">Single?</th>
-              <th className="p-3 text-left">Video Type</th>
               <th className="p-3 text-left">Exclusive</th>
               <th className="p-3 text-center">Stems?</th>
               <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
@@ -81,7 +80,6 @@ export const SongListView = ({ onSelectSong }) => {
                   <td className="p-3">{song.category}</td>
                   <td className="p-3">{song.releaseDate || '-'}</td>
                   <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
-                  <td className="p-3">{song.videoType}</td>
                   <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
                   <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
                   <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
@@ -1280,6 +1278,25 @@ export const CombinedTimelineView = () => {
           clickable: true
         });
       }
+      
+      // Phase 5: Event custom tasks
+      (event.customTasks || []).forEach(task => {
+        if (task.date) {
+          items.push({
+            id: 'event-task-' + event.id + '-' + task.id,
+            date: task.date,
+            sourceType: 'Event Task',
+            label: task.title,
+            name: event.title,
+            category: 'Event',
+            status: task.status,
+            estimatedCost: task.estimatedCost || 0,
+            notes: task.notes || task.description,
+            songId: null,
+            clickable: true
+          });
+        }
+      });
     });
 
     // Global Tasks
@@ -1378,6 +1395,7 @@ export const CombinedTimelineView = () => {
       case 'Release Task': return 'bg-teal-100 border-l-4 border-l-teal-500';
       case 'Release': return 'bg-green-100 border-l-4 border-l-green-500';
       case 'Event': return 'bg-pink-100 border-l-4 border-l-pink-500';
+      case 'Event Task': return 'bg-pink-200 border-l-4 border-l-pink-600';
       case 'Exclusivity': return 'bg-red-100 border-l-4 border-l-red-500';
       default: return 'bg-gray-100';
     }
@@ -1388,7 +1406,7 @@ export const CombinedTimelineView = () => {
   };
 
   // Unique source types for filter
-  const sourceTypes = ['Song Task', 'Song Custom', 'Version Task', 'Video Task', 'Video', 'Global', 'Release', 'Release Task', 'Event', 'Exclusivity'];
+  const sourceTypes = ['Song Task', 'Song Custom', 'Version Task', 'Video Task', 'Video', 'Global', 'Release', 'Release Task', 'Event', 'Event Task', 'Exclusivity'];
 
   return (
     <div className="p-6 pb-24">
@@ -1524,6 +1542,9 @@ export const VideosView = ({ onSelectSong }) => {
     releaseDate: '',
     types: { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' }
   });
+  // Phase 8: Musicians for videos
+  const [newVideoMusicians, setNewVideoMusicians] = useState({});
+  const teamMembers = data.teamMembers || [];
 
   const songVersions = (song) => song.versions || [];
 
@@ -1698,6 +1719,52 @@ export const VideosView = ({ onSelectSong }) => {
                             </div>
                           </div>
                         )}
+                        {/* Phase 8: Musicians assigned to video */}
+                        <div className="mt-2 border-t border-gray-200 pt-2">
+                          <div className="text-xs font-bold uppercase mb-1">Musicians</div>
+                          <div className="flex flex-wrap gap-1 mb-1">
+                            {(video.musicians || []).map(m => {
+                              const member = teamMembers.find(tm => tm.id === m.memberId);
+                              return (
+                                <span key={m.id} className="px-2 py-1 border-2 border-black bg-purple-100 text-[10px] font-bold flex items-center gap-1">
+                                  {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
+                                  <button onClick={() => actions.removeVideoMusician(song.id, video.id, m.id)} className="text-red-600 ml-1">×</button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div className="flex gap-1 items-center">
+                            <select 
+                              value={newVideoMusicians[video.id]?.memberId || ''} 
+                              onChange={e => setNewVideoMusicians(prev => ({ ...prev, [video.id]: { ...(prev[video.id] || {}), memberId: e.target.value } }))} 
+                              className="border border-black p-1 text-[10px]"
+                            >
+                              <option value="">Select musician</option>
+                              {teamMembers.filter(m => m.isMusician).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                            <input 
+                              value={newVideoMusicians[video.id]?.instruments || ''} 
+                              onChange={e => setNewVideoMusicians(prev => ({ ...prev, [video.id]: { ...(prev[video.id] || {}), instruments: e.target.value } }))} 
+                              placeholder="instruments" 
+                              className="border border-black p-1 text-[10px] w-24" 
+                            />
+                            <button 
+                              onClick={() => {
+                                const entry = newVideoMusicians[video.id];
+                                if (!entry?.memberId) return;
+                                actions.addVideoMusician(song.id, video.id, { 
+                                  id: crypto.randomUUID(), 
+                                  memberId: entry.memberId, 
+                                  instruments: (entry.instruments || '').split(',').map(i => i.trim()).filter(Boolean) 
+                                });
+                                setNewVideoMusicians(prev => ({ ...prev, [video.id]: { memberId: '', instruments: '' } }));
+                              }} 
+                              className="px-2 py-1 text-[10px] border-2 border-black bg-purple-500 text-white font-bold"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
                         {/* Custom tasks placeholder */}
                         <div className="text-[10px] text-gray-500 mt-1">Custom tasks: {(video.customTasks || []).length}</div>
                       </div>

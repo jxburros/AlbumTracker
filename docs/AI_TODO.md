@@ -26,39 +26,40 @@ Order check: current phase ordering already aligns with dependencies (data found
 - [x] Auto-generate release tasks: album art, tracklist selection, physical production (if enabled), release task.
 - [x] Fix release recalculation crash.
 
-## Phase 4 — Tasks, Global Tasks & Active Tasks (foundation for timeline/calendar)
-- [ ] Add global/misc tasks with team members, costs, and due dates.
+## Phase 4 — Tasks, Global Tasks & Active Tasks (foundation for timeline/calendar) ✓ MOSTLY COMPLETE
+- [x] Add global/misc tasks with team members, costs, and due dates.
 - [ ] Create unified task editor component with consistent interactions, fields, and cost behavior.
-- [ ] Enable team member assignment on all tasks (songs, versions, videos, releases, global tasks, events).
+- [x] Enable team member assignment on all tasks (songs, versions, videos, releases, global tasks, events).
 - [ ] Unify version tasks and song tasks display: show in the same location with clear notation of which version each task belongs to (core version tasks and song tasks are interchangeable).
-- [ ] Remove "inherits from core" checkbox from task interface (functionality appears to be obsolete).
-- [ ] Remove video type field from Songs page basic information section.
-- [ ] Improve method for adding releases to versions and add ability to decouple/unlink releases from versions.
-- [ ] Build active tasks view highlighting in-progress, unpaid, and upcoming-due tasks.
-- [ ] Support task archiving and deletion.
+- [x] Remove "inherits from core" checkbox from task interface (functionality appears to be obsolete).
+- [x] Remove video type field from Songs page basic information section.
+- [x] Improve method for adding releases to versions and add ability to decouple/unlink releases from versions.
+- [x] Build active tasks view highlighting in-progress, unpaid, and upcoming-due tasks.
+- [x] Support task archiving and deletion.
 
-## Phase 5 — Calendar & Events (after tasks/events are stable)
-- [ ] Overhaul calendar to make tasks, releases, songs, versions, events, and videos clickable.
-- [ ] Enhance events: allow custom tasks, disable auto-generated tasks, improve scroll behavior, and fix upper-right navigation controls.
+## Phase 5 — Calendar & Events (after tasks/events are stable) ✓ COMPLETE
+- [x] Overhaul calendar to make tasks, releases, songs, versions, events, and videos clickable.
+- [x] Enhance events: allow custom tasks, disable auto-generated tasks, improve scroll behavior, and fix upper-right navigation controls.
 
-## Phase 6 — Combined Timeline (depends on Phases 4 & 5)
-- [ ] Create global unified timeline without song filter showing tasks, events, video tasks, release tasks, and song-version tasks with clickable entries; improve day/week/month views.
-- [ ] Plot exclusivity start/end windows on timeline.
+## Phase 6 — Combined Timeline (depends on Phases 4 & 5) ✓ COMPLETE
+- [x] Create global unified timeline without song filter showing tasks, events, video tasks, release tasks, and song-version tasks with clickable entries; improve day/week/month views.
+- [x] Plot exclusivity start/end windows on timeline.
 
-## Phase 7 — Photos & Media Enhancements
-- [ ] Enable photo enlargement on click and editable title/description.
-- [ ] Support download of single photo or all photos.
+## Phase 7 — Photos & Media Enhancements ✓ COMPLETE
+- [x] Enable photo enlargement on click and editable title/description.
+- [x] Support download of single photo or all photos.
 
-## Phase 8 — Team Members Enhancements
-- [ ] Upgrade team members with musician flag and instrument assignments.
-- [ ] Allow musicians to be assigned to songs, versions, videos, and tasks.
+## Phase 8 — Team Members Enhancements ✓ COMPLETE
+- [x] Upgrade team members with musician flag and instrument assignments.
+- [x] Allow musicians to be assigned to songs and versions.
+- [x] Allow musicians to be assigned to videos and tasks.
 
-## Phase 9 — Advanced Global Systems (depends on stable tasks/releases/timelines)
-- [ ] Implement notification system (due dates, release dates, overdue tasks, budget exceeded).
+## Phase 9 — Advanced Global Systems (depends on stable tasks/releases/timelines) ✓ PARTIALLY COMPLETE
+- [x] Implement notification system (due dates, release dates, overdue tasks, budget exceeded).
 - [ ] Provide reporting/exporting (PDF/CSV/printable) for releases summary, budget summary, task list, song version comparison, album rollout timeline.
 - [ ] Add activity log/change history covering tasks, costs, release dates, song versions, team members, release membership changes, and completion/archival/trash actions.
-- [ ] Build master dashboard showing releases, songs, versions, video tasks, budget progress, upcoming deadlines, exclusivity windows, notifications.
+- [x] Build master dashboard showing releases, songs, versions, video tasks, budget progress, upcoming deadlines, exclusivity windows, notifications.
 
-## Phase 10 — Final UX Polish & Dark Mode Fix
-- [ ] Improve dark mode readability and accent color usage.
+## Phase 10 — Final UX Polish & Dark Mode Fix ✓ MOSTLY COMPLETE
+- [x] Improve dark mode readability and accent color usage.
 - [ ] Ensure UI consistency across tasks, songs, timeline, releases, videos, and calendar.
