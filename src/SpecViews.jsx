@@ -805,6 +805,9 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
   const [newAssignments, setNewAssignments] = useState({});
+  // Phase 3: Custom tasks state
+  const [showAddCustomTask, setShowAddCustomTask] = useState(false);
+  const [newCustomTask, setNewCustomTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
 
   const teamMembers = data.teamMembers || [];
 
@@ -847,6 +850,13 @@ export const ReleaseDetailView = ({ release, onBack }) => {
 
   const handleDeleteRelease = async () => {
     if (confirm('Delete this release?')) { await actions.deleteRelease(release.id); onBack(); }
+  };
+
+  // Phase 3: Handle custom task addition
+  const handleAddCustomTask = async () => {
+    await actions.addReleaseCustomTask(release.id, newCustomTask);
+    setNewCustomTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+    setShowAddCustomTask(false);
   };
 
   const getSongTitle = (songId) => {
@@ -1022,14 +1032,75 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
+      {/* Phase 3: Attached Songs Section */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Attached Songs</h3>
+          <button onClick={() => actions.autoCalculateReleaseDateFromContent(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}>Auto-Calculate Date</button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <select onChange={e => { if (e.target.value) actions.attachSongToRelease(release.id, e.target.value); }} className={cn("px-3 py-2 text-xs", THEME.punk.input)} value="">
+            <option value="">Attach Song...</option>
+            {(data.songs || []).filter(s => !(currentRelease.attachedSongIds || []).includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(currentRelease.attachedSongIds || []).map(songId => {
+            const song = data.songs.find(s => s.id === songId);
+            return song ? (
+              <span key={songId} className="px-3 py-2 border-2 border-black bg-blue-100 text-sm font-bold flex items-center gap-2">
+                {song.title} <span className="text-xs opacity-60">({song.releaseDate || 'No date'})</span>
+                <button onClick={() => actions.detachSongFromRelease(release.id, songId)} className="text-red-600 ml-1">×</button>
+              </span>
+            ) : null;
+          })}
+          {(currentRelease.attachedSongIds || []).length === 0 && <span className="opacity-50 text-sm">No songs attached yet.</span>}
+        </div>
+      </div>
+
+      {/* Phase 3: Custom Tasks Section */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Custom Tasks</h3>
+          <button onClick={() => setShowAddCustomTask(!showAddCustomTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddCustomTask ? 'Cancel' : '+ Add Custom Task'}</button>
+        </div>
+        {showAddCustomTask && (
+          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={newCustomTask.title} onChange={e => setNewCustomTask(prev => ({ ...prev, title: e.target.value }))} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={newCustomTask.date} onChange={e => setNewCustomTask(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+              <input value={newCustomTask.description} onChange={e => setNewCustomTask(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
+              <input type="number" value={newCustomTask.estimatedCost} onChange={e => setNewCustomTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
+              <select value={newCustomTask.status} onChange={e => setNewCustomTask(prev => ({ ...prev, status: e.target.value }))} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
+            </div>
+          </div>
+        )}
+        <div className="space-y-2">
+          {(currentRelease.customTasks || []).length === 0 ? (
+            <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
+          ) : (currentRelease.customTasks || []).map(task => (
+            <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
+              <div className="flex-1">
+                <div className="font-bold">{task.title}</div>
+                <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(getEffectiveCost(task))}</div>
+                {task.description && <div className="text-sm mt-1">{task.description}</div>}
+              </div>
+              <button onClick={() => actions.deleteReleaseCustomTask(release.id, task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className={cn("p-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
         <div className="space-y-2">
-          <div className="flex justify-between"><span>Release Base Cost:</span><span className="font-bold">{formatMoney(currentRelease.estimatedCost || 0)}</span></div>
-          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.tasks || []).reduce((sum, t) => sum + (t.estimatedCost || 0), 0))}</span></div>
+          <div className="flex justify-between"><span>Release Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentRelease))}</span></div>
+          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
+          <div className="flex justify-between"><span>Custom Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
           <div className="flex justify-between border-t-4 border-black pt-2 text-lg">
             <span className="font-black">TOTAL:</span>
-            <span className="font-black">{formatMoney((currentRelease.estimatedCost || 0) + (currentRelease.tasks || []).reduce((sum, t) => sum + (t.estimatedCost || 0), 0))}</span>
+            <span className="font-black">{formatMoney(getEffectiveCost(currentRelease) + (currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0) + (currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span>
           </div>
         </div>
       </div>

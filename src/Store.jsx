@@ -975,7 +975,7 @@ export const StoreProvider = ({ children }) => {
        }
      },
      
-     // Release actions
+     // Release actions - Phase 3 enhancement
      addRelease: async (release) => {
        // Auto-spawn release tasks based on release date
        const releaseTasks = calculateReleaseTasks(release.releaseDate);
@@ -997,7 +997,14 @@ export const StoreProvider = ({ children }) => {
         exclusiveNotes: release.exclusiveNotes || '',
         hasPhysicalCopies: release.hasPhysicalCopies || false,
         requiredRecordings: [],
-        tasks: releaseTasks  // Auto-spawned tasks
+        tasks: releaseTasks,  // Auto-spawned tasks
+        // Phase 3: Custom tasks on releases
+        customTasks: [],
+        // Phase 3: Attached content (songs, versions, videos)
+        attachedSongIds: release.attachedSongIds || [],
+        attachedVersions: release.attachedVersions || [], // [{songId, versionId}]
+        attachedVideoIds: release.attachedVideoIds || [],
+        attachedStandaloneVideoIds: release.attachedStandaloneVideoIds || []
       };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_releases'), { ...newRelease, createdAt: serverTimestamp() });
@@ -1130,6 +1137,141 @@ export const StoreProvider = ({ children }) => {
              tasks: (r.tasks || []).map(t => t.id === taskId ? { ...t, ...finalUpdates } : t)
            } : r)
         }));
+      }
+    },
+
+    // Phase 3: Add custom task to a release
+    addReleaseCustomTask: async (releaseId, task) => {
+      const newTask = createUnifiedTask({
+        type: 'Custom',
+        title: task.title || 'New Task',
+        description: task.description || '',
+        date: task.date || '',
+        status: task.status || 'Not Started',
+        estimatedCost: task.estimatedCost || 0,
+        quotedCost: task.quotedCost || 0,
+        paidCost: task.paidCost || 0,
+        notes: task.notes || '',
+        parentType: 'release',
+        parentId: releaseId
+      });
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = [...(release.customTasks || []), newTask];
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+      return newTask;
+    },
+
+    // Phase 3: Update custom task on a release
+    updateReleaseCustomTask: async (releaseId, taskId, updates) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = (release.customTasks || []).map(t => t.id === taskId ? { ...t, ...updates } : t);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Delete custom task from a release
+    deleteReleaseCustomTask: async (releaseId, taskId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = (release.customTasks || []).filter(t => t.id !== taskId);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Attach song to release
+    attachSongToRelease: async (releaseId, songId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release && !release.attachedSongIds?.includes(songId)) {
+        const updatedAttachedSongIds = [...(release.attachedSongIds || []), songId];
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { attachedSongIds: updatedAttachedSongIds });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, attachedSongIds: updatedAttachedSongIds } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Detach song from release
+    detachSongFromRelease: async (releaseId, songId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedAttachedSongIds = (release.attachedSongIds || []).filter(id => id !== songId);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { attachedSongIds: updatedAttachedSongIds });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, attachedSongIds: updatedAttachedSongIds } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Auto-calculate release date from earliest attached content
+    autoCalculateReleaseDateFromContent: async (releaseId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      let earliestDate = null;
+      
+      // Check attached songs
+      (release.attachedSongIds || []).forEach(songId => {
+        const song = data.songs.find(s => s.id === songId);
+        if (song?.releaseDate && (!earliestDate || song.releaseDate < earliestDate)) {
+          earliestDate = song.releaseDate;
+        }
+      });
+      
+      // Check attached versions
+      (release.attachedVersions || []).forEach(({ songId, versionId }) => {
+        const song = data.songs.find(s => s.id === songId);
+        const version = song?.versions?.find(v => v.id === versionId);
+        if (version?.releaseDate && (!earliestDate || version.releaseDate < earliestDate)) {
+          earliestDate = version.releaseDate;
+        }
+      });
+      
+      if (earliestDate && (!release.releaseDate || earliestDate !== release.releaseDate)) {
+        // Update release date and recalculate tasks
+        const newTasks = calculateReleaseTasks(earliestDate);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { 
+            releaseDate: earliestDate,
+            tasks: newTasks
+          });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, releaseDate: earliestDate, tasks: newTasks } : r)
+          }));
+        }
       }
     },
 
