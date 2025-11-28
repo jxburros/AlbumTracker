@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-
-const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
@@ -158,9 +156,10 @@ export const SongDetailView = ({ song, onBack }) => {
   const currentSong = data.songs.find(s => s.id === song.id) || song;
   const songTasks = currentSong.deadlines || [];
   const songCustomTasks = currentSong.customTasks || [];
-  const tasksCost = songTasks.reduce((sum, d) => sum + (d.estimatedCost || 0), 0);
-  const customTasksCost = songCustomTasks.reduce((sum, t) => sum + (t.estimatedCost || 0), 0);
-  const totalCost = (currentSong.estimatedCost || 0) + tasksCost + customTasksCost;
+  // Use getEffectiveCost for proper cost precedence (paid > quoted > estimated)
+  const tasksCost = songTasks.reduce((sum, d) => sum + getEffectiveCost(d), 0);
+  const customTasksCost = songCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
+  const totalCost = getEffectiveCost(currentSong) + tasksCost + customTasksCost;
 
   return (
     <div className="p-6 pb-24">
@@ -221,17 +220,30 @@ export const SongDetailView = ({ song, onBack }) => {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
+            <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
+            <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
             <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform names, time windows, etc." className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Cost layers with precedence: paidCost > quotedCost > estimatedCost */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Extra Versions Needed</label>
-            <input value={form.extraVersionsNeeded || ''} onChange={e => handleFieldChange('extraVersionsNeeded', e.target.value)} onBlur={handleSave} placeholder="e.g., radio edit, acoustic, live loop" className={cn("w-full", THEME.punk.input)} />
-        </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
         <div className="md:col-span-2">
           <label className="block text-xs font-bold uppercase mb-1">Core Instruments</label>
           <input value={(form.instruments || []).join(', ')} onChange={e => handleFieldChange('instruments', e.target.value.split(',').map(i => i.trim()).filter(Boolean))} onBlur={handleSave} placeholder="guitar, synth, drums" className={cn("w-full", THEME.punk.input)} />
@@ -449,7 +461,7 @@ export const SongDetailView = ({ song, onBack }) => {
       <div className={cn("p-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
         <div className="space-y-2">
-          <div className="flex justify-between"><span>Song Base Cost:</span><span className="font-bold">{formatMoney(currentSong.estimatedCost || 0)}</span></div>
+          <div className="flex justify-between"><span>Song Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentSong))}</span></div>
           <div className="flex justify-between"><span>Song Tasks Total:</span><span className="font-bold">{formatMoney(tasksCost)}</span></div>
           <div className="flex justify-between"><span>Custom Tasks Total:</span><span className="font-bold">{formatMoney(customTasksCost)}</span></div>
           <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost)}</span></div>
@@ -470,6 +482,27 @@ export const GlobalTasksView = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [newTask, setNewTask] = useState({ taskName: '', category: 'Other', date: '', description: '', assignedTo: '', status: 'Not Started', estimatedCost: 0, notes: '' });
+  const [newAssignments, setNewAssignments] = useState({});
+
+  const teamMembers = data.teamMembers || [];
+
+  const taskBudget = (task = {}) => {
+    if (task.paidCost !== undefined) return task.paidCost || 0;
+    if (task.actualCost !== undefined) return task.actualCost || 0;
+    if (task.quotedCost !== undefined) return task.quotedCost || 0;
+    return task.estimatedCost || 0;
+  };
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const budget = taskBudget(taskObj);
+    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+    const nextTotal = current + (parseFloat(entry.cost) || 0);
+    if (budget > 0 && nextTotal > budget) return;
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
 
   const tasks = useMemo(() => {
     let filtered = [...(data.globalTasks || [])];
@@ -672,6 +705,27 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [form, setForm] = useState({ ...release });
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
+  const [newAssignments, setNewAssignments] = useState({});
+
+  const teamMembers = data.teamMembers || [];
+
+  const taskBudget = (task = {}) => {
+    if (task.paidCost !== undefined) return task.paidCost || 0;
+    if (task.actualCost !== undefined) return task.actualCost || 0;
+    if (task.quotedCost !== undefined) return task.quotedCost || 0;
+    return task.estimatedCost || 0;
+  };
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const budget = taskBudget(taskObj);
+    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+    const nextTotal = current + (parseFloat(entry.cost) || 0);
+    if (budget > 0 && nextTotal > budget) return;
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
 
   const currentRelease = data.releases.find(r => r.id === release.id) || release;
 
@@ -732,8 +786,25 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
+            <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
+            <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          {/* Cost layers with precedence: paidCost > quotedCost > estimatedCost */}
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="flex items-center gap-2 font-bold">
             <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />

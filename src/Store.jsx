@@ -10,11 +10,46 @@ export const useStore = () => useContext(StoreContext);
 // Status enum for consistency across all entities
 export const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Done', 'Delayed'];
 
-// Song categories
+// Song categories - DEPRECATED: Phase 0 removes category-based filtering
+// Keeping for backwards compatibility but not used in new features
 export const SONG_CATEGORIES = ['Album', 'Bonus', 'Christmas EP', 'EP', 'Other'];
 
-// Video types
+// Video types - DEPRECATED: Use video type checkboxes on video entities instead
 export const VIDEO_TYPES = ['None', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'Full'];
+
+// Unified Task schema factory - Phase 0 standardization
+export const createUnifiedTask = (overrides = {}) => ({
+  id: crypto.randomUUID(),
+  type: overrides.type || 'Custom',
+  category: overrides.category || 'Other',
+  title: overrides.title || '',
+  description: overrides.description || '',
+  date: overrides.date || '',
+  dueDate: overrides.dueDate || '',
+  status: overrides.status || 'Not Started',
+  // Cost layers with precedence: paidCost > quotedCost > estimatedCost
+  estimatedCost: overrides.estimatedCost || 0,
+  quotedCost: overrides.quotedCost || 0,
+  paidCost: overrides.paidCost || 0,
+  notes: overrides.notes || '',
+  assignedMembers: overrides.assignedMembers || [],
+  isOverridden: overrides.isOverridden || false,
+  isArchived: overrides.isArchived || false,
+  // Link to parent entity (song, version, video, release, event)
+  parentType: overrides.parentType || null,
+  parentId: overrides.parentId || null,
+  ...overrides
+});
+
+// Compute effective cost with precedence: paid > quoted > estimated
+export const getEffectiveCost = (entity = {}) => {
+  if (entity.paidCost !== undefined && entity.paidCost > 0) return entity.paidCost;
+  if (entity.quotedCost !== undefined && entity.quotedCost > 0) return entity.quotedCost;
+  return entity.estimatedCost || 0;
+};
+
+// Exclusivity options for availability windows
+export const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
 // Task types for songs - comprehensive list
 export const SONG_TASK_TYPES = [
@@ -79,18 +114,14 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
     
-      tasks.push({
-        id: crypto.randomUUID(),
-        type: taskType.type,
-        category: taskType.category,
-        date: taskDate.toISOString().split('T')[0],
-        status: 'Not Started',
-        estimatedCost: 0,
-        notes: '',
-        assignedMembers: [],
-        isOverridden: false
-      });
-    });
+    // Use unified task schema
+    tasks.push(createUnifiedTask({
+      type: taskType.type,
+      category: taskType.category,
+      date: taskDate.toISOString().split('T')[0],
+      parentType: 'song'
+    }));
+  });
   
   // Add video tasks based on video type
   if (videoType && videoType !== 'None') {
@@ -99,17 +130,12 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
         const taskDate = new Date(release);
         taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
         
-        tasks.push({
-          id: crypto.randomUUID(),
+        tasks.push(createUnifiedTask({
           type: taskType.type,
           category: taskType.category,
           date: taskDate.toISOString().split('T')[0],
-          status: 'Not Started',
-          estimatedCost: 0,
-          notes: '',
-          assignedMembers: [],
-          isOverridden: false
-        });
+          parentType: 'song'
+        }));
       }
     });
   }
@@ -136,17 +162,13 @@ export const calculateReleaseTasks = (releaseDate) => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
     
-    tasks.push({
-      id: crypto.randomUUID(),
+    // Use unified task schema
+    tasks.push(createUnifiedTask({
       type: taskType.type,
       category: taskType.category,
       date: taskDate.toISOString().split('T')[0],
-      status: 'Not Started',
-      estimatedCost: 0,
-      notes: '',
-      assignedMembers: [],
-      isOverridden: false
-    });
+      parentType: 'release'
+    }));
   });
   
   // Sort by date
@@ -291,14 +313,10 @@ export const StoreProvider = ({ children }) => {
     }
   }, [mode, data.stages]);
 
-    const costValue = (item = {}) => {
-      if (item.paidCost !== undefined) return item.paidCost || 0;
-      if (item.actualCost !== undefined) return item.actualCost || 0;
-      if (item.quotedCost !== undefined) return item.quotedCost || 0;
-      return item.estimatedCost || 0;
-    };
-
     const stats = useMemo(() => {
+    // Use getEffectiveCost directly for consistent cost calculation (paid > quoted > estimated)
+    const costValue = getEffectiveCost;
+    
     const visible = data.tasks.filter(t => !t.archived);
     let min = 0, max = 0, act = 0;
     const processNode = (nodeId) => {
@@ -466,16 +484,22 @@ export const StoreProvider = ({ children }) => {
      const newSong = {
         id: crypto.randomUUID(),
         title: song.title || 'New Song',
+        // DEPRECATED: category field kept for backwards compatibility
         category: song.category || 'Album',
         releaseDate: song.releaseDate || '',
         coreReleaseId: song.coreReleaseId || '',
         isSingle: song.isSingle || false,
         videoType: song.videoType || 'None',
         stemsNeeded: song.stemsNeeded || false,
+        // Cost layers with precedence: paidCost > quotedCost > estimatedCost
         estimatedCost: song.estimatedCost || 0,
+        quotedCost: song.quotedCost || 0,
+        paidCost: song.paidCost || 0,
+        // Availability windows for exclusivity
         exclusiveType: song.exclusiveType || 'None',
+        exclusiveStartDate: song.exclusiveStartDate || '',
+        exclusiveEndDate: song.exclusiveEndDate || '',
         exclusiveNotes: song.exclusiveNotes || '',
-        extraVersionsNeeded: song.extraVersionsNeeded || '',
         instruments: song.instruments || [],
         musicians: song.musicians || [],
         deadlines: deadlines,
@@ -487,10 +511,15 @@ export const StoreProvider = ({ children }) => {
             releaseIds: song.coreReleaseId ? [song.coreReleaseId] : [],
             releaseOverrides: {},
             exclusiveType: song.exclusiveType || 'None',
+            exclusiveStartDate: song.exclusiveStartDate || '',
+            exclusiveEndDate: song.exclusiveEndDate || '',
             exclusiveNotes: song.exclusiveNotes || '',
             instruments: song.instruments || [],
             musicians: song.musicians || [],
+            // Cost layers
             estimatedCost: 0,
+            quotedCost: 0,
+            paidCost: 0,
             basedOnCore: true
           }
         ],
@@ -525,17 +554,21 @@ export const StoreProvider = ({ children }) => {
      
      // Add custom task to a song
      addSongCustomTask: async (songId, task) => {
-       const newTask = {
-         id: crypto.randomUUID(),
-         songId,
+       // Use unified task schema with cost layers
+       const newTask = createUnifiedTask({
+         type: 'Custom',
          title: task.title || 'New Task',
-        description: task.description || '',
-        date: task.date || '',
-        status: task.status || 'Not Started',
-        estimatedCost: task.estimatedCost || 0,
-        notes: task.notes || '',
-        assignedMembers: []
-      };
+         description: task.description || '',
+         date: task.date || '',
+         status: task.status || 'Not Started',
+         // Cost layers with precedence
+         estimatedCost: task.estimatedCost || 0,
+         quotedCost: task.quotedCost || 0,
+         paidCost: task.paidCost || 0,
+         notes: task.notes || '',
+         parentType: 'song',
+         parentId: songId
+       });
        if (mode === 'cloud') {
          // For cloud mode, we need to update the song document
          const song = data.songs.find(s => s.id === songId);
@@ -747,17 +780,23 @@ export const StoreProvider = ({ children }) => {
      
      // Global task actions
      addGlobalTask: async (task) => {
-       const newTask = {
-         id: crypto.randomUUID(),
+       // Use unified task schema with cost layers
+       const newTask = createUnifiedTask({
+         type: 'Global',
+         title: task.taskName || 'New Task',
          taskName: task.taskName || 'New Task',
          category: task.category || 'Other',
          date: task.date || '',
          description: task.description || '',
          assignedTo: task.assignedTo || '',
          status: task.status || 'Not Started',
+         // Cost layers with precedence
          estimatedCost: task.estimatedCost || 0,
-         notes: task.notes || ''
-       };
+         quotedCost: task.quotedCost || 0,
+         paidCost: task.paidCost || 0,
+         notes: task.notes || '',
+         parentType: 'global'
+       });
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks'), { ...newTask, createdAt: serverTimestamp() });
        } else {
@@ -795,9 +834,15 @@ export const StoreProvider = ({ children }) => {
          name: release.name || 'New Release',
         type: release.type || 'Album',
         releaseDate: release.releaseDate || '',
+        // Cost layers with precedence: paidCost > quotedCost > estimatedCost
         estimatedCost: release.estimatedCost || 0,
+        quotedCost: release.quotedCost || 0,
+        paidCost: release.paidCost || 0,
         notes: release.notes || '',
+        // Availability windows for exclusivity
         exclusiveType: release.exclusiveType || 'None',
+        exclusiveStartDate: release.exclusiveStartDate || '',
+        exclusiveEndDate: release.exclusiveEndDate || '',
         exclusiveNotes: release.exclusiveNotes || '',
         hasPhysicalCopies: release.hasPhysicalCopies || false,
         requiredRecordings: [],
@@ -938,11 +983,30 @@ export const StoreProvider = ({ children }) => {
     },
 
     addSongVideo: async (songId, video) => {
+      // Videos now include availability windows and cost layers
+      const newVideo = {
+        id: crypto.randomUUID(),
+        title: video.title || 'New Video',
+        versionId: video.versionId || 'core',
+        subtasks: video.subtasks || [],
+        types: video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' },
+        // Availability windows
+        exclusiveType: video.exclusiveType || 'None',
+        exclusiveStartDate: video.exclusiveStartDate || '',
+        exclusiveEndDate: video.exclusiveEndDate || '',
+        exclusiveNotes: video.exclusiveNotes || '',
+        // Cost layers
+        estimatedCost: video.estimatedCost || 0,
+        quotedCost: video.quotedCost || 0,
+        paidCost: video.paidCost || 0,
+        // Tasks on videos
+        customTasks: video.customTasks || []
+      };
       setData(prev => ({
         ...prev,
         songs: (prev.songs || []).map(song => song.id === songId ? {
           ...song,
-          videos: [...(song.videos || []), { id: crypto.randomUUID(), title: video.title || 'New Video', versionId: video.versionId || 'core', subtasks: video.subtasks || [], types: video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' } }]
+          videos: [...(song.videos || []), newVideo]
         } : song)
       }));
     },
