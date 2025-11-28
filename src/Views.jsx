@@ -202,12 +202,12 @@ export const CalendarView = ({ onEdit }) => {
             {/* Header with navigation */}
             <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                 <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
-                <div className="flex gap-2 bg-pink-100 border-4 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                    <button onClick={() => setDate(new Date(year - 1, month, 1))} className={cn("p-2 w-10 text-xs font-bold", THEME.punk.btn, "bg-pink-300 hover:bg-pink-200")} title="Previous Year">‹‹</button>
-                    <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2 w-10", THEME.punk.btn, "bg-pink-500 text-white hover:bg-pink-400")}><Icon name="ChevronLeft" /></button>
-                    <button onClick={goToToday} className={cn("px-3 py-2 text-xs font-bold", THEME.punk.btn, "bg-white hover:bg-gray-100")}>Today</button>
-                    <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2 w-10", THEME.punk.btn, "bg-pink-500 text-white hover:bg-pink-400")}><Icon name="ChevronRight" /></button>
-                    <button onClick={() => setDate(new Date(year + 1, month, 1))} className={cn("p-2 w-10 text-xs font-bold", THEME.punk.btn, "bg-pink-300 hover:bg-pink-200")} title="Next Year">››</button>
+                <div className={cn("flex gap-2 border-4 p-1", "bg-pink-100 dark:bg-slate-700 border-black dark:border-slate-600 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(100,116,139,1)]")}>
+                    <button onClick={() => setDate(new Date(year - 1, month, 1))} className={cn("p-2 w-10 text-xs font-bold border-4 border-black dark:border-slate-600", "bg-pink-300 dark:bg-slate-600 dark:text-white hover:bg-pink-200 dark:hover:bg-slate-500")} title="Previous Year">‹‹</button>
+                    <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2 w-10 border-4 border-black dark:border-slate-600", "bg-pink-500 text-white hover:bg-pink-400 dark:bg-pink-600 dark:hover:bg-pink-500")}><Icon name="ChevronLeft" /></button>
+                    <button onClick={goToToday} className={cn("px-3 py-2 text-xs font-bold border-4 border-black dark:border-slate-600", "bg-white dark:bg-slate-700 dark:text-white hover:bg-gray-100 dark:hover:bg-slate-600")}>Today</button>
+                    <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2 w-10 border-4 border-black dark:border-slate-600", "bg-pink-500 text-white hover:bg-pink-400 dark:bg-pink-600 dark:hover:bg-pink-500")}><Icon name="ChevronRight" /></button>
+                    <button onClick={() => setDate(new Date(year + 1, month, 1))} className={cn("p-2 w-10 text-xs font-bold border-4 border-black dark:border-slate-600", "bg-pink-300 dark:bg-slate-600 dark:text-white hover:bg-pink-200 dark:hover:bg-slate-500")} title="Next Year">››</button>
                 </div>
             </div>
 

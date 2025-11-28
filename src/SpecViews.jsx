@@ -1495,7 +1495,7 @@ export const CombinedTimelineView = () => {
           <div className={cn("w-full max-w-md p-6 bg-white", THEME.punk.card)} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="font-black uppercase">{selectedItem.name}</h3>
-              <button onClick={() => setSelectedItem(null)} className="p-1 hover:bg-gray-200">×</button>
+              <button onClick={() => setSelectedItem(null)} className="p-1 hover:bg-gray-200" aria-label="Close"><Icon name="X" size={16} /></button>
             </div>
             <div className="space-y-2 text-sm">
               <div><span className="font-bold">Type:</span> {selectedItem.sourceType}</div>
