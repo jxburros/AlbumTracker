@@ -258,6 +258,39 @@ export const SongDetailView = ({ song, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Partial Payment</label>
             <input type="number" value={form.partially_paid || 0} onChange={e => handleFieldChange('partially_paid', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Per APP ARCHITECTURE.txt Section 1.4: Era with propagation option */}
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="block text-xs font-bold uppercase mb-1">Era</label>
+                <select 
+                  value={(form.eraIds || [])[0] || ''} 
+                  onChange={e => {
+                    const newEraIds = e.target.value ? [e.target.value] : [];
+                    handleFieldChange('eraIds', newEraIds);
+                    setTimeout(handleSave, 0);
+                  }}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  <option value="">No Era</option>
+                  {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                </select>
+              </div>
+              <div className="flex items-end pb-1">
+                <button 
+                  onClick={() => {
+                    if (confirm('Propagate this Era to all tasks in this song (including versions and videos)?')) {
+                      actions.propagateEraToChildren('song', song.id, form.eraIds || []);
+                    }
+                  }}
+                  className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}
+                  title="Apply era to all child tasks"
+                >
+                  Propagate Era
+                </button>
+              </div>
+            </div>
+          </div>
         <div className="md:col-span-2">
           <label className="block text-xs font-bold uppercase mb-1">Core Instruments</label>
           <input value={(form.instruments || []).join(', ')} onChange={e => handleFieldChange('instruments', e.target.value.split(',').map(i => i.trim()).filter(Boolean))} onBlur={handleSave} placeholder="guitar, synth, drums" className={cn("w-full", THEME.punk.input)} />

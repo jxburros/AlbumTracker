@@ -862,6 +862,19 @@ export const TeamView = () => {
                             </div>
                         )}
                         <div className="absolute top-2 right-2 flex gap-1">
+                            {/* Per APP ARCHITECTURE.txt Section 5.5: Shortcut to create Standalone Task with Team Member pre-filled */}
+                            <button 
+                                onClick={async () => {
+                                    const task = await actions.createTaskForTeamMember(v.id);
+                                    if (task) {
+                                        alert(`Created task "${task.title}" for ${v.name}`);
+                                    }
+                                }} 
+                                className="text-green-600 hover:bg-green-100 p-1" 
+                                title="Create task for this member"
+                            >
+                                <Icon name="Plus" size={16}/>
+                            </button>
                             <button onClick={() => setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) })} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
                             <button onClick={() => actions.deleteTeamMember(v.id)} className="text-red-500 hover:bg-red-100 p-1"><Icon name="Trash2" size={16}/></button>
                         </div>

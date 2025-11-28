@@ -1598,6 +1598,129 @@ export const StoreProvider = ({ children }) => {
        }
      },
      
+     // Per APP ARCHITECTURE.txt Section 5.5: Shortcut to create Standalone Task with Team Member pre-filled
+     createTaskForTeamMember: async (memberId, taskData = {}) => {
+       const member = data.teamMembers?.find(m => m.id === memberId);
+       const memberName = member?.name || 'Team Member';
+       const taskTitle = taskData.title || `Task for ${memberName}`;
+       
+       const newTask = createUnifiedTask({
+         type: 'Global',
+         title: taskTitle,
+         category: taskData.category || 'Other',
+         date: taskData.date || '',
+         description: taskData.description || '',
+         assignedTo: memberName,
+         status: taskData.status || 'Not Started',
+         estimatedCost: taskData.estimatedCost || 0,
+         quotedCost: taskData.quotedCost || 0,
+         paidCost: taskData.paidCost || 0,
+         notes: taskData.notes || '',
+         parentType: 'global',
+         // Pre-fill assigned members with this team member
+         assignedMembers: [{ memberId: memberId, cost: 0, instrument: '' }]
+       });
+       
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks'), { ...newTask, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({...p, globalTasks: [...(p.globalTasks || []), newTask]}));
+       }
+       return newTask;
+     },
+     
+     // Per APP ARCHITECTURE.txt Section 1.4: Propagate Era changes to child Tasks and linked Items
+     propagateEraToChildren: async (entityType, entityId, eraIds) => {
+       if (entityType === 'song') {
+         const song = data.songs?.find(s => s.id === entityId);
+         if (!song) return;
+         
+         // Update song deadlines/tasks with new era
+         const updatedDeadlines = (song.deadlines || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (song.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         // Update version tasks
+         const updatedVersions = (song.versions || []).map(v => ({
+           ...v,
+           eraIds,
+           tasks: (v.tasks || []).map(t => ({ ...t, eraIds })),
+           customTasks: (v.customTasks || []).map(t => ({ ...t, eraIds }))
+         }));
+         
+         // Update videos
+         const updatedVideos = (song.videos || []).map(v => ({
+           ...v,
+           eraIds,
+           tasks: (v.tasks || []).map(t => ({ ...t, eraIds })),
+           customTasks: (v.customTasks || []).map(t => ({ ...t, eraIds }))
+         }));
+         
+         const updatedSong = {
+           ...song,
+           eraIds,
+           deadlines: updatedDeadlines,
+           customTasks: updatedCustomTasks,
+           versions: updatedVersions,
+           videos: updatedVideos
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', entityId), updatedSong);
+         } else {
+           setData(p => ({
+             ...p,
+             songs: (p.songs || []).map(s => s.id === entityId ? updatedSong : s)
+           }));
+         }
+       } else if (entityType === 'release') {
+         const release = data.releases?.find(r => r.id === entityId);
+         if (!release) return;
+         
+         // Update release tasks
+         const updatedTasks = (release.tasks || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (release.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         const updatedRelease = {
+           ...release,
+           eraIds,
+           tasks: updatedTasks,
+           customTasks: updatedCustomTasks
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', entityId), updatedRelease);
+         } else {
+           setData(p => ({
+             ...p,
+             releases: (p.releases || []).map(r => r.id === entityId ? updatedRelease : r)
+           }));
+         }
+       } else if (entityType === 'event') {
+         const event = data.events?.find(e => e.id === entityId);
+         if (!event) return;
+         
+         // Update event tasks
+         const updatedTasks = (event.tasks || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (event.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         const updatedEvent = {
+           ...event,
+           eraIds,
+           tasks: updatedTasks,
+           customTasks: updatedCustomTasks
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', entityId), updatedEvent);
+         } else {
+           setData(p => ({
+             ...p,
+             events: (p.events || []).map(e => e.id === entityId ? updatedEvent : e)
+           }));
+         }
+       }
+     },
+     
      // Release actions - Phase 3 enhancement
      addRelease: async (release) => {
        // Auto-spawn release tasks based on release date
