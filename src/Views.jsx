@@ -1084,6 +1084,19 @@ export const SettingsView = () => {
                     />
                 </div>
 
+                {/* Default Era */}
+                <div>
+                  <label className="font-bold block mb-1">Default Era</label>
+                  <select
+                    value={settings.defaultEraId || ''}
+                    onChange={e => actions.saveSettings({ defaultEraId: e.target.value })}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No default</option>
+                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                  </select>
+                </div>
+
                 {/* Theme Mode */}
                 <div className="pt-4 border-t-4 border-black">
                     <h3 className="font-black text-xs uppercase mb-2">Theme Mode</h3>
@@ -1143,6 +1156,21 @@ export const SettingsView = () => {
                     </div>
                 </div>
 
+                {/* Eras */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Eras</h3>
+                  <div className="space-y-2">
+                    {(data.eras || []).map(era => (
+                      <div key={era.id} className="flex items-center gap-2">
+                        <input value={era.name} onChange={e => actions.updateEra(era.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <input type="color" value={era.color || '#000000'} onChange={e => actions.updateEra(era.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
+                        <button onClick={() => actions.deleteEra(era.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addEra({ name: `Era ${(data.eras?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Era</button>
+                  </div>
+                </div>
+
                 {/* Stages */}
                 <div className="pt-4 border-t-4 border-black">
                   <h3 className="font-black text-xs uppercase mb-2">Workflow Stages</h3>
@@ -1154,6 +1182,21 @@ export const SettingsView = () => {
                       </div>
                     ))}
                     <button onClick={() => actions.addStage({ name: `Stage ${ (data.stages?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Stage</button>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Tags</h3>
+                  <div className="space-y-2">
+                    {(data.tags || []).map(tag => (
+                      <div key={tag.id} className="flex items-center gap-2">
+                        <input value={tag.name} onChange={e => actions.updateTag(tag.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <input type="color" value={tag.color || '#000000'} onChange={e => actions.updateTag(tag.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
+                        <button onClick={() => actions.deleteTag(tag.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addTag({ name: `Tag ${(data.tags?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Tag</button>
                   </div>
                 </div>
 
