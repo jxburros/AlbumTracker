@@ -191,6 +191,7 @@ export const UnifiedTaskEditor = ({
 }) => {
     const [form, setForm] = useState({ ...task });
     const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: 0 });
+    const [budgetError, setBudgetError] = useState(false);
 
     useEffect(() => {
         setForm({ ...task });
@@ -209,7 +210,12 @@ export const UnifiedTaskEditor = ({
         const budget = getEffectiveCost(form);
         const current = (form.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
         const nextTotal = current + (parseFloat(newAssignment.cost) || 0);
-        if (budget > 0 && nextTotal > budget) return;
+        if (budget > 0 && nextTotal > budget) {
+            setBudgetError(true);
+            setTimeout(() => setBudgetError(false), 3000);
+            return;
+        }
+        setBudgetError(false);
         const updatedMembers = [...(form.assignedMembers || []), { 
             memberId: newAssignment.memberId, 
             cost: parseFloat(newAssignment.cost) || 0 
@@ -353,6 +359,11 @@ export const UnifiedTaskEditor = ({
                             />
                             <button onClick={addAssignment} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
                         </div>
+                        {budgetError && (
+                            <div className="text-xs text-red-600 font-bold mt-1 p-2 bg-red-50 border border-red-300">
+                                ⚠️ Cannot exceed task budget. Reduce the cost amount.
+                            </div>
+                        )}
                     </div>
                 </div>
 
