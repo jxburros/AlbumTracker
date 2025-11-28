@@ -10,11 +10,55 @@ export const useStore = () => useContext(StoreContext);
 // Status enum for consistency across all entities
 export const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Done', 'Delayed'];
 
-// Song categories
+// Song categories - DEPRECATED: Phase 0 removes category-based filtering
+// Keeping for backwards compatibility but not used in new features
 export const SONG_CATEGORIES = ['Album', 'Bonus', 'Christmas EP', 'EP', 'Other'];
 
-// Video types
+// Video types - DEPRECATED: Use video type checkboxes on video entities instead
 export const VIDEO_TYPES = ['None', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'Full'];
+
+// Unified Task schema factory - Phase 0 standardization
+export const createUnifiedTask = (overrides = {}) => ({
+  id: crypto.randomUUID(),
+  type: overrides.type || 'Custom',
+  category: overrides.category || 'Other',
+  title: overrides.title || '',
+  description: overrides.description || '',
+  date: overrides.date || '',
+  dueDate: overrides.dueDate || '',
+  status: overrides.status || 'Not Started',
+  // Cost layers with precedence: paidCost > quotedCost > estimatedCost
+  estimatedCost: overrides.estimatedCost || 0,
+  quotedCost: overrides.quotedCost || 0,
+  paidCost: overrides.paidCost || 0,
+  notes: overrides.notes || '',
+  assignedMembers: overrides.assignedMembers || [],
+  isOverridden: overrides.isOverridden || false,
+  isArchived: overrides.isArchived || false,
+  // Link to parent entity (song, version, video, release, event)
+  parentType: overrides.parentType || null,
+  parentId: overrides.parentId || null,
+  ...overrides
+});
+
+// Compute effective cost with precedence: paid > quoted > estimated
+export const getEffectiveCost = (entity = {}) => {
+  if (entity.paidCost !== undefined && entity.paidCost > 0) return entity.paidCost;
+  if (entity.quotedCost !== undefined && entity.quotedCost > 0) return entity.quotedCost;
+  return entity.estimatedCost || 0;
+};
+
+// Exclusivity options for availability windows
+export const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
+
+// Video types available for selection
+export const VIDEO_TYPE_OPTIONS = [
+  { key: 'lyric', label: 'Lyric Video' },
+  { key: 'enhancedLyric', label: 'Enhanced Lyric' },
+  { key: 'music', label: 'Music Video' },
+  { key: 'visualizer', label: 'Visualizer' },
+  { key: 'custom', label: 'Custom' }
+];
 
 // Task types for songs - comprehensive list
 export const SONG_TASK_TYPES = [
@@ -33,14 +77,43 @@ export const SONG_TASK_TYPES = [
   { type: 'Release', category: 'Distribution', daysBeforeRelease: 0, appliesTo: 'all' }
 ];
 
-// Video task types
+// Video task types - Phase 2 enhancement with auto-generated tasks
 export const VIDEO_TASK_TYPES = [
-  { type: 'Video Concept', category: 'Video', daysBeforeRelease: 45, videoTypes: ['Full'] },
-  { type: 'Video Shoot', category: 'Video', daysBeforeRelease: 35, videoTypes: ['Full'] },
-  { type: 'Video Edit', category: 'Video', daysBeforeRelease: 25, videoTypes: ['Full'] },
-  { type: 'Video Delivery', category: 'Video', daysBeforeRelease: 14, videoTypes: ['Lyric', 'Enhanced', 'Enhanced + Loop'] },
-  { type: 'Full Video Delivery', category: 'Video', daysBeforeRelease: 30, videoTypes: ['Full'] }
+  { type: 'Video Concept', category: 'Video', daysBeforeRelease: 45, videoTypes: ['music', 'Full'] },
+  { type: 'Hire Crew', category: 'Video', daysBeforeRelease: 40, videoTypes: ['music', 'Full'] },
+  { type: 'Video Shoot', category: 'Video', daysBeforeRelease: 35, videoTypes: ['music', 'Full'] },
+  { type: 'Video Edit', category: 'Video', daysBeforeRelease: 25, videoTypes: ['music', 'Full', 'lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop'] },
+  { type: 'Video Delivery', category: 'Video', daysBeforeRelease: 14, videoTypes: ['lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop'] },
+  { type: 'Full Video Delivery', category: 'Video', daysBeforeRelease: 30, videoTypes: ['music', 'Full'] },
+  { type: 'Video Release', category: 'Distribution', daysBeforeRelease: 0, videoTypes: ['lyric', 'enhancedLyric', 'music', 'visualizer', 'custom', 'Full', 'Lyric', 'Enhanced', 'Enhanced + Loop'] }
 ];
+
+// Generate tasks for a video based on its type
+export const generateVideoTasks = (releaseDate, videoTypeKey) => {
+  if (!releaseDate) return [];
+  
+  const release = new Date(releaseDate);
+  const tasks = [];
+  
+  VIDEO_TASK_TYPES.forEach(taskType => {
+    if (taskType.videoTypes.includes(videoTypeKey)) {
+      const taskDate = new Date(release);
+      taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
+      
+      tasks.push(createUnifiedTask({
+        type: taskType.type,
+        category: taskType.category,
+        date: taskDate.toISOString().split('T')[0],
+        parentType: 'video'
+      }));
+    }
+  });
+  
+  // Sort by date
+  tasks.sort((a, b) => a.date.localeCompare(b.date));
+  
+  return tasks;
+};
 
 // Release task types - auto-spawn when release is created
 export const RELEASE_TASK_TYPES = [
@@ -79,18 +152,14 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
     
-      tasks.push({
-        id: crypto.randomUUID(),
-        type: taskType.type,
-        category: taskType.category,
-        date: taskDate.toISOString().split('T')[0],
-        status: 'Not Started',
-        estimatedCost: 0,
-        notes: '',
-        assignedMembers: [],
-        isOverridden: false
-      });
-    });
+    // Use unified task schema
+    tasks.push(createUnifiedTask({
+      type: taskType.type,
+      category: taskType.category,
+      date: taskDate.toISOString().split('T')[0],
+      parentType: 'song'
+    }));
+  });
   
   // Add video tasks based on video type
   if (videoType && videoType !== 'None') {
@@ -99,17 +168,12 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
         const taskDate = new Date(release);
         taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
         
-        tasks.push({
-          id: crypto.randomUUID(),
+        tasks.push(createUnifiedTask({
           type: taskType.type,
           category: taskType.category,
           date: taskDate.toISOString().split('T')[0],
-          status: 'Not Started',
-          estimatedCost: 0,
-          notes: '',
-          assignedMembers: [],
-          isOverridden: false
-        });
+          parentType: 'song'
+        }));
       }
     });
   }
@@ -136,17 +200,13 @@ export const calculateReleaseTasks = (releaseDate) => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
     
-    tasks.push({
-      id: crypto.randomUUID(),
+    // Use unified task schema
+    tasks.push(createUnifiedTask({
       type: taskType.type,
       category: taskType.category,
       date: taskDate.toISOString().split('T')[0],
-      status: 'Not Started',
-      estimatedCost: 0,
-      notes: '',
-      assignedMembers: [],
-      isOverridden: false
-    });
+      parentType: 'release'
+    }));
   });
   
   // Sort by date
@@ -223,7 +283,9 @@ export const StoreProvider = ({ children }) => {
     // New entities from spec
     songs: [],
     globalTasks: [],
-    releases: []
+    releases: [],
+    // Phase 2: Standalone videos
+    standaloneVideos: []
   });
   const [user, setUser] = useState(null);
   const [db, setDb] = useState(null);
@@ -291,14 +353,10 @@ export const StoreProvider = ({ children }) => {
     }
   }, [mode, data.stages]);
 
-    const costValue = (item = {}) => {
-      if (item.paidCost !== undefined) return item.paidCost || 0;
-      if (item.actualCost !== undefined) return item.actualCost || 0;
-      if (item.quotedCost !== undefined) return item.quotedCost || 0;
-      return item.estimatedCost || 0;
-    };
-
     const stats = useMemo(() => {
+    // Use getEffectiveCost directly for consistent cost calculation (paid > quoted > estimated)
+    const costValue = getEffectiveCost;
+    
     const visible = data.tasks.filter(t => !t.archived);
     let min = 0, max = 0, act = 0;
     const processNode = (nodeId) => {
@@ -466,16 +524,22 @@ export const StoreProvider = ({ children }) => {
      const newSong = {
         id: crypto.randomUUID(),
         title: song.title || 'New Song',
+        // DEPRECATED: category field kept for backwards compatibility
         category: song.category || 'Album',
         releaseDate: song.releaseDate || '',
         coreReleaseId: song.coreReleaseId || '',
         isSingle: song.isSingle || false,
         videoType: song.videoType || 'None',
         stemsNeeded: song.stemsNeeded || false,
+        // Cost layers with precedence: paidCost > quotedCost > estimatedCost
         estimatedCost: song.estimatedCost || 0,
+        quotedCost: song.quotedCost || 0,
+        paidCost: song.paidCost || 0,
+        // Availability windows for exclusivity
         exclusiveType: song.exclusiveType || 'None',
+        exclusiveStartDate: song.exclusiveStartDate || '',
+        exclusiveEndDate: song.exclusiveEndDate || '',
         exclusiveNotes: song.exclusiveNotes || '',
-        extraVersionsNeeded: song.extraVersionsNeeded || '',
         instruments: song.instruments || [],
         musicians: song.musicians || [],
         deadlines: deadlines,
@@ -487,10 +551,15 @@ export const StoreProvider = ({ children }) => {
             releaseIds: song.coreReleaseId ? [song.coreReleaseId] : [],
             releaseOverrides: {},
             exclusiveType: song.exclusiveType || 'None',
+            exclusiveStartDate: song.exclusiveStartDate || '',
+            exclusiveEndDate: song.exclusiveEndDate || '',
             exclusiveNotes: song.exclusiveNotes || '',
             instruments: song.instruments || [],
             musicians: song.musicians || [],
+            // Cost layers
             estimatedCost: 0,
+            quotedCost: 0,
+            paidCost: 0,
             basedOnCore: true
           }
         ],
@@ -525,17 +594,21 @@ export const StoreProvider = ({ children }) => {
      
      // Add custom task to a song
      addSongCustomTask: async (songId, task) => {
-       const newTask = {
-         id: crypto.randomUUID(),
-         songId,
+       // Use unified task schema with cost layers
+       const newTask = createUnifiedTask({
+         type: 'Custom',
          title: task.title || 'New Task',
-        description: task.description || '',
-        date: task.date || '',
-        status: task.status || 'Not Started',
-        estimatedCost: task.estimatedCost || 0,
-        notes: task.notes || '',
-        assignedMembers: []
-      };
+         description: task.description || '',
+         date: task.date || '',
+         status: task.status || 'Not Started',
+         // Cost layers with precedence
+         estimatedCost: task.estimatedCost || 0,
+         quotedCost: task.quotedCost || 0,
+         paidCost: task.paidCost || 0,
+         notes: task.notes || '',
+         parentType: 'song',
+         parentId: songId
+       });
        if (mode === 'cloud') {
          // For cloud mode, we need to update the song document
          const song = data.songs.find(s => s.id === songId);
@@ -631,22 +704,66 @@ export const StoreProvider = ({ children }) => {
       }));
     },
 
-    // Version helpers
+    // Version helpers - Phase 1: Enhanced version management
     addSongVersion: async (songId, baseData = null) => {
       const song = data.songs.find(s => s.id === songId);
       if (!song) return null;
-      const template = baseData || song.versions?.find(v => v.id === 'core') || {};
+      const coreVersion = song.versions?.find(v => v.id === 'core') || {};
+      const template = baseData || coreVersion;
+      
+      // Generate version-specific tasks (arrangement, mix, master, release)
+      const generateVersionTasks = (releaseDate) => {
+        if (!releaseDate) return [];
+        const versionTaskTypes = [
+          { type: 'Arrangement', category: 'Production', daysBeforeRelease: 60 },
+          { type: 'Instrumentation', category: 'Production', daysBeforeRelease: 50 },
+          { type: 'Mix', category: 'Post-Production', daysBeforeRelease: 30 },
+          { type: 'Master', category: 'Post-Production', daysBeforeRelease: 14 },
+          { type: 'Release', category: 'Distribution', daysBeforeRelease: 0 }
+        ];
+        const release = new Date(releaseDate);
+        return versionTaskTypes.map(taskType => {
+          const taskDate = new Date(release);
+          taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
+          return createUnifiedTask({
+            type: taskType.type,
+            category: taskType.category,
+            date: taskDate.toISOString().split('T')[0],
+            parentType: 'version'
+          });
+        });
+      };
+      
+      const versionReleaseDate = baseData?.releaseDate || song.releaseDate || '';
+      const versionTasks = generateVersionTasks(versionReleaseDate);
+      
       const newVersion = {
         id: crypto.randomUUID(),
         name: baseData?.name || `${song.title} Alt`,
+        // Multi-release linking
         releaseIds: [...(template.releaseIds || [])],
         releaseOverrides: { ...(template.releaseOverrides || {}) },
+        // Version-specific release date
+        releaseDate: versionReleaseDate,
+        // Availability windows
         exclusiveType: template.exclusiveType || 'None',
+        exclusiveStartDate: template.exclusiveStartDate || '',
+        exclusiveEndDate: template.exclusiveEndDate || '',
         exclusiveNotes: template.exclusiveNotes || '',
+        // Instruments and musicians
         instruments: [...(template.instruments || [])],
         musicians: [...(template.musicians || [])],
+        // Cost layers
         estimatedCost: template.estimatedCost || 0,
-        basedOnCore: true
+        quotedCost: template.quotedCost || 0,
+        paidCost: template.paidCost || 0,
+        // Core inheritance
+        basedOnCore: baseData?.basedOnCore !== undefined ? baseData.basedOnCore : true,
+        // Video type selections (copied from template)
+        videoTypes: { ...(template.videoTypes || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false }) },
+        // Version-specific tasks (auto-generated)
+        tasks: versionTasks,
+        customTasks: []
       };
 
       const saveVersions = (versions) => {
@@ -700,6 +817,73 @@ export const StoreProvider = ({ children }) => {
         }));
       }
     },
+
+    // Delete a song version (except core)
+    deleteSongVersion: async (songId, versionId) => {
+      if (versionId === 'core') return; // Cannot delete core version
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const updatedVersions = (song.versions || []).filter(v => v.id !== versionId);
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+    },
+
+    // Update a task on a song version
+    updateVersionTask: async (songId, versionId, taskId, updates) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const updatedVersions = (song.versions || []).map(v => {
+        if (v.id !== versionId) return v;
+        const updatedTasks = (v.tasks || []).map(t => t.id === taskId ? { ...t, ...updates, isOverridden: true } : t);
+        return { ...v, tasks: updatedTasks };
+      });
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+    },
+
+    // Add custom task to a song version
+    addVersionCustomTask: async (songId, versionId, task) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const newTask = createUnifiedTask({
+        type: 'Custom',
+        title: task.title || 'New Task',
+        description: task.description || '',
+        date: task.date || '',
+        status: task.status || 'Not Started',
+        estimatedCost: task.estimatedCost || 0,
+        quotedCost: task.quotedCost || 0,
+        paidCost: task.paidCost || 0,
+        notes: task.notes || '',
+        parentType: 'version',
+        parentId: versionId
+      });
+      const updatedVersions = (song.versions || []).map(v => {
+        if (v.id !== versionId) return v;
+        return { ...v, customTasks: [...(v.customTasks || []), newTask] };
+      });
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+      return newTask;
+    },
      
      // Update a song deadline
      updateSongDeadline: async (songId, deadlineId, updates) => {
@@ -747,17 +931,23 @@ export const StoreProvider = ({ children }) => {
      
      // Global task actions
      addGlobalTask: async (task) => {
-       const newTask = {
-         id: crypto.randomUUID(),
+       // Use unified task schema with cost layers
+       const newTask = createUnifiedTask({
+         type: 'Global',
+         title: task.taskName || 'New Task',
          taskName: task.taskName || 'New Task',
          category: task.category || 'Other',
          date: task.date || '',
          description: task.description || '',
          assignedTo: task.assignedTo || '',
          status: task.status || 'Not Started',
+         // Cost layers with precedence
          estimatedCost: task.estimatedCost || 0,
-         notes: task.notes || ''
-       };
+         quotedCost: task.quotedCost || 0,
+         paidCost: task.paidCost || 0,
+         notes: task.notes || '',
+         parentType: 'global'
+       });
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks'), { ...newTask, createdAt: serverTimestamp() });
        } else {
@@ -785,7 +975,7 @@ export const StoreProvider = ({ children }) => {
        }
      },
      
-     // Release actions
+     // Release actions - Phase 3 enhancement
      addRelease: async (release) => {
        // Auto-spawn release tasks based on release date
        const releaseTasks = calculateReleaseTasks(release.releaseDate);
@@ -795,13 +985,26 @@ export const StoreProvider = ({ children }) => {
          name: release.name || 'New Release',
         type: release.type || 'Album',
         releaseDate: release.releaseDate || '',
+        // Cost layers with precedence: paidCost > quotedCost > estimatedCost
         estimatedCost: release.estimatedCost || 0,
+        quotedCost: release.quotedCost || 0,
+        paidCost: release.paidCost || 0,
         notes: release.notes || '',
+        // Availability windows for exclusivity
         exclusiveType: release.exclusiveType || 'None',
+        exclusiveStartDate: release.exclusiveStartDate || '',
+        exclusiveEndDate: release.exclusiveEndDate || '',
         exclusiveNotes: release.exclusiveNotes || '',
         hasPhysicalCopies: release.hasPhysicalCopies || false,
         requiredRecordings: [],
-        tasks: releaseTasks  // Auto-spawned tasks
+        tasks: releaseTasks,  // Auto-spawned tasks
+        // Phase 3: Custom tasks on releases
+        customTasks: [],
+        // Phase 3: Attached content (songs, versions, videos)
+        attachedSongIds: release.attachedSongIds || [],
+        attachedVersions: release.attachedVersions || [], // [{songId, versionId}]
+        attachedVideoIds: release.attachedVideoIds || [],
+        attachedStandaloneVideoIds: release.attachedStandaloneVideoIds || []
       };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_releases'), { ...newRelease, createdAt: serverTimestamp() });
@@ -937,14 +1140,188 @@ export const StoreProvider = ({ children }) => {
       }
     },
 
+    // Phase 3: Add custom task to a release
+    addReleaseCustomTask: async (releaseId, task) => {
+      const newTask = createUnifiedTask({
+        type: 'Custom',
+        title: task.title || 'New Task',
+        description: task.description || '',
+        date: task.date || '',
+        status: task.status || 'Not Started',
+        estimatedCost: task.estimatedCost || 0,
+        quotedCost: task.quotedCost || 0,
+        paidCost: task.paidCost || 0,
+        notes: task.notes || '',
+        parentType: 'release',
+        parentId: releaseId
+      });
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = [...(release.customTasks || []), newTask];
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+      return newTask;
+    },
+
+    // Phase 3: Update custom task on a release
+    updateReleaseCustomTask: async (releaseId, taskId, updates) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = (release.customTasks || []).map(t => t.id === taskId ? { ...t, ...updates } : t);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Delete custom task from a release
+    deleteReleaseCustomTask: async (releaseId, taskId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedCustomTasks = (release.customTasks || []).filter(t => t.id !== taskId);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { customTasks: updatedCustomTasks });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Attach song to release
+    attachSongToRelease: async (releaseId, songId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release && !release.attachedSongIds?.includes(songId)) {
+        const updatedAttachedSongIds = [...(release.attachedSongIds || []), songId];
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { attachedSongIds: updatedAttachedSongIds });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, attachedSongIds: updatedAttachedSongIds } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Detach song from release
+    detachSongFromRelease: async (releaseId, songId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const updatedAttachedSongIds = (release.attachedSongIds || []).filter(id => id !== songId);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { attachedSongIds: updatedAttachedSongIds });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, attachedSongIds: updatedAttachedSongIds } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 3: Auto-calculate release date from earliest attached content
+    autoCalculateReleaseDateFromContent: async (releaseId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      let earliestDate = null;
+      
+      // Check attached songs
+      (release.attachedSongIds || []).forEach(songId => {
+        const song = data.songs.find(s => s.id === songId);
+        if (song?.releaseDate && (!earliestDate || song.releaseDate < earliestDate)) {
+          earliestDate = song.releaseDate;
+        }
+      });
+      
+      // Check attached versions
+      (release.attachedVersions || []).forEach(({ songId, versionId }) => {
+        const song = data.songs.find(s => s.id === songId);
+        const version = song?.versions?.find(v => v.id === versionId);
+        if (version?.releaseDate && (!earliestDate || version.releaseDate < earliestDate)) {
+          earliestDate = version.releaseDate;
+        }
+      });
+      
+      if (earliestDate && (!release.releaseDate || earliestDate !== release.releaseDate)) {
+        // Update release date and recalculate tasks
+        const newTasks = calculateReleaseTasks(earliestDate);
+        if (mode === 'cloud') {
+          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { 
+            releaseDate: earliestDate,
+            tasks: newTasks
+          });
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, releaseDate: earliestDate, tasks: newTasks } : r)
+          }));
+        }
+      }
+    },
+
+    // Phase 2: Enhanced video creation with auto-generated tasks
     addSongVideo: async (songId, video) => {
+      // Find the song to get the release date for task generation
+      const song = data.songs.find(s => s.id === songId);
+      const releaseDate = video.releaseDate || song?.releaseDate || '';
+      
+      // Determine the primary video type for task generation
+      const videoTypes = video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' };
+      let primaryVideoType = null;
+      if (videoTypes.music) primaryVideoType = 'music';
+      else if (videoTypes.lyric) primaryVideoType = 'lyric';
+      else if (videoTypes.enhancedLyric) primaryVideoType = 'enhancedLyric';
+      else if (videoTypes.visualizer) primaryVideoType = 'visualizer';
+      else if (videoTypes.custom) primaryVideoType = 'custom';
+      
+      // Auto-generate video tasks based on video type
+      const autoTasks = primaryVideoType ? generateVideoTasks(releaseDate, primaryVideoType) : [];
+      
+      const newVideo = {
+        id: crypto.randomUUID(),
+        title: video.title || 'New Video',
+        versionId: video.versionId || 'core',
+        releaseDate: releaseDate,
+        subtasks: video.subtasks || [],
+        types: videoTypes,
+        // Availability windows
+        exclusiveType: video.exclusiveType || 'None',
+        exclusiveStartDate: video.exclusiveStartDate || '',
+        exclusiveEndDate: video.exclusiveEndDate || '',
+        exclusiveNotes: video.exclusiveNotes || '',
+        // Cost layers
+        estimatedCost: video.estimatedCost || 0,
+        quotedCost: video.quotedCost || 0,
+        paidCost: video.paidCost || 0,
+        // Auto-generated tasks
+        tasks: autoTasks,
+        // Custom tasks on videos
+        customTasks: video.customTasks || []
+      };
       setData(prev => ({
         ...prev,
         songs: (prev.songs || []).map(song => song.id === songId ? {
           ...song,
-          videos: [...(song.videos || []), { id: crypto.randomUUID(), title: video.title || 'New Video', versionId: video.versionId || 'core', subtasks: video.subtasks || [], types: video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' } }]
+          videos: [...(song.videos || []), newVideo]
         } : song)
       }));
+      return newVideo;
     },
 
     updateSongVideo: async (songId, videoId, updates) => {
@@ -961,6 +1338,121 @@ export const StoreProvider = ({ children }) => {
       setData(prev => ({
         ...prev,
         songs: (prev.songs || []).map(song => song.id === songId ? { ...song, videos: (song.videos || []).filter(v => v.id !== videoId) } : song)
+      }));
+    },
+
+    // Update a task on a video
+    updateVideoTask: async (songId, videoId, taskId, updates) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVideos = (song.videos || []).map(v => {
+            if (v.id !== videoId) return v;
+            const updatedTasks = (v.tasks || []).map(t => t.id === taskId ? { ...t, ...updates, isOverridden: true } : t);
+            return { ...v, tasks: updatedTasks };
+          });
+          return { ...song, videos: updatedVideos };
+        })
+      }));
+    },
+
+    // Add custom task to a video
+    addVideoCustomTask: async (songId, videoId, task) => {
+      const newTask = createUnifiedTask({
+        type: 'Custom',
+        title: task.title || 'New Task',
+        description: task.description || '',
+        date: task.date || '',
+        status: task.status || 'Not Started',
+        estimatedCost: task.estimatedCost || 0,
+        quotedCost: task.quotedCost || 0,
+        paidCost: task.paidCost || 0,
+        notes: task.notes || '',
+        parentType: 'video',
+        parentId: videoId
+      });
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVideos = (song.videos || []).map(v => {
+            if (v.id !== videoId) return v;
+            return { ...v, customTasks: [...(v.customTasks || []), newTask] };
+          });
+          return { ...song, videos: updatedVideos };
+        })
+      }));
+      return newTask;
+    },
+
+    // Delete custom task from a video
+    deleteVideoCustomTask: async (songId, videoId, taskId) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVideos = (song.videos || []).map(v => {
+            if (v.id !== videoId) return v;
+            return { ...v, customTasks: (v.customTasks || []).filter(t => t.id !== taskId) };
+          });
+          return { ...song, videos: updatedVideos };
+        })
+      }));
+    },
+
+    // Phase 2: Add standalone video (not tied to a song)
+    addStandaloneVideo: async (video) => {
+      const releaseDate = video.releaseDate || '';
+      const videoTypes = video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' };
+      let primaryVideoType = null;
+      if (videoTypes.music) primaryVideoType = 'music';
+      else if (videoTypes.lyric) primaryVideoType = 'lyric';
+      else if (videoTypes.enhancedLyric) primaryVideoType = 'enhancedLyric';
+      else if (videoTypes.visualizer) primaryVideoType = 'visualizer';
+      else if (videoTypes.custom) primaryVideoType = 'custom';
+      
+      const autoTasks = primaryVideoType ? generateVideoTasks(releaseDate, primaryVideoType) : [];
+      
+      const newVideo = {
+        id: crypto.randomUUID(),
+        title: video.title || 'New Standalone Video',
+        isStandalone: true,
+        releaseDate: releaseDate,
+        types: videoTypes,
+        exclusiveType: video.exclusiveType || 'None',
+        exclusiveStartDate: video.exclusiveStartDate || '',
+        exclusiveEndDate: video.exclusiveEndDate || '',
+        exclusiveNotes: video.exclusiveNotes || '',
+        estimatedCost: video.estimatedCost || 0,
+        quotedCost: video.quotedCost || 0,
+        paidCost: video.paidCost || 0,
+        tasks: autoTasks,
+        customTasks: video.customTasks || [],
+        notes: video.notes || ''
+      };
+      
+      // Store standalone videos in a separate array
+      setData(prev => ({
+        ...prev,
+        standaloneVideos: [...(prev.standaloneVideos || []), newVideo]
+      }));
+      return newVideo;
+    },
+
+    // Update standalone video
+    updateStandaloneVideo: async (videoId, updates) => {
+      setData(prev => ({
+        ...prev,
+        standaloneVideos: (prev.standaloneVideos || []).map(v => v.id === videoId ? { ...v, ...updates } : v)
+      }));
+    },
+
+    // Delete standalone video
+    deleteStandaloneVideo: async (videoId) => {
+      setData(prev => ({
+        ...prev,
+        standaloneVideos: (prev.standaloneVideos || []).filter(v => v.id !== videoId)
       }));
     },
      

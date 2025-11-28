@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-
-const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
@@ -158,9 +156,10 @@ export const SongDetailView = ({ song, onBack }) => {
   const currentSong = data.songs.find(s => s.id === song.id) || song;
   const songTasks = currentSong.deadlines || [];
   const songCustomTasks = currentSong.customTasks || [];
-  const tasksCost = songTasks.reduce((sum, d) => sum + (d.estimatedCost || 0), 0);
-  const customTasksCost = songCustomTasks.reduce((sum, t) => sum + (t.estimatedCost || 0), 0);
-  const totalCost = (currentSong.estimatedCost || 0) + tasksCost + customTasksCost;
+  // Use getEffectiveCost for proper cost precedence (paid > quoted > estimated)
+  const tasksCost = songTasks.reduce((sum, d) => sum + getEffectiveCost(d), 0);
+  const customTasksCost = songCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
+  const totalCost = getEffectiveCost(currentSong) + tasksCost + customTasksCost;
 
   return (
     <div className="p-6 pb-24">
@@ -221,17 +220,30 @@ export const SongDetailView = ({ song, onBack }) => {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
+            <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
+            <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
             <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform names, time windows, etc." className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Cost layers with precedence: paidCost > quotedCost > estimatedCost */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Extra Versions Needed</label>
-            <input value={form.extraVersionsNeeded || ''} onChange={e => handleFieldChange('extraVersionsNeeded', e.target.value)} onBlur={handleSave} placeholder="e.g., radio edit, acoustic, live loop" className={cn("w-full", THEME.punk.input)} />
-        </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
         <div className="md:col-span-2">
           <label className="block text-xs font-bold uppercase mb-1">Core Instruments</label>
           <input value={(form.instruments || []).join(', ')} onChange={e => handleFieldChange('instruments', e.target.value.split(',').map(i => i.trim()).filter(Boolean))} onBlur={handleSave} placeholder="guitar, synth, drums" className={cn("w-full", THEME.punk.input)} />
@@ -268,26 +280,86 @@ export const SongDetailView = ({ song, onBack }) => {
       </div>
     </div>
 
-      {/* Versions */}
+      {/* Versions - Phase 1: Enhanced with video types, tasks, availability windows */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Versions & Releases</h3>
           <div className="flex gap-2">
             <input value={newVersionName} onChange={e => setNewVersionName(e.target.value)} className={cn("px-3 py-2 text-xs", THEME.punk.input)} />
-            <button onClick={() => actions.addSongVersion(song.id, { name: newVersionName })} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>Create Template Version</button>
+            <button onClick={() => actions.addSongVersion(song.id, { name: newVersionName, releaseDate: currentSong.releaseDate })} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>Generate Template Version</button>
           </div>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {(currentSong.versions || []).map(v => (
-            <div key={v.id} className="p-3 border-2 border-black bg-white">
-              <div className="flex flex-wrap gap-3 items-center mb-2">
-                <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} />
-                <select value={v.exclusiveType || 'None'} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveType: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)}>
-                  {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-                <input value={(v.instruments || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} placeholder="Instruments" />
+            <div key={v.id} className={cn("p-4 border-2 border-black", v.id === 'core' ? 'bg-yellow-50' : 'bg-white')}>
+              <div className="flex flex-wrap gap-3 items-center mb-3">
+                <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("px-2 py-1 text-sm font-bold", THEME.punk.input)} />
+                {v.id !== 'core' && (
+                  <button onClick={() => { if (confirm('Delete this version?')) actions.deleteSongVersion(song.id, v.id); }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
+                )}
+                {v.id === 'core' && <span className="px-2 py-1 bg-yellow-200 text-xs font-bold border border-black">CORE</span>}
+                <label className="flex items-center gap-1 text-xs font-bold">
+                  <input type="checkbox" checked={v.basedOnCore || false} onChange={e => actions.updateSongVersion(song.id, v.id, { basedOnCore: e.target.checked })} className="w-4 h-4" />
+                  Inherits from Core
+                </label>
               </div>
-              <div className="flex flex-wrap gap-2 items-center text-xs">
+              
+              {/* Availability Windows */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 text-xs">
+                <div>
+                  <label className="block font-bold uppercase mb-1">Release Date</label>
+                  <input type="date" value={v.releaseDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDate: e.target.value })} className={cn("w-full px-2 py-1", THEME.punk.input)} />
+                </div>
+                <div>
+                  <label className="block font-bold uppercase mb-1">Exclusive Type</label>
+                  <select value={v.exclusiveType || 'None'} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveType: e.target.value })} className={cn("w-full px-2 py-1", THEME.punk.input)}>
+                    {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold uppercase mb-1">Excl. Start</label>
+                  <input type="date" value={v.exclusiveStartDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveStartDate: e.target.value })} className={cn("w-full px-2 py-1", THEME.punk.input)} />
+                </div>
+                <div>
+                  <label className="block font-bold uppercase mb-1">Excl. End</label>
+                  <input type="date" value={v.exclusiveEndDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveEndDate: e.target.value })} className={cn("w-full px-2 py-1", THEME.punk.input)} />
+                </div>
+              </div>
+              
+              {/* Video Type Checkboxes - Phase 1 */}
+              <div className="mb-3 p-2 bg-gray-50 border border-black">
+                <div className="text-xs font-bold uppercase mb-2">Video Types</div>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  {[
+                    { key: 'lyric', label: 'Lyric Video' },
+                    { key: 'enhancedLyric', label: 'Enhanced Lyric' },
+                    { key: 'music', label: 'Music Video' },
+                    { key: 'visualizer', label: 'Visualizer' },
+                    { key: 'custom', label: 'Custom' }
+                  ].map(type => (
+                    <label key={type.key} className="flex items-center gap-1">
+                      <input 
+                        type="checkbox" 
+                        checked={v.videoTypes?.[type.key] || false} 
+                        onChange={e => actions.updateSongVersion(song.id, v.id, { 
+                          videoTypes: { ...(v.videoTypes || {}), [type.key]: e.target.checked } 
+                        })} 
+                        className="w-4 h-4"
+                      />
+                      {type.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Instruments */}
+              <div className="mb-3">
+                <label className="block text-xs font-bold uppercase mb-1">Instruments</label>
+                <input value={(v.instruments || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full px-2 py-1 text-sm", THEME.punk.input)} placeholder="guitar, synth, drums" />
+              </div>
+              
+              {/* Multi-release linking */}
+              <div className="flex flex-wrap gap-2 items-center text-xs mb-3">
                 <span className="font-bold">Releases:</span>
                 <select onChange={e => actions.attachVersionToRelease(song.id, v.id, e.target.value, data.releases.find(r => r.id === e.target.value)?.releaseDate)} className={cn("px-2 py-1 text-xs", THEME.punk.input)} value="">
                   <option value="">Attach to release...</option>
@@ -303,9 +375,11 @@ export const SongDetailView = ({ song, onBack }) => {
                   );
                 })}
               </div>
-              <div className="mt-2 space-y-2">
-                <div className="text-xs font-bold uppercase">Musicians</div>
-                <div className="flex flex-wrap gap-2">
+              
+              {/* Musicians */}
+              <div className="mb-3">
+                <div className="text-xs font-bold uppercase mb-2">Musicians</div>
+                <div className="flex flex-wrap gap-2 mb-2">
                   <select value={newVersionMusicians[v.id]?.memberId || ''} onChange={e => setNewVersionMusicians(prev => ({ ...prev, [v.id]: { ...(prev[v.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
                     <option value="">Select Member</option>
                     {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -330,6 +404,43 @@ export const SongDetailView = ({ song, onBack }) => {
                   })}
                 </div>
               </div>
+              
+              {/* Version Tasks (for non-core versions) */}
+              {v.id !== 'core' && (v.tasks || []).length > 0 && (
+                <div className="mt-3 border-t border-black pt-3">
+                  <div className="text-xs font-bold uppercase mb-2">Version Tasks</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-100">
+                          <th className="p-1 text-left">Type</th>
+                          <th className="p-1 text-left">Date</th>
+                          <th className="p-1 text-left">Status</th>
+                          <th className="p-1 text-right">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(v.tasks || []).map(task => (
+                          <tr key={task.id} className="border-b border-gray-200">
+                            <td className="p-1 font-bold">{task.type}</td>
+                            <td className="p-1">
+                              <input type="date" value={task.date || ''} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { date: e.target.value })} className="border border-black p-1 text-xs w-28" />
+                            </td>
+                            <td className="p-1">
+                              <select value={task.status || 'Not Started'} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { status: e.target.value })} className="border border-black p-1 text-xs">
+                                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                            <td className="p-1 text-right">
+                              <input type="number" value={task.estimatedCost || 0} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { estimatedCost: parseFloat(e.target.value) || 0 })} className="border border-black p-1 text-xs w-16 text-right" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -449,7 +560,7 @@ export const SongDetailView = ({ song, onBack }) => {
       <div className={cn("p-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
         <div className="space-y-2">
-          <div className="flex justify-between"><span>Song Base Cost:</span><span className="font-bold">{formatMoney(currentSong.estimatedCost || 0)}</span></div>
+          <div className="flex justify-between"><span>Song Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentSong))}</span></div>
           <div className="flex justify-between"><span>Song Tasks Total:</span><span className="font-bold">{formatMoney(tasksCost)}</span></div>
           <div className="flex justify-between"><span>Custom Tasks Total:</span><span className="font-bold">{formatMoney(customTasksCost)}</span></div>
           <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost)}</span></div>
@@ -459,20 +570,53 @@ export const SongDetailView = ({ song, onBack }) => {
   );
 };
 
-// Global Tasks View (Spec 2.3)
+// Global Tasks View (Spec 2.3) - Phase 4: Enhanced with archived/done filtering
 export const GlobalTasksView = () => {
   const { data, actions } = useStore();
   const [sortBy, setSortBy] = useState('date');
   const [sortDir, setSortDir] = useState('asc');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterArchived, setFilterArchived] = useState('active'); // 'all', 'active', 'archived', 'done'
   const [searchText, setSearchText] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [newTask, setNewTask] = useState({ taskName: '', category: 'Other', date: '', description: '', assignedTo: '', status: 'Not Started', estimatedCost: 0, notes: '' });
+  const [newAssignments, setNewAssignments] = useState({});
+
+  const teamMembers = data.teamMembers || [];
+
+  const taskBudget = (task = {}) => {
+    if (task.paidCost !== undefined) return task.paidCost || 0;
+    if (task.actualCost !== undefined) return task.actualCost || 0;
+    if (task.quotedCost !== undefined) return task.quotedCost || 0;
+    return task.estimatedCost || 0;
+  };
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const budget = taskBudget(taskObj);
+    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+    const nextTotal = current + (parseFloat(entry.cost) || 0);
+    if (budget > 0 && nextTotal > budget) return;
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
 
   const tasks = useMemo(() => {
     let filtered = [...(data.globalTasks || [])];
+    
+    // Phase 4: Archived/done filtering
+    if (filterArchived === 'active') {
+      filtered = filtered.filter(t => !t.isArchived && t.status !== 'Done');
+    } else if (filterArchived === 'archived') {
+      filtered = filtered.filter(t => t.isArchived);
+    } else if (filterArchived === 'done') {
+      filtered = filtered.filter(t => t.status === 'Done');
+    }
+    // 'all' shows everything
+    
     if (filterCategory !== 'all') filtered = filtered.filter(t => t.category === filterCategory);
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
     if (searchText) {
@@ -485,7 +629,7 @@ export const GlobalTasksView = () => {
       return sortDir === 'asc' ? (valA < valB ? -1 : 1) : (valA > valB ? -1 : 1);
     });
     return filtered;
-  }, [data.globalTasks, sortBy, sortDir, filterCategory, filterStatus, searchText]);
+  }, [data.globalTasks, sortBy, sortDir, filterCategory, filterStatus, filterArchived, searchText]);
 
   const handleAddTask = async () => {
     await actions.addGlobalTask(newTask);
@@ -522,6 +666,13 @@ export const GlobalTasksView = () => {
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
           <option value="all">All Status</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {/* Phase 4: Archived/Done filter */}
+        <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+          <option value="active">Active Tasks</option>
+          <option value="done">Done</option>
+          <option value="archived">Archived</option>
+          <option value="all">All Tasks</option>
         </select>
       </div>
 
@@ -672,6 +823,30 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [form, setForm] = useState({ ...release });
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
+  const [newAssignments, setNewAssignments] = useState({});
+  // Phase 3: Custom tasks state
+  const [showAddCustomTask, setShowAddCustomTask] = useState(false);
+  const [newCustomTask, setNewCustomTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+
+  const teamMembers = data.teamMembers || [];
+
+  const taskBudget = (task = {}) => {
+    if (task.paidCost !== undefined) return task.paidCost || 0;
+    if (task.actualCost !== undefined) return task.actualCost || 0;
+    if (task.quotedCost !== undefined) return task.quotedCost || 0;
+    return task.estimatedCost || 0;
+  };
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const budget = taskBudget(taskObj);
+    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+    const nextTotal = current + (parseFloat(entry.cost) || 0);
+    if (budget > 0 && nextTotal > budget) return;
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
 
   const currentRelease = data.releases.find(r => r.id === release.id) || release;
 
@@ -694,6 +869,13 @@ export const ReleaseDetailView = ({ release, onBack }) => {
 
   const handleDeleteRelease = async () => {
     if (confirm('Delete this release?')) { await actions.deleteRelease(release.id); onBack(); }
+  };
+
+  // Phase 3: Handle custom task addition
+  const handleAddCustomTask = async () => {
+    await actions.addReleaseCustomTask(release.id, newCustomTask);
+    setNewCustomTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+    setShowAddCustomTask(false);
   };
 
   const getSongTitle = (songId) => {
@@ -732,8 +914,25 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
+            <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
+            <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          {/* Cost layers with precedence: paidCost > quotedCost > estimatedCost */}
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="flex items-center gap-2 font-bold">
             <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
@@ -852,14 +1051,75 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
+      {/* Phase 3: Attached Songs Section */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Attached Songs</h3>
+          <button onClick={() => actions.autoCalculateReleaseDateFromContent(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}>Auto-Calculate Date</button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <select onChange={e => { if (e.target.value) actions.attachSongToRelease(release.id, e.target.value); }} className={cn("px-3 py-2 text-xs", THEME.punk.input)} value="">
+            <option value="">Attach Song...</option>
+            {(data.songs || []).filter(s => !(currentRelease.attachedSongIds || []).includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(currentRelease.attachedSongIds || []).map(songId => {
+            const song = data.songs.find(s => s.id === songId);
+            return song ? (
+              <span key={songId} className="px-3 py-2 border-2 border-black bg-blue-100 text-sm font-bold flex items-center gap-2">
+                {song.title} <span className="text-xs opacity-60">({song.releaseDate || 'No date'})</span>
+                <button onClick={() => actions.detachSongFromRelease(release.id, songId)} className="text-red-600 ml-1">×</button>
+              </span>
+            ) : null;
+          })}
+          {(currentRelease.attachedSongIds || []).length === 0 && <span className="opacity-50 text-sm">No songs attached yet.</span>}
+        </div>
+      </div>
+
+      {/* Phase 3: Custom Tasks Section */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Custom Tasks</h3>
+          <button onClick={() => setShowAddCustomTask(!showAddCustomTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddCustomTask ? 'Cancel' : '+ Add Custom Task'}</button>
+        </div>
+        {showAddCustomTask && (
+          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={newCustomTask.title} onChange={e => setNewCustomTask(prev => ({ ...prev, title: e.target.value }))} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={newCustomTask.date} onChange={e => setNewCustomTask(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+              <input value={newCustomTask.description} onChange={e => setNewCustomTask(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
+              <input type="number" value={newCustomTask.estimatedCost} onChange={e => setNewCustomTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
+              <select value={newCustomTask.status} onChange={e => setNewCustomTask(prev => ({ ...prev, status: e.target.value }))} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
+            </div>
+          </div>
+        )}
+        <div className="space-y-2">
+          {(currentRelease.customTasks || []).length === 0 ? (
+            <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
+          ) : (currentRelease.customTasks || []).map(task => (
+            <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
+              <div className="flex-1">
+                <div className="font-bold">{task.title}</div>
+                <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(getEffectiveCost(task))}</div>
+                {task.description && <div className="text-sm mt-1">{task.description}</div>}
+              </div>
+              <button onClick={() => actions.deleteReleaseCustomTask(release.id, task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className={cn("p-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
         <div className="space-y-2">
-          <div className="flex justify-between"><span>Release Base Cost:</span><span className="font-bold">{formatMoney(currentRelease.estimatedCost || 0)}</span></div>
-          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.tasks || []).reduce((sum, t) => sum + (t.estimatedCost || 0), 0))}</span></div>
+          <div className="flex justify-between"><span>Release Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentRelease))}</span></div>
+          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
+          <div className="flex justify-between"><span>Custom Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
           <div className="flex justify-between border-t-4 border-black pt-2 text-lg">
             <span className="font-black">TOTAL:</span>
-            <span className="font-black">{formatMoney((currentRelease.estimatedCost || 0) + (currentRelease.tasks || []).reduce((sum, t) => sum + (t.estimatedCost || 0), 0))}</span>
+            <span className="font-black">{formatMoney(getEffectiveCost(currentRelease) + (currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0) + (currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span>
           </div>
         </div>
       </div>
@@ -1043,10 +1303,16 @@ export const CombinedTimelineView = () => {
   );
 };
 
-// Dedicated Videos workspace
+// Dedicated Videos workspace - Phase 2: Enhanced with auto-tasks and standalone videos
 export const VideosView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
   const [drafts, setDrafts] = useState({});
+  const [showStandaloneForm, setShowStandaloneForm] = useState(false);
+  const [standaloneVideo, setStandaloneVideo] = useState({
+    title: 'New Standalone Video',
+    releaseDate: '',
+    types: { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' }
+  });
 
   const songVersions = (song) => song.versions || [];
 
@@ -1058,14 +1324,93 @@ export const VideosView = ({ onSelectSong }) => {
     { key: 'custom', label: 'Custom' }
   ];
 
-  const baseSubtasks = ['Scripting', 'Shooting', 'Editing'];
+  const handleAddStandaloneVideo = async () => {
+    await actions.addStandaloneVideo(standaloneVideo);
+    setStandaloneVideo({
+      title: 'New Standalone Video',
+      releaseDate: '',
+      types: { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' }
+    });
+    setShowStandaloneForm(false);
+  };
 
   return (
     <div className="p-6 pb-24 space-y-6">
-      <div className="flex items-center justify-between border-b-4 border-black pb-3">
+      <div className="flex flex-wrap items-center justify-between border-b-4 border-black pb-3 gap-3">
         <h2 className={THEME.punk.textStyle}>Videos</h2>
-        <p className="text-xs font-bold uppercase">Per song & version</p>
+        <div className="flex gap-2">
+          <button onClick={() => setShowStandaloneForm(!showStandaloneForm)} className={cn("px-4 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>
+            {showStandaloneForm ? 'Cancel' : '+ Standalone Video'}
+          </button>
+        </div>
       </div>
+
+      {/* Standalone Video Form */}
+      {showStandaloneForm && (
+        <div className={cn("p-4 bg-purple-50", THEME.punk.card)}>
+          <h3 className="font-black uppercase mb-3">New Standalone Video</h3>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Title</label>
+              <input value={standaloneVideo.title} onChange={e => setStandaloneVideo(prev => ({ ...prev, title: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
+              <input type="date" value={standaloneVideo.releaseDate} onChange={e => setStandaloneVideo(prev => ({ ...prev, releaseDate: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold uppercase mb-1">Video Types</label>
+              <div className="flex flex-wrap gap-3 text-xs">
+                {videoTypes.map(type => (
+                  <label key={type.key} className="flex items-center gap-1">
+                    <input type="checkbox" checked={standaloneVideo.types?.[type.key] || false} onChange={e => setStandaloneVideo(prev => ({ ...prev, types: { ...(prev.types || {}), [type.key]: e.target.checked } }))} />
+                    {type.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <button onClick={handleAddStandaloneVideo} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>Create Standalone Video</button>
+          </div>
+        </div>
+      )}
+
+      {/* Standalone Videos List */}
+      {(data.standaloneVideos || []).length > 0 && (
+        <div className={cn("p-4", THEME.punk.card)}>
+          <h3 className="font-black uppercase mb-3 border-b-2 border-black pb-2">Standalone Videos</h3>
+          <div className="space-y-3">
+            {(data.standaloneVideos || []).map(video => (
+              <div key={video.id} className="border-2 border-purple-500 bg-white p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div>
+                    <span className="font-bold">{video.title}</span>
+                    <span className="ml-2 text-xs opacity-60">{video.releaseDate || 'No date'}</span>
+                  </div>
+                  <button onClick={() => actions.deleteStandaloneVideo(video.id)} className="text-red-500 text-xs">Delete</button>
+                </div>
+                <div className="flex flex-wrap gap-1 text-[11px] mb-2">
+                  {videoTypes.map(type => video.types?.[type.key] ? <span key={type.key} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{type.label}</span> : null)}
+                </div>
+                {/* Auto-generated tasks */}
+                {(video.tasks || []).length > 0 && (
+                  <div className="mt-2 border-t border-gray-200 pt-2">
+                    <div className="text-xs font-bold uppercase mb-1">Auto Tasks</div>
+                    <div className="flex flex-wrap gap-1">
+                      {video.tasks.map(task => (
+                        <span key={task.id} className={cn("px-2 py-1 text-[10px] border font-bold", task.status === 'Done' ? 'bg-green-100 border-green-500' : 'bg-gray-100 border-gray-400')}>
+                          {task.type} ({task.date})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Song Videos */}
       {(data.songs || []).map(song => (
         <div key={song.id} className={cn("p-4", THEME.punk.card)}>
           <div className="flex justify-between items-center mb-3">
@@ -1078,14 +1423,14 @@ export const VideosView = ({ onSelectSong }) => {
           <div className="grid md:grid-cols-2 gap-3">
             {songVersions(song).map(v => {
               const key = `${song.id}-${v.id}`;
-              const draft = drafts[key] || { title: `${v.name} Video`, versionId: v.id };
+              const draft = drafts[key] || { title: `${v.name} Video`, versionId: v.id, types: {} };
               return (
                 <div key={v.id} className="border-2 border-black bg-white p-3 space-y-2">
                   <div className="flex justify-between items-center">
                     <div className="font-bold">{v.name}</div>
                     <button onClick={() => {
-                      actions.addSongVideo(song.id, { ...draft, subtasks: baseSubtasks.map(t => ({ label: t, done: false })) });
-                      setDrafts(prev => ({ ...prev, [key]: { title: `${v.name} Video`, versionId: v.id } }));
+                      actions.addSongVideo(song.id, { ...draft, releaseDate: v.releaseDate || song.releaseDate });
+                      setDrafts(prev => ({ ...prev, [key]: { title: `${v.name} Video`, versionId: v.id, types: {} } }));
                     }} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add Video</button>
                   </div>
                   <input value={draft.title} onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...(prev[key] || {}), title: e.target.value } }))} className={cn("w-full text-xs", THEME.punk.input)} />
@@ -1110,19 +1455,40 @@ export const VideosView = ({ onSelectSong }) => {
                         <div className="flex flex-wrap gap-1 text-[11px]">
                           {videoTypes.map(type => video.types?.[type.key] ? <span key={type.key} className="px-2 py-1 bg-blue-100 border-2 border-black font-bold">{type.label === 'Custom' ? (video.types?.customLabel || 'Custom') : type.label}</span> : null)}
                         </div>
-                        <div className="space-y-1 text-[12px]">
-                          {(video.subtasks || []).map((sub, idx) => (
-                            <label key={idx} className="flex items-center gap-2">
-                              <input type="checkbox" checked={sub.done || false} onChange={e => {
-                                const updated = [...(video.subtasks || [])];
-                                updated[idx] = { ...sub, done: e.target.checked };
-                                actions.updateSongVideo(song.id, video.id, { subtasks: updated });
-                              }} />
-                              {sub.label}
-                            </label>
-                          ))}
-                          {(video.subtasks || []).length === 0 && <div className="italic">No subtasks yet.</div>}
-                        </div>
+                        {/* Auto-generated video tasks */}
+                        {(video.tasks || []).length > 0 && (
+                          <div className="mt-2 border-t border-gray-200 pt-2">
+                            <div className="text-xs font-bold uppercase mb-1">Auto Tasks (Hire Crew/Film/Edit/Release)</div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-[11px]">
+                                <thead>
+                                  <tr className="bg-gray-100">
+                                    <th className="p-1 text-left">Task</th>
+                                    <th className="p-1 text-left">Date</th>
+                                    <th className="p-1 text-left">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {video.tasks.map(task => (
+                                    <tr key={task.id} className="border-b border-gray-200">
+                                      <td className="p-1 font-bold">{task.type}</td>
+                                      <td className="p-1">
+                                        <input type="date" value={task.date || ''} onChange={e => actions.updateVideoTask(song.id, video.id, task.id, { date: e.target.value })} className="border border-black p-1 text-xs w-24" />
+                                      </td>
+                                      <td className="p-1">
+                                        <select value={task.status || 'Not Started'} onChange={e => actions.updateVideoTask(song.id, video.id, task.id, { status: e.target.value })} className="border border-black p-1 text-xs">
+                                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                        {/* Custom tasks placeholder */}
+                        <div className="text-[10px] text-gray-500 mt-1">Custom tasks: {(video.customTasks || []).length}</div>
                       </div>
                     ))}
                   </div>
