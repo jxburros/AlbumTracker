@@ -570,13 +570,14 @@ export const SongDetailView = ({ song, onBack }) => {
   );
 };
 
-// Global Tasks View (Spec 2.3)
+// Global Tasks View (Spec 2.3) - Phase 4: Enhanced with archived/done filtering
 export const GlobalTasksView = () => {
   const { data, actions } = useStore();
   const [sortBy, setSortBy] = useState('date');
   const [sortDir, setSortDir] = useState('asc');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterArchived, setFilterArchived] = useState('active'); // 'all', 'active', 'archived', 'done'
   const [searchText, setSearchText] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -605,6 +606,17 @@ export const GlobalTasksView = () => {
 
   const tasks = useMemo(() => {
     let filtered = [...(data.globalTasks || [])];
+    
+    // Phase 4: Archived/done filtering
+    if (filterArchived === 'active') {
+      filtered = filtered.filter(t => !t.isArchived && t.status !== 'Done');
+    } else if (filterArchived === 'archived') {
+      filtered = filtered.filter(t => t.isArchived);
+    } else if (filterArchived === 'done') {
+      filtered = filtered.filter(t => t.status === 'Done');
+    }
+    // 'all' shows everything
+    
     if (filterCategory !== 'all') filtered = filtered.filter(t => t.category === filterCategory);
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
     if (searchText) {
@@ -617,7 +629,7 @@ export const GlobalTasksView = () => {
       return sortDir === 'asc' ? (valA < valB ? -1 : 1) : (valA > valB ? -1 : 1);
     });
     return filtered;
-  }, [data.globalTasks, sortBy, sortDir, filterCategory, filterStatus, searchText]);
+  }, [data.globalTasks, sortBy, sortDir, filterCategory, filterStatus, filterArchived, searchText]);
 
   const handleAddTask = async () => {
     await actions.addGlobalTask(newTask);
@@ -654,6 +666,13 @@ export const GlobalTasksView = () => {
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
           <option value="all">All Status</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {/* Phase 4: Archived/Done filter */}
+        <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+          <option value="active">Active Tasks</option>
+          <option value="done">Done</option>
+          <option value="archived">Archived</option>
+          <option value="all">All Tasks</option>
         </select>
       </div>
 
