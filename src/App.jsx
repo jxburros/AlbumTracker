@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
-import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView } from './SpecViews';
+import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, VideosView } from './SpecViews';
 import { THEME, cn } from './utils';
 
 function AppInner() {
@@ -65,6 +65,7 @@ function AppInner() {
           {/* New Spec Views */}
           {tab === 'songs' && <SongListView onSelectSong={handleSelectSong} />}
           {tab === 'songDetail' && selectedSong && <SongDetailView song={selectedSong} onBack={() => { setSelectedSong(null); setTab('songs'); }} />}
+          {tab === 'videos' && <VideosView onSelectSong={handleSelectSong} />}
           {tab === 'globalTasks' && <GlobalTasksView />}
           {tab === 'releases' && <ReleasesListView onSelectRelease={handleSelectRelease} />}
           {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} />}

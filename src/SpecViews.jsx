@@ -3,6 +3,8 @@ import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, 
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
+const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
+
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
@@ -66,6 +68,7 @@ export const SongListView = ({ onSelectSong }) => {
               <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
               <th className="p-3 text-center">Single?</th>
               <th className="p-3 text-left">Video Type</th>
+              <th className="p-3 text-left">Exclusive</th>
               <th className="p-3 text-center">Stems?</th>
               <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
             </tr>
@@ -81,6 +84,7 @@ export const SongListView = ({ onSelectSong }) => {
                   <td className="p-3">{song.releaseDate || '-'}</td>
                   <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
                   <td className="p-3">{song.videoType}</td>
+                  <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
                   <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
                   <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
                 </tr>
@@ -99,6 +103,30 @@ export const SongDetailView = ({ song, onBack }) => {
   const [form, setForm] = useState({ ...song });
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '' });
+  const [newVersionName, setNewVersionName] = useState('Template Version');
+  const [newSongMusician, setNewSongMusician] = useState({ memberId: '', instruments: '' });
+  const [newVersionMusicians, setNewVersionMusicians] = useState({});
+  const [newAssignments, setNewAssignments] = useState({});
+
+  const teamMembers = data.teamMembers || [];
+
+  const taskBudget = (task = {}) => {
+    if (task.paidCost !== undefined) return task.paidCost || 0;
+    if (task.actualCost !== undefined) return task.actualCost || 0;
+    if (task.quotedCost !== undefined) return task.quotedCost || 0;
+    return task.estimatedCost || 0;
+  };
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const budget = taskBudget(taskObj);
+    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+    const nextTotal = current + (parseFloat(entry.cost) || 0);
+    if (budget > 0 && nextTotal > budget) return; // prevent over-allocation
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
 
   const handleSave = async () => { await actions.updateSong(song.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
@@ -164,6 +192,13 @@ export const SongDetailView = ({ song, onBack }) => {
             <input type="date" value={form.releaseDate || ''} onChange={e => handleFieldChange('releaseDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Core Release</label>
+            <select value={form.coreReleaseId || ''} onChange={e => handleFieldChange('coreReleaseId', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              <option value="">Select Release</option>
+              {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Video Type</label>
             <select value={form.videoType || 'None'} onChange={e => { handleFieldChange('videoType', e.target.value); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
               {VIDEO_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
@@ -180,13 +215,123 @@ export const SongDetailView = ({ song, onBack }) => {
             </label>
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
+            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
+            <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform names, time windows, etc." className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Extra Versions Needed</label>
             <input value={form.extraVersionsNeeded || ''} onChange={e => handleFieldChange('extraVersionsNeeded', e.target.value)} onBlur={handleSave} placeholder="e.g., radio edit, acoustic, live loop" className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-bold uppercase mb-1">Core Instruments</label>
+          <input value={(form.instruments || []).join(', ')} onChange={e => handleFieldChange('instruments', e.target.value.split(',').map(i => i.trim()).filter(Boolean))} onBlur={handleSave} placeholder="guitar, synth, drums" className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div className="md:col-span-2">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-bold uppercase">Song Musicians</label>
+            <span className="text-[10px] font-black">Linked players + instruments</span>
           </div>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <select value={newSongMusician.memberId} onChange={e => setNewSongMusician({ ...newSongMusician, memberId: e.target.value })} className={cn("px-3 py-2 text-xs", THEME.punk.input)}>
+              <option value="">Select Team Member</option>
+              {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <input value={newSongMusician.instruments} onChange={e => setNewSongMusician({ ...newSongMusician, instruments: e.target.value })} placeholder="instruments (comma separated)" className={cn("px-3 py-2 text-xs", THEME.punk.input)} />
+            <button onClick={() => {
+              if (!newSongMusician.memberId) return;
+              actions.addSongMusician(song.id, { id: crypto.randomUUID(), memberId: newSongMusician.memberId, instruments: (newSongMusician.instruments || '').split(',').map(i => i.trim()).filter(Boolean) });
+              setNewSongMusician({ memberId: '', instruments: '' });
+            }} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>Add Musician</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(currentSong.musicians || []).map(m => {
+              const member = teamMembers.find(tm => tm.id === m.memberId);
+              return (
+                <span key={m.id} className="px-2 py-1 border-2 border-black bg-yellow-100 text-xs font-bold flex items-center gap-2">
+                  {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
+                  <button onClick={() => actions.removeSongMusician(song.id, m.id)} className="text-red-600">×</button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+
+      {/* Versions */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Versions & Releases</h3>
+          <div className="flex gap-2">
+            <input value={newVersionName} onChange={e => setNewVersionName(e.target.value)} className={cn("px-3 py-2 text-xs", THEME.punk.input)} />
+            <button onClick={() => actions.addSongVersion(song.id, { name: newVersionName })} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>Create Template Version</button>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {(currentSong.versions || []).map(v => (
+            <div key={v.id} className="p-3 border-2 border-black bg-white">
+              <div className="flex flex-wrap gap-3 items-center mb-2">
+                <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} />
+                <select value={v.exclusiveType || 'None'} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveType: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)}>
+                  {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+                <input value={(v.instruments || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} placeholder="Instruments" />
+              </div>
+              <div className="flex flex-wrap gap-2 items-center text-xs">
+                <span className="font-bold">Releases:</span>
+                <select onChange={e => actions.attachVersionToRelease(song.id, v.id, e.target.value, data.releases.find(r => r.id === e.target.value)?.releaseDate)} className={cn("px-2 py-1 text-xs", THEME.punk.input)} value="">
+                  <option value="">Attach to release...</option>
+                  {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                {(v.releaseIds || []).map(rid => {
+                  const rel = data.releases.find(r => r.id === rid);
+                  const overrideDate = v.releaseOverrides?.[rid];
+                  return (
+                    <span key={rid} className="px-2 py-1 border-2 border-black bg-yellow-100 font-bold">
+                      {rel?.name || 'Release'} — {overrideDate || rel?.releaseDate || 'TBD'}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="mt-2 space-y-2">
+                <div className="text-xs font-bold uppercase">Musicians</div>
+                <div className="flex flex-wrap gap-2">
+                  <select value={newVersionMusicians[v.id]?.memberId || ''} onChange={e => setNewVersionMusicians(prev => ({ ...prev, [v.id]: { ...(prev[v.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                    <option value="">Select Member</option>
+                    {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                  <input value={newVersionMusicians[v.id]?.instruments || ''} onChange={e => setNewVersionMusicians(prev => ({ ...prev, [v.id]: { ...(prev[v.id] || {}), instruments: e.target.value } }))} placeholder="instruments" className={cn("px-2 py-1 text-xs", THEME.punk.input)} />
+                  <button onClick={() => {
+                    const entry = newVersionMusicians[v.id];
+                    if (!entry?.memberId) return;
+                    actions.addVersionMusician(song.id, v.id, { id: crypto.randomUUID(), memberId: entry.memberId, instruments: (entry.instruments || '').split(',').map(i => i.trim()).filter(Boolean) });
+                    setNewVersionMusicians(prev => ({ ...prev, [v.id]: { memberId: '', instruments: '' } }));
+                  }} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>Add</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(v.musicians || []).map(m => {
+                    const member = teamMembers.find(tm => tm.id === m.memberId);
+                    return (
+                      <span key={m.id} className="px-2 py-1 border-2 border-black bg-blue-100 text-xs font-bold flex items-center gap-2">
+                        {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
+                        <button onClick={() => actions.removeVersionMusician(song.id, v.id, m.id)} className="text-red-600">×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -205,12 +350,13 @@ export const SongDetailView = ({ song, onBack }) => {
                 <th className="p-2 text-left">Date</th>
                 <th className="p-2 text-left">Status</th>
                 <th className="p-2 text-right">Est. Cost</th>
+                <th className="p-2 text-left">Assignments</th>
                 <th className="p-2 text-left">Notes</th>
               </tr>
             </thead>
             <tbody>
               {songTasks.length === 0 ? (
-                <tr><td colSpan="6" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
+                <tr><td colSpan="7" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
               ) : songTasks.map(task => (
                 <tr key={task.id} className="border-b border-gray-200">
                   <td className="p-2 font-bold">{task.type}{task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}</td>
@@ -218,6 +364,26 @@ export const SongDetailView = ({ song, onBack }) => {
                   <td className="p-2"><input type="date" value={task.date || ''} onChange={e => handleDeadlineChange(task.id, 'date', e.target.value)} className="border-2 border-black p-1 text-xs" /></td>
                   <td className="p-2"><select value={task.status || 'Not Started'} onChange={e => handleDeadlineChange(task.id, 'status', e.target.value)} className="border-2 border-black p-1 text-xs">{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
                   <td className="p-2"><input type="number" value={task.estimatedCost || 0} onChange={e => handleDeadlineChange(task.id, 'estimatedCost', parseFloat(e.target.value) || 0)} className="border-2 border-black p-1 text-xs w-20 text-right" /></td>
+                  <td className="p-2 text-xs space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {(task.assignedMembers || []).map(m => {
+                        const member = teamMembers.find(tm => tm.id === m.memberId);
+                        return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                      })}
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                        <option value="">Assign member</option>
+                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <button onClick={() => addAssignment(task.id, task, (assignedMembers) => {
+                        const updatedTasks = songTasks.map(t => t.id === task.id ? { ...t, assignedMembers } : t);
+                        actions.updateSong(song.id, { deadlines: updatedTasks });
+                      })} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
+                    </div>
+                    {taskBudget(task) > 0 && <div className="text-[10px] font-bold">Budget Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</div>}
+                  </td>
                   <td className="p-2"><input value={task.notes || ''} onChange={e => handleDeadlineChange(task.id, 'notes', e.target.value)} className="border-2 border-black p-1 text-xs w-full" placeholder="Notes..." /></td>
                 </tr>
               ))}
@@ -254,6 +420,23 @@ export const SongDetailView = ({ song, onBack }) => {
                   <div className="font-bold">{task.title}</div>
                   <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
                   {task.description && <div className="text-sm mt-1">{task.description}</div>}
+                  <div className="mt-2 space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {(task.assignedMembers || []).map(m => {
+                        const member = teamMembers.find(tm => tm.id === m.memberId);
+                        return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                      })}
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                        <option value="">Assign member</option>
+                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateSongCustomTask(song.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
+                      {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
+                    </div>
+                  </div>
                 </div>
                 <button onClick={() => handleDeleteCustomTask(task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
               </div>
@@ -389,13 +572,14 @@ export const GlobalTasksView = () => {
               <th className="p-3 text-left">Description</th>
               <th className="p-3 text-left">Assigned To</th>
               <th className="p-3 text-right">Est. Cost</th>
+              <th className="p-3 text-left">Team Assignments</th>
               <th className="p-3 text-left">Status</th>
               <th className="p-3 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             {tasks.length === 0 ? (
-              <tr><td colSpan="8" className="p-10 text-center opacity-50">No global tasks yet.</td></tr>
+              <tr><td colSpan="9" className="p-10 text-center opacity-50">No global tasks yet.</td></tr>
             ) : tasks.map(task => (
               <tr key={task.id} className="border-b border-gray-200 hover:bg-yellow-50">
                 <td className="p-3">{task.date || '-'}</td>
@@ -404,6 +588,23 @@ export const GlobalTasksView = () => {
                 <td className="p-3 max-w-xs truncate">{task.description}</td>
                 <td className="p-3">{task.assignedTo || '-'}</td>
                 <td className="p-3 text-right">{formatMoney(task.estimatedCost || 0)}</td>
+                <td className="p-3 text-xs space-y-1">
+                  <div className="flex flex-wrap gap-1">
+                    {(task.assignedMembers || []).map(m => {
+                      const member = teamMembers.find(tm => tm.id === m.memberId);
+                      return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                    })}
+                  </div>
+                  <div className="flex gap-1 items-center">
+                    <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                      <option value="">Assign member</option>
+                      {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                    <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                    <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateGlobalTask(task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
+                    {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
+                  </div>
+                </td>
                 <td className="p-3"><span className={cn("px-2 py-1 text-xs font-bold", task.status === 'Done' ? 'bg-green-200' : task.status === 'In Progress' ? 'bg-blue-200' : task.status === 'Delayed' ? 'bg-red-200' : 'bg-gray-200')}>{task.status}</span></td>
                 <td className="p-3 text-center">
                   <button onClick={() => setEditingTask({ ...task })} className="p-1 hover:bg-blue-100 text-blue-500 mr-1"><Icon name="Settings" size={14} /></button>
@@ -442,6 +643,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
               <th className="p-3 text-left">Name</th>
               <th className="p-3 text-left">Type</th>
               <th className="p-3 text-left">Release Date</th>
+              <th className="p-3 text-center">Physical</th>
               <th className="p-3 text-right">Estimated Cost</th>
             </tr>
           </thead>
@@ -453,6 +655,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
                 <td className="p-3 font-bold">{release.name}</td>
                 <td className="p-3">{release.type}</td>
                 <td className="p-3">{release.releaseDate || '-'}</td>
+                <td className="p-3 text-center">{release.hasPhysicalCopies ? 'Yes' : 'No'}</td>
                 <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
               </tr>
             ))}
@@ -523,12 +726,26 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             <input type="date" value={form.releaseDate || ''} onChange={e => handleFieldChange('releaseDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
+            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="flex items-center gap-2 font-bold">
+            <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
+            Includes Physical Copies
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
+            <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform partners, windows, or audience restrictions" className={cn("w-full", THEME.punk.input)} />
           </div>
         </div>
       </div>
@@ -596,12 +813,13 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                 <th className="p-2 text-left">Date</th>
                 <th className="p-2 text-left">Status</th>
                 <th className="p-2 text-right">Est. Cost</th>
+                <th className="p-2 text-left">Assignments</th>
                 <th className="p-2 text-left">Notes</th>
               </tr>
             </thead>
             <tbody>
               {(currentRelease.tasks || []).length === 0 ? (
-                <tr><td colSpan="6" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
+                <tr><td colSpan="7" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
               ) : (currentRelease.tasks || []).map(task => (
                 <tr key={task.id} className="border-b border-gray-200">
                   <td className="p-2 font-bold">{task.type}{task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}</td>
@@ -609,6 +827,23 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                   <td className="p-2"><input type="date" value={task.date || ''} onChange={e => actions.updateReleaseTask(release.id, task.id, { date: e.target.value })} className="border-2 border-black p-1 text-xs" /></td>
                   <td className="p-2"><select value={task.status || 'Not Started'} onChange={e => actions.updateReleaseTask(release.id, task.id, { status: e.target.value })} className="border-2 border-black p-1 text-xs">{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
                   <td className="p-2"><input type="number" value={task.estimatedCost || 0} onChange={e => actions.updateReleaseTask(release.id, task.id, { estimatedCost: parseFloat(e.target.value) || 0 })} className="border-2 border-black p-1 text-xs w-20 text-right" /></td>
+                  <td className="p-2 text-xs space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {(task.assignedMembers || []).map(m => {
+                        const member = teamMembers.find(tm => tm.id === m.memberId);
+                        return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                      })}
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                        <option value="">Assign member</option>
+                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateReleaseTask(release.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
+                      {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
+                    </div>
+                  </td>
                   <td className="p-2"><input value={task.notes || ''} onChange={e => actions.updateReleaseTask(release.id, task.id, { notes: e.target.value })} className="border-2 border-black p-1 text-xs w-full" placeholder="Notes..." /></td>
                 </tr>
               ))}
@@ -808,10 +1043,104 @@ export const CombinedTimelineView = () => {
   );
 };
 
+// Dedicated Videos workspace
+export const VideosView = ({ onSelectSong }) => {
+  const { data, actions } = useStore();
+  const [drafts, setDrafts] = useState({});
+
+  const songVersions = (song) => song.versions || [];
+
+  const videoTypes = [
+    { key: 'lyric', label: 'Lyric video' },
+    { key: 'enhancedLyric', label: 'Enhanced lyric video' },
+    { key: 'music', label: 'Music video' },
+    { key: 'visualizer', label: 'Visualizer' },
+    { key: 'custom', label: 'Custom' }
+  ];
+
+  const baseSubtasks = ['Scripting', 'Shooting', 'Editing'];
+
+  return (
+    <div className="p-6 pb-24 space-y-6">
+      <div className="flex items-center justify-between border-b-4 border-black pb-3">
+        <h2 className={THEME.punk.textStyle}>Videos</h2>
+        <p className="text-xs font-bold uppercase">Per song & version</p>
+      </div>
+      {(data.songs || []).map(song => (
+        <div key={song.id} className={cn("p-4", THEME.punk.card)}>
+          <div className="flex justify-between items-center mb-3">
+            <div>
+              <h3 className="font-black uppercase">{song.title}</h3>
+              <p className="text-xs opacity-70">Core release {song.releaseDate || 'TBD'}</p>
+            </div>
+            <button onClick={() => onSelectSong?.(song)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>Edit Song</button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            {songVersions(song).map(v => {
+              const key = `${song.id}-${v.id}`;
+              const draft = drafts[key] || { title: `${v.name} Video`, versionId: v.id };
+              return (
+                <div key={v.id} className="border-2 border-black bg-white p-3 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="font-bold">{v.name}</div>
+                    <button onClick={() => {
+                      actions.addSongVideo(song.id, { ...draft, subtasks: baseSubtasks.map(t => ({ label: t, done: false })) });
+                      setDrafts(prev => ({ ...prev, [key]: { title: `${v.name} Video`, versionId: v.id } }));
+                    }} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add Video</button>
+                  </div>
+                  <input value={draft.title} onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...(prev[key] || {}), title: e.target.value } }))} className={cn("w-full text-xs", THEME.punk.input)} />
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {videoTypes.map(type => (
+                      <label key={type.key} className="flex items-center gap-1">
+                        <input type="checkbox" checked={draft.types?.[type.key] || false} onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...(prev[key] || {}), versionId: v.id, types: { ...(prev[key]?.types || {}), [type.key]: e.target.checked } } }))} />
+                        {type.label}
+                      </label>
+                    ))}
+                    {draft.types?.custom && <input value={draft.types?.customLabel || ''} onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...(prev[key] || {}), types: { ...(prev[key]?.types || {}), customLabel: e.target.value, custom: true } } }))} placeholder="Custom label" className={cn("px-2 py-1", THEME.punk.input, "text-xs")} />}
+                  </div>
+                  <div className="space-y-2">
+                    {(song.videos || []).filter(video => video.versionId === v.id).map(video => (
+                      <div key={video.id} className="border-2 border-black bg-gray-50 p-2 space-y-1">
+                        <div className="flex justify-between items-center text-sm font-bold">
+                          <span>{video.title}</span>
+                          <div className="flex gap-2 text-xs">
+                            <button onClick={() => actions.deleteSongVideo(song.id, video.id)} className="text-red-600">Remove</button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1 text-[11px]">
+                          {videoTypes.map(type => video.types?.[type.key] ? <span key={type.key} className="px-2 py-1 bg-blue-100 border-2 border-black font-bold">{type.label === 'Custom' ? (video.types?.customLabel || 'Custom') : type.label}</span> : null)}
+                        </div>
+                        <div className="space-y-1 text-[12px]">
+                          {(video.subtasks || []).map((sub, idx) => (
+                            <label key={idx} className="flex items-center gap-2">
+                              <input type="checkbox" checked={sub.done || false} onChange={e => {
+                                const updated = [...(video.subtasks || [])];
+                                updated[idx] = { ...sub, done: e.target.checked };
+                                actions.updateSongVideo(song.id, video.id, { subtasks: updated });
+                              }} />
+                              {sub.label}
+                            </label>
+                          ))}
+                          {(video.subtasks || []).length === 0 && <div className="italic">No subtasks yet.</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // Task Dashboard View - Shows tasks in progress, due soon, and macro overview
 export const TaskDashboardView = () => {
   const { data } = useStore();
   const [view, setView] = useState('upcoming'); // 'upcoming', 'inProgress', 'overview'
+  const [stageFilter, setStageFilter] = useState('all');
   
   // Get today's date for comparison
   const today = new Date().toISOString().split('T')[0];
@@ -835,7 +1164,8 @@ export const TaskDashboardView = () => {
           source: 'Song',
           sourceName: song.title,
           sourceType: 'song',
-          sourceId: song.id
+          sourceId: song.id,
+          stageId: task.stageId || ''
         });
       });
       (song.customTasks || []).forEach(task => {
@@ -866,7 +1196,8 @@ export const TaskDashboardView = () => {
         source: 'Global',
         sourceName: task.taskName,
         sourceType: 'global',
-        sourceId: task.id
+        sourceId: task.id,
+        stageId: task.stageId || ''
       });
     });
     
@@ -882,10 +1213,11 @@ export const TaskDashboardView = () => {
           estimatedCost: task.estimatedCost,
           source: 'Release',
           sourceName: release.name,
-          sourceType: 'release',
-          sourceId: release.id
-        });
+        sourceType: 'release',
+        sourceId: release.id,
+        stageId: task.stageId || ''
       });
+    });
     });
     
     return tasks;
@@ -894,6 +1226,9 @@ export const TaskDashboardView = () => {
   // Filter tasks based on view
   const filteredTasks = useMemo(() => {
     let filtered = [...allTasks];
+    if (stageFilter !== 'all') {
+      filtered = filtered.filter(t => (t.stageId || '') === stageFilter);
+    }
     
     if (view === 'upcoming') {
       // Tasks due in next 30 days that are not done
@@ -911,7 +1246,7 @@ export const TaskDashboardView = () => {
     }
     
     return filtered;
-  }, [allTasks, view, today, nextMonth]);
+  }, [allTasks, view, today, nextMonth, stageFilter]);
 
   // Calculate overview statistics
   const stats = useMemo(() => {
@@ -922,8 +1257,13 @@ export const TaskDashboardView = () => {
     const dueSoon = allTasks.filter(t => t.date && t.date >= today && t.date <= nextWeek && t.status !== 'Done').length;
     const overdue = allTasks.filter(t => t.date && t.date < today && t.status !== 'Done').length;
     const totalCost = allTasks.reduce((sum, t) => sum + (t.estimatedCost || 0), 0);
-    
-    return { notStarted, inProgress, done, delayed, dueSoon, overdue, total: allTasks.length, totalCost };
+    const totalPaid = allTasks.reduce((sum, t) => sum + (t.actualCost || t.paidCost || 0), 0);
+    const remaining = allTasks.reduce((sum, t) => {
+      if (t.actualCost || t.paidCost) return sum;
+      return sum + (t.quotedCost || t.estimatedCost || 0);
+    }, 0);
+
+    return { notStarted, inProgress, done, delayed, dueSoon, overdue, total: allTasks.length, totalCost, totalPaid, remaining };
   }, [allTasks, today, nextWeek]);
 
   // Group tasks by category for overview
@@ -955,9 +1295,13 @@ export const TaskDashboardView = () => {
     <div className="p-6 pb-24">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Task Dashboard</h2>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setView('upcoming')} 
+        <div className="flex gap-2 items-center">
+          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+            <option value="all">All Stages</option>
+            {(data.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button
+            onClick={() => setView('upcoming')}
             className={cn("px-4 py-2", THEME.punk.btn, view === 'upcoming' ? "bg-black text-white" : "bg-white")}
           >
             Upcoming
@@ -1000,8 +1344,12 @@ export const TaskDashboardView = () => {
           <div className="text-xs font-bold uppercase">Completed</div>
         </div>
         <div className={cn("p-4 text-center", THEME.punk.card)}>
-          <div className="text-2xl font-black text-pink-600">{formatMoney(stats.totalCost)}</div>
-          <div className="text-xs font-bold uppercase">Total Est. Cost</div>
+          <div className="text-2xl font-black text-pink-600">{formatMoney(stats.totalPaid)}</div>
+          <div className="text-xs font-bold uppercase">Paid</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card)}>
+          <div className="text-2xl font-black text-indigo-600">{formatMoney(stats.remaining)}</div>
+          <div className="text-xs font-bold uppercase">Estimated Remaining</div>
         </div>
       </div>
 

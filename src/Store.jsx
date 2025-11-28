@@ -79,17 +79,18 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
     
-    tasks.push({
-      id: crypto.randomUUID(),
-      type: taskType.type,
-      category: taskType.category,
-      date: taskDate.toISOString().split('T')[0],
-      status: 'Not Started',
-      estimatedCost: 0,
-      notes: '',
-      isOverridden: false
+      tasks.push({
+        id: crypto.randomUUID(),
+        type: taskType.type,
+        category: taskType.category,
+        date: taskDate.toISOString().split('T')[0],
+        status: 'Not Started',
+        estimatedCost: 0,
+        notes: '',
+        assignedMembers: [],
+        isOverridden: false
+      });
     });
-  });
   
   // Add video tasks based on video type
   if (videoType && videoType !== 'None') {
@@ -106,6 +107,7 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
           status: 'Not Started',
           estimatedCost: 0,
           notes: '',
+          assignedMembers: [],
           isOverridden: false
         });
       }
@@ -142,6 +144,7 @@ export const calculateReleaseTasks = (releaseDate) => {
       status: 'Not Started',
       estimatedCost: 0,
       notes: '',
+      assignedMembers: [],
       isOverridden: false
     });
   });
@@ -209,12 +212,13 @@ export const recalculateReleaseTasks = (existingTasks, releaseDate) => {
 export const StoreProvider = ({ children }) => {
   const [mode, setMode] = useState('loading');
   const [data, setData] = useState({ 
-    tasks: [], 
-    photos: [], 
-    vendors: [], 
-    misc: [], 
-    events: [], 
-    stages: [], 
+    tasks: [],
+    photos: [],
+    vendors: [],
+    teamMembers: [],
+    misc: [],
+    events: [],
+    stages: [],
     settings: {},
     // New entities from spec
     songs: [],
@@ -251,7 +255,7 @@ export const StoreProvider = ({ children }) => {
   useEffect(() => {
     if (mode === 'cloud' && db && user) {
       const collections = [
-        'album_tasks', 'album_photos', 'album_vendors', 'album_misc_expenses', 
+        'album_tasks', 'album_photos', 'album_vendors', 'album_teamMembers', 'album_misc_expenses',
         'album_events', 'album_stages', 'album_songs', 'album_globalTasks', 'album_releases'
       ];
       const unsubs = collections.map(col => {
@@ -264,7 +268,8 @@ export const StoreProvider = ({ children }) => {
              setData(prev => ({ ...prev, tasks: taskDocs, settings: settingsDoc || prev.settings }));
           } else {
              const key = col.replace('album_', '').replace('_expenses', '');
-             setData(prev => ({ ...prev, [key === 'task' ? 'tasks' : key]: list }));
+             const mappedKey = key === 'task' ? 'tasks' : key === 'teamMembers' ? 'teamMembers' : key;
+             setData(prev => ({ ...prev, [mappedKey]: list }));
           }
         });
       });
@@ -286,7 +291,14 @@ export const StoreProvider = ({ children }) => {
     }
   }, [mode, data.stages]);
 
-  const stats = useMemo(() => {
+    const costValue = (item = {}) => {
+      if (item.paidCost !== undefined) return item.paidCost || 0;
+      if (item.actualCost !== undefined) return item.actualCost || 0;
+      if (item.quotedCost !== undefined) return item.quotedCost || 0;
+      return item.estimatedCost || 0;
+    };
+
+    const stats = useMemo(() => {
     const visible = data.tasks.filter(t => !t.archived);
     let min = 0, max = 0, act = 0;
     const processNode = (nodeId) => {
@@ -333,13 +345,14 @@ export const StoreProvider = ({ children }) => {
     let releasesTotal = 0;
     
     (data.songs || []).forEach(song => {
-      songsTotal += song.estimatedCost || 0;
-      (song.deadlines || []).forEach(d => { songsTotal += d.estimatedCost || 0; });
-      (song.customTasks || []).forEach(t => { songsTotal += t.estimatedCost || 0; });
+      songsTotal += costValue(song);
+      (song.deadlines || []).forEach(d => { songsTotal += costValue(d); });
+      (song.customTasks || []).forEach(t => { songsTotal += costValue(t); });
+      (song.versions || []).forEach(v => { songsTotal += costValue(v); });
     });
-    
-    (data.globalTasks || []).forEach(t => { globalTasksTotal += t.estimatedCost || 0; });
-    (data.releases || []).forEach(r => { releasesTotal += r.estimatedCost || 0; });
+
+    (data.globalTasks || []).forEach(t => { globalTasksTotal += costValue(t); });
+    (data.releases || []).forEach(r => { releasesTotal += costValue(r); });
     
     const newEntitiesTotal = songsTotal + globalTasksTotal + releasesTotal;
     
@@ -356,9 +369,9 @@ export const StoreProvider = ({ children }) => {
 
   const actions = {
      add: async (col, item) => {
-         const colKey = col === 'misc_expenses' ? 'misc' : col;
-         if (mode === 'cloud') await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, `album_${col}`), { ...item, createdAt: serverTimestamp() });
-         else setData(p => ({...p, [colKey]: [...(p[colKey] || []), {id:crypto.randomUUID(), ...item}]}));
+        const colKey = col === 'misc_expenses' ? 'misc' : col;
+        if (mode === 'cloud') await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, `album_${col}`), { ...item, createdAt: serverTimestamp() });
+        else setData(p => ({...p, [colKey]: [...(p[colKey] || []), {id:crypto.randomUUID(), ...item}]}));
      },
      update: async (col, id, item) => {
          const colKey = col === 'misc_expenses' ? 'misc' : col;
@@ -380,23 +393,109 @@ export const StoreProvider = ({ children }) => {
      },
      connectCloud: (config) => { localStorage.setItem('at_firebase_config', JSON.stringify(config)); window.location.reload(); },
      disconnect: () => { localStorage.removeItem('at_firebase_config'); window.location.reload(); },
+
+     addStage: async (stage) => {
+       const newStage = { id: crypto.randomUUID(), name: stage.name || 'New Stage', order: stage.order || (data.stages.length + 1) };
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_stages'), { ...newStage, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({ ...p, stages: [...(p.stages || []), newStage] }));
+       }
+       return newStage;
+     },
+
+     updateStage: async (stageId, updates) => {
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_stages', stageId), updates);
+       } else {
+         setData(p => ({ ...p, stages: (p.stages || []).map(s => s.id === stageId ? { ...s, ...updates } : s) }));
+       }
+     },
+
+     deleteStage: async (stageId) => {
+       if (mode === 'cloud') {
+         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_stages', stageId));
+       } else {
+         setData(p => ({ ...p, stages: (p.stages || []).filter(s => s.id !== stageId) }));
+       }
+     },
+
+     addTeamMember: async (member) => {
+       const newMember = {
+         id: crypto.randomUUID(),
+         name: member.name || 'New Member',
+         phone: member.phone || '',
+         email: member.email || '',
+         role: member.role || '',
+         notes: member.notes || '',
+         type: member.type || 'individual',
+         companyId: member.companyId || '',
+         instruments: member.instruments || [],
+         costs: member.costs || {}
+       };
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers'), { ...newMember, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({...p, teamMembers: [...(p.teamMembers || []), newMember]}));
+       }
+       return newMember;
+     },
+
+     updateTeamMember: async (memberId, updates) => {
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers', memberId), updates);
+       } else {
+         setData(p => ({
+           ...p,
+           teamMembers: (p.teamMembers || []).map(m => m.id === memberId ? { ...m, ...updates } : m)
+         }));
+       }
+     },
+
+     deleteTeamMember: async (memberId) => {
+       if (mode === 'cloud') {
+         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers', memberId));
+       } else {
+         setData(p => ({...p, teamMembers: (p.teamMembers || []).filter(m => m.id !== memberId)}));
+       }
+     },
      
      // Song-specific actions
      addSong: async (song) => {
        const deadlines = calculateDeadlines(song.releaseDate, song.isSingle, song.videoType);
-       const newSong = {
-         id: crypto.randomUUID(),
-         title: song.title || 'New Song',
-         category: song.category || 'Album',
-         releaseDate: song.releaseDate || '',
-         isSingle: song.isSingle || false,
-         videoType: song.videoType || 'None',
-         stemsNeeded: song.stemsNeeded || false,
-         estimatedCost: song.estimatedCost || 0,
-         extraVersionsNeeded: song.extraVersionsNeeded || '',
-         deadlines: deadlines,
-         customTasks: []
-       };
+     const newSong = {
+        id: crypto.randomUUID(),
+        title: song.title || 'New Song',
+        category: song.category || 'Album',
+        releaseDate: song.releaseDate || '',
+        coreReleaseId: song.coreReleaseId || '',
+        isSingle: song.isSingle || false,
+        videoType: song.videoType || 'None',
+        stemsNeeded: song.stemsNeeded || false,
+        estimatedCost: song.estimatedCost || 0,
+        exclusiveType: song.exclusiveType || 'None',
+        exclusiveNotes: song.exclusiveNotes || '',
+        extraVersionsNeeded: song.extraVersionsNeeded || '',
+        instruments: song.instruments || [],
+        musicians: song.musicians || [],
+        deadlines: deadlines,
+        customTasks: [],
+        versions: [
+          {
+            id: 'core',
+            name: 'Core Version',
+            releaseIds: song.coreReleaseId ? [song.coreReleaseId] : [],
+            releaseOverrides: {},
+            exclusiveType: song.exclusiveType || 'None',
+            exclusiveNotes: song.exclusiveNotes || '',
+            instruments: song.instruments || [],
+            musicians: song.musicians || [],
+            estimatedCost: 0,
+            basedOnCore: true
+          }
+        ],
+        videos: []
+      };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_songs'), { ...newSong, createdAt: serverTimestamp() });
        } else {
@@ -430,12 +529,13 @@ export const StoreProvider = ({ children }) => {
          id: crypto.randomUUID(),
          songId,
          title: task.title || 'New Task',
-         description: task.description || '',
-         date: task.date || '',
-         status: task.status || 'Not Started',
-         estimatedCost: task.estimatedCost || 0,
-         notes: task.notes || ''
-       };
+        description: task.description || '',
+        date: task.date || '',
+        status: task.status || 'Not Started',
+        estimatedCost: task.estimatedCost || 0,
+        notes: task.notes || '',
+        assignedMembers: []
+      };
        if (mode === 'cloud') {
          // For cloud mode, we need to update the song document
          const song = data.songs.find(s => s.id === songId);
@@ -471,11 +571,11 @@ export const StoreProvider = ({ children }) => {
        }
      },
      
-     deleteSongCustomTask: async (songId, taskId) => {
-       if (mode === 'cloud') {
-         const song = data.songs.find(s => s.id === songId);
-         if (song) {
-           const updatedTasks = (song.customTasks || []).filter(t => t.id !== taskId);
+    deleteSongCustomTask: async (songId, taskId) => {
+      if (mode === 'cloud') {
+        const song = data.songs.find(s => s.id === songId);
+        if (song) {
+          const updatedTasks = (song.customTasks || []).filter(t => t.id !== taskId);
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { customTasks: updatedTasks });
          }
        } else {
@@ -486,8 +586,120 @@ export const StoreProvider = ({ children }) => {
              customTasks: (s.customTasks || []).filter(t => t.id !== taskId)
            } : s)
          }));
-       }
-     },
+      }
+    },
+
+    addSongMusician: async (songId, musician) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => song.id === songId ? {
+          ...song,
+          musicians: [...(song.musicians || []), musician]
+        } : song)
+      }));
+    },
+
+    removeSongMusician: async (songId, musicianId) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => song.id === songId ? {
+          ...song,
+          musicians: (song.musicians || []).filter(m => m.id !== musicianId)
+        } : song)
+      }));
+    },
+
+    addVersionMusician: async (songId, versionId, musician) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, musicians: [...(v.musicians || []), musician] } : v);
+          return { ...song, versions: updatedVersions };
+        })
+      }));
+    },
+
+    removeVersionMusician: async (songId, versionId, musicianId) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => {
+          if (song.id !== songId) return song;
+          const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, musicians: (v.musicians || []).filter(m => m.id !== musicianId) } : v);
+          return { ...song, versions: updatedVersions };
+        })
+      }));
+    },
+
+    // Version helpers
+    addSongVersion: async (songId, baseData = null) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return null;
+      const template = baseData || song.versions?.find(v => v.id === 'core') || {};
+      const newVersion = {
+        id: crypto.randomUUID(),
+        name: baseData?.name || `${song.title} Alt`,
+        releaseIds: [...(template.releaseIds || [])],
+        releaseOverrides: { ...(template.releaseOverrides || {}) },
+        exclusiveType: template.exclusiveType || 'None',
+        exclusiveNotes: template.exclusiveNotes || '',
+        instruments: [...(template.instruments || [])],
+        musicians: [...(template.musicians || [])],
+        estimatedCost: template.estimatedCost || 0,
+        basedOnCore: true
+      };
+
+      const saveVersions = (versions) => {
+        if (mode === 'cloud') {
+          updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions });
+        } else {
+          setData(p => ({
+            ...p,
+            songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions } : s)
+          }));
+        }
+      };
+
+      const updatedVersions = [...(song.versions || []), newVersion];
+      saveVersions(updatedVersions);
+      return newVersion;
+    },
+
+    updateSongVersion: async (songId, versionId, updates) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, ...updates } : v);
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+    },
+
+    attachVersionToRelease: async (songId, versionId, releaseId, releaseDate) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const updatedVersions = (song.versions || []).map(v => {
+        if (v.id !== versionId) return v;
+        const releaseIds = v.releaseIds?.includes(releaseId) ? v.releaseIds : [...(v.releaseIds || []), releaseId];
+        const releaseOverrides = { ...(v.releaseOverrides || {}) };
+        if (releaseDate) {
+          releaseOverrides[releaseId] = releaseDate;
+        }
+        return { ...v, releaseIds, releaseOverrides };
+      });
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+    },
      
      // Update a song deadline
      updateSongDeadline: async (songId, deadlineId, updates) => {
@@ -581,13 +793,16 @@ export const StoreProvider = ({ children }) => {
        const newRelease = {
          id: crypto.randomUUID(),
          name: release.name || 'New Release',
-         type: release.type || 'Album',
-         releaseDate: release.releaseDate || '',
-         estimatedCost: release.estimatedCost || 0,
-         notes: release.notes || '',
-         requiredRecordings: [],
-         tasks: releaseTasks  // Auto-spawned tasks
-       };
+        type: release.type || 'Album',
+        releaseDate: release.releaseDate || '',
+        estimatedCost: release.estimatedCost || 0,
+        notes: release.notes || '',
+        exclusiveType: release.exclusiveType || 'None',
+        exclusiveNotes: release.exclusiveNotes || '',
+        hasPhysicalCopies: release.hasPhysicalCopies || false,
+        requiredRecordings: [],
+        tasks: releaseTasks  // Auto-spawned tasks
+      };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_releases'), { ...newRelease, createdAt: serverTimestamp() });
        } else {
@@ -596,16 +811,38 @@ export const StoreProvider = ({ children }) => {
        return newRelease;
      },
      
-     updateRelease: async (releaseId, updates) => {
-       if (mode === 'cloud') {
-         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), updates);
-       } else {
-         setData(p => ({
-           ...p,
-           releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, ...updates } : r)
-         }));
-       }
-     },
+    updateRelease: async (releaseId, updates) => {
+      const applyReleaseSync = (releaseDate) => {
+        if (!releaseDate) return;
+        setData(prev => {
+          const updatedSongs = (prev.songs || []).map(song => {
+            const touchesRelease = song.coreReleaseId === releaseId || (song.versions || []).some(v => (v.releaseIds || []).includes(releaseId));
+            if (!touchesRelease) return song;
+            const updatedVersions = (song.versions || []).map(v => {
+              if (!(v.releaseIds || []).includes(releaseId)) return v;
+              const existing = v.releaseOverrides?.[releaseId];
+              const earliest = existing && existing < releaseDate ? existing : releaseDate;
+              const releaseOverrides = { ...(v.releaseOverrides || {}), [releaseId]: earliest };
+              return { ...v, releaseOverrides };
+            });
+            const effectiveSongDate = song.releaseDate && song.releaseDate <= releaseDate ? song.releaseDate : releaseDate;
+            return { ...song, releaseDate: effectiveSongDate, versions: updatedVersions };
+          });
+          return { ...prev, songs: updatedSongs };
+        });
+      };
+
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), updates);
+        if (updates.releaseDate) applyReleaseSync(updates.releaseDate);
+      } else {
+        setData(p => ({
+          ...p,
+          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, ...updates } : r)
+        }));
+        if (updates.releaseDate) applyReleaseSync(updates.releaseDate);
+      }
+    },
      
      deleteRelease: async (releaseId) => {
        if (mode === 'cloud') {
@@ -681,11 +918,11 @@ export const StoreProvider = ({ children }) => {
      },
      
      // Update a release task
-     updateReleaseTask: async (releaseId, taskId, updates) => {
-       const finalUpdates = updates.date !== undefined ? { ...updates, isOverridden: true } : updates;
-       if (mode === 'cloud') {
-         const release = data.releases.find(r => r.id === releaseId);
-         if (release) {
+    updateReleaseTask: async (releaseId, taskId, updates) => {
+      const finalUpdates = updates.date !== undefined ? { ...updates, isOverridden: true } : updates;
+      if (mode === 'cloud') {
+        const release = data.releases.find(r => r.id === releaseId);
+        if (release) {
            const updatedTasks = (release.tasks || []).map(t => t.id === taskId ? { ...t, ...finalUpdates } : t);
            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tasks: updatedTasks });
          }
@@ -696,9 +933,36 @@ export const StoreProvider = ({ children }) => {
              ...r,
              tasks: (r.tasks || []).map(t => t.id === taskId ? { ...t, ...finalUpdates } : t)
            } : r)
-         }));
-       }
-     },
+        }));
+      }
+    },
+
+    addSongVideo: async (songId, video) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => song.id === songId ? {
+          ...song,
+          videos: [...(song.videos || []), { id: crypto.randomUUID(), title: video.title || 'New Video', versionId: video.versionId || 'core', subtasks: video.subtasks || [], types: video.types || { lyric: false, enhancedLyric: false, music: false, visualizer: false, custom: false, customLabel: '' } }]
+        } : song)
+      }));
+    },
+
+    updateSongVideo: async (songId, videoId, updates) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => song.id === songId ? {
+          ...song,
+          videos: (song.videos || []).map(v => v.id === videoId ? { ...v, ...updates } : v)
+        } : song)
+      }));
+    },
+
+    deleteSongVideo: async (songId, videoId) => {
+      setData(prev => ({
+        ...prev,
+        songs: (prev.songs || []).map(song => song.id === songId ? { ...song, videos: (song.videos || []).filter(v => v.id !== videoId) } : song)
+      }));
+    },
      
      // Recalculate release tasks from release date
      recalculateReleaseTasksAction: async (releaseId) => {

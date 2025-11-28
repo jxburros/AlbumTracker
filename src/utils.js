@@ -21,9 +21,9 @@ export const THEME = {
     rounded: "rounded-none",
     shadow: "shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]",
     textStyle: "uppercase font-black tracking-widest",
-    btn: "border-4 border-black font-black uppercase tracking-widest hover:-translate-y-1 active:translate-y-0 transition-transform bg-white",
+    btn: "border-4 border-black font-black uppercase tracking-widest hover:-translate-y-1 active:translate-y-0 transition-transform bg-white hover:bg-pink-100",
     input: "border-4 border-black font-bold p-3 focus:ring-0 outline-none bg-white",
-    card: "bg-white border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+    card: "bg-pink-50 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
   }
 };
 

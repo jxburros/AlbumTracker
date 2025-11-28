@@ -56,17 +56,30 @@ export const ListView = ({ onEdit }) => {
 };
 
 export const CalendarView = ({ onEdit }) => {
-    const { data } = useStore();
+    const { data, actions } = useStore();
     const [date, setDate] = useState(new Date());
+    const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '' });
     const year = date.getFullYear();
     const month = date.getMonth();
-    
+
     const items = useMemo(() => {
         const map = {};
-        data.tasks.filter(t => t.dueDate && !t.archived).forEach(t => { map[t.dueDate] = map[t.dueDate] || []; map[t.dueDate].push(t); });
-        data.events.forEach(e => { if (e.date) { map[e.date] = map[e.date] || []; map[e.date].push(e); } });
+        data.tasks.filter(t => t.dueDate && !t.archived).forEach(t => { map[t.dueDate] = map[t.dueDate] || []; map[t.dueDate].push({ ...t, _kind: 'task' }); });
+        data.events.forEach(e => { if (e.date) { map[e.date] = map[e.date] || []; map[e.date].push({ ...e, _kind: 'event' }); } });
+        (data.releases || []).forEach(r => {
+          if (r.releaseDate) {
+            map[r.releaseDate] = map[r.releaseDate] || [];
+            map[r.releaseDate].push({
+              id: `release-${r.id}`,
+              title: `${r.name} Release`,
+              date: r.releaseDate,
+              _kind: 'release',
+              releaseType: r.type
+            });
+          }
+        });
         return map;
-    }, [data.tasks, data.events]);
+    }, [data.tasks, data.events, data.releases]);
 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
@@ -74,13 +87,40 @@ export const CalendarView = ({ onEdit }) => {
 
     return (
         <div className="h-full flex flex-col p-6 pb-24">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
-                <div className="flex gap-2">
-                    <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2 bg-white", THEME.punk.btn)}><Icon name="ChevronLeft" /></button>
-                    <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2 bg-white", THEME.punk.btn)}><Icon name="ChevronRight" /></button>
-                </div>
-            </div>
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
+        <div className="flex gap-2 bg-pink-100 border-4 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+          <button onClick={() => setDate(new Date(year, month - 1, 1))} className={cn("p-2 w-10", THEME.punk.btn, "bg-pink-500 text-white hover:bg-pink-400")}><Icon name="ChevronLeft" /></button>
+          <button onClick={() => setDate(new Date(year, month + 1, 1))} className={cn("p-2 w-10", THEME.punk.btn, "bg-pink-500 text-white hover:bg-pink-400")}><Icon name="ChevronRight" /></button>
+        </div>
+      </div>
+
+      <div className={cn("mb-4 p-4 flex flex-col gap-3 md:flex-row md:items-end", THEME.punk.card)}>
+        <div className="flex-1 grid md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Title</label>
+            <input value={newEvent.title} onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))} placeholder="Event title" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Date</label>
+            <input type="date" value={newEvent.date} onChange={e => setNewEvent(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Description</label>
+            <input value={newEvent.description} onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))} placeholder="Notes or location" className={cn("w-full", THEME.punk.input)} />
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (!newEvent.title || !newEvent.date) return;
+            actions.add('events', { ...newEvent, type: 'Standalone Event' });
+            setNewEvent({ title: '', date: '', description: '' });
+          }}
+          className={cn("px-4 py-2 w-full md:w-auto", THEME.punk.btn, "bg-black text-white")}
+        >
+          + Add Standalone Event
+        </button>
+      </div>
             <div className="grid grid-cols-7 gap-px bg-black border-4 border-black text-center font-black text-white mb-px">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="py-3">{d}</div>)}
             </div>
@@ -94,7 +134,17 @@ export const CalendarView = ({ onEdit }) => {
                         <div key={d} className="bg-white h-24 p-1 overflow-y-auto border-r border-b border-black hover:bg-yellow-50">
                             <div className="text-xs font-bold mb-1">{d}</div>
                             {list.map(t => (
-                                <div key={t.id} onClick={() => onEdit(t)} className="text-[10px] p-1 mb-1 font-bold uppercase truncate border border-black cursor-pointer bg-pink-500 text-white">{t.title}</div>
+                                <div
+                                  key={t.id}
+                                  onClick={() => t._kind === 'task' && onEdit ? onEdit(t) : undefined}
+                                  className={cn(
+                                    "text-[10px] p-1 mb-1 font-bold uppercase truncate border border-black cursor-pointer",
+                                    t._kind === 'release' ? 'bg-green-400 text-black' : t._kind === 'event' ? 'bg-blue-500 text-white' : 'bg-pink-500 text-white'
+                                  )}
+                                  title={t._kind === 'release' ? `${t.title}${t.releaseType ? ` (${t.releaseType})` : ''}` : t.description || t.title}
+                                >
+                                  {t.title}
+                                </div>
                             ))}
                         </div>
                     );
@@ -142,11 +192,49 @@ export const GalleryView = () => {
 
 export const TeamView = () => {
     const { data, actions } = useStore();
-    const add = () => { const n = prompt('Name:'); if(n) actions.add('vendors', {name:n, role:'Staff', type:'individual'}); };
+    const [newMember, setNewMember] = useState({ name: '', role: '', type: 'individual', phone: '', email: '', notes: '', companyId: '' });
+    const companies = (data.teamMembers || []).filter(m => m.type === 'company');
+
+    const handleAdd = async () => {
+      if (!newMember.name) return;
+      await actions.addTeamMember(newMember);
+      setNewMember({ name: '', role: '', type: 'individual', phone: '', email: '', notes: '', companyId: '' });
+    };
+
     return (
-        <div className="p-6">
-            <div className="flex justify-between mb-6"><h2 className={THEME.punk.textStyle}>Team</h2><button onClick={add} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add</button></div>
-            <div className="grid md:grid-cols-2 gap-4">{data.vendors.map(v => (<div key={v.id} className={cn("p-4 relative", THEME.punk.card)}><h3 className="font-bold">{v.name}</h3><p className="text-sm opacity-50">{v.role}</p><button onClick={()=>actions.delete('vendors', v.id)} className="absolute top-2 right-2 text-red-500"><Icon name="Trash2" size={16}/></button></div>))}</div>
+        <div className="p-6 pb-24">
+            <div className="flex justify-between mb-6"><h2 className={THEME.punk.textStyle}>Team</h2></div>
+            <div className={cn("p-4 mb-6 grid md:grid-cols-2 gap-4", THEME.punk.card)}>
+              <input value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} placeholder="Name" className={cn("w-full", THEME.punk.input)} />
+              <input value={newMember.role} onChange={e => setNewMember({ ...newMember, role: e.target.value })} placeholder="Role" className={cn("w-full", THEME.punk.input)} />
+              <div className="flex gap-2 items-center">
+                <label className="text-xs font-bold uppercase">Type</label>
+                <select value={newMember.type} onChange={e => setNewMember({ ...newMember, type: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                  <option value="individual">Individual</option>
+                  <option value="company">Company</option>
+                </select>
+              </div>
+              <select value={newMember.companyId} onChange={e => setNewMember({ ...newMember, companyId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                <option value="">Linked Company (optional)</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <input value={newMember.phone} onChange={e => setNewMember({ ...newMember, phone: e.target.value })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
+              <input value={newMember.email} onChange={e => setNewMember({ ...newMember, email: e.target.value })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
+              <textarea value={newMember.notes} onChange={e => setNewMember({ ...newMember, notes: e.target.value })} placeholder="Notes" className={cn("w-full h-20", THEME.punk.input)} />
+              <button onClick={handleAdd} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>
+                + Add Team Member
+              </button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">{(data.teamMembers || []).map(v => (
+              <div key={v.id} className={cn("p-4 relative space-y-1", THEME.punk.card)}>
+                <h3 className="font-bold">{v.name}</h3>
+                <p className="text-sm opacity-80">{v.role || v.type}</p>
+                {v.companyId && <p className="text-xs font-bold">Linked: {companies.find(c => c.id === v.companyId)?.name || 'Company'}</p>}
+                <p className="text-xs">{v.email}</p>
+                <p className="text-xs">{v.phone}</p>
+                {v.notes && <p className="text-xs opacity-70">{v.notes}</p>}
+                <button onClick={()=>actions.deleteTeamMember(v.id)} className="absolute top-2 right-2 text-red-500"><Icon name="Trash2" size={16}/></button>
+              </div>))}</div>
         </div>
     );
 };
@@ -270,6 +358,20 @@ export const SettingsView = () => {
                             );
                         })}
                     </div>
+                </div>
+
+                {/* Stages */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Workflow Stages</h3>
+                  <div className="space-y-2">
+                    {(data.stages || []).map(stage => (
+                      <div key={stage.id} className="flex items-center gap-2">
+                        <input value={stage.name} onChange={e => actions.updateStage(stage.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <button onClick={() => actions.deleteStage(stage.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addStage({ name: `Stage ${ (data.stages?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Stage</button>
+                  </div>
                 </div>
 
                 {/* Cloud connection */}

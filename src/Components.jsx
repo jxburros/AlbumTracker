@@ -17,6 +17,7 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   const menu = [
       // New Spec Views (primary)
       { id: 'songs', label: 'Songs', icon: 'Music' },
+      { id: 'videos', label: 'Videos', icon: 'PlayCircle' },
       { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
       { id: 'releases', label: 'Releases', icon: 'Download' },
       { id: 'timeline', label: 'Timeline', icon: 'Calendar' },
@@ -66,6 +67,8 @@ export const Editor = ({ task, onClose }) => {
     const [form, setForm] = useState(task ? {...task} : {});
     const [tab, setTab] = useState('details');
     const [sub, setSub] = useState('');
+    const checklistStates = ['Complete', 'Paid', 'Complete but unpaid', 'Paid but incomplete', 'Archived'];
+    const artistName = data.settings?.artistName || 'Artist';
 
     useEffect(() => {
         if (task) setForm({...task});
@@ -118,12 +121,16 @@ export const Editor = ({ task, onClose }) => {
                              ))}
                           </div>
                        )}
-                       <input value={form.title || ''} onChange={e => setForm({...form, title: e.target.value})} className={cn("w-full", THEME.punk.input)} placeholder="TITLE" />
-                       <div className="grid grid-cols-2 gap-4">
-                           <div><label className="text-xs font-bold opacity-50">Stage</label><select value={form.stageId || ''} onChange={e => setForm({...form, stageId: e.target.value})} className={cn("w-full", THEME.punk.input)}>{data.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                           <div><label className="text-xs font-bold opacity-50">Due</label><input type="date" value={form.dueDate || ''} onChange={e => setForm({...form, dueDate: e.target.value})} className={cn("w-full", THEME.punk.input)} /></div>
-                       </div>
-                       <div className="border-t-4 border-black pt-4">
+                        <input value={form.title || ''} onChange={e => setForm({...form, title: e.target.value})} className={cn("w-full", THEME.punk.input)} placeholder="TITLE" />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="text-xs font-bold opacity-50">Checklist</label><select value={form.checklistState || ''} onChange={e => setForm({...form, checklistState: e.target.value})} className={cn("w-full", THEME.punk.input)}>{['', 'Complete', 'Paid', 'Complete but unpaid', 'Paid but incomplete', 'Archived'].map(s => <option key={s} value={s}>{s || 'Select state'}</option>)}</select></div>
+                            <div><label className="text-xs font-bold opacity-50">Stage</label><select value={form.stageId || ''} onChange={e => setForm({...form, stageId: e.target.value})} className={cn("w-full", THEME.punk.input)}>{data.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                            <div><label className="text-xs font-bold opacity-50">Due</label><input type="date" value={form.dueDate || ''} onChange={e => setForm({...form, dueDate: e.target.value})} className={cn("w-full", THEME.punk.input)} /></div>
+                        </div>
+                         <button onClick={() => setForm({...form, assignees: Array.from(new Set([...(form.assignees || []), artistName]))})} className={cn("px-3 py-2 text-xs", THEME.punk.btn)}>
+                           Assign me ({artistName})
+                         </button>
+                         <div className="border-t-4 border-black pt-4">
                             <div className="flex gap-2">
                                <input value={sub} onChange={e => setSub(e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Quick sub-task..." onKeyDown={e => { if(e.key === 'Enter') { actions.add('tasks', { title: sub, parentId: form.id, status: 'todo' }); setSub(''); }}} />
                                <button onClick={() => { actions.add('tasks', { title: sub, parentId: form.id, status: 'todo' }); setSub(''); }} className={cn("px-4", THEME.punk.btn, "bg-black text-white")}>Add</button>
