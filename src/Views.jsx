@@ -534,25 +534,27 @@ export const GalleryView = () => {
 
 export const TeamView = () => {
     const { data, actions } = useStore();
-    const [newMember, setNewMember] = useState({ 
-        name: '', 
-        role: '', 
-        type: 'individual', 
-        phone: '', 
-        email: '', 
-        notes: '', 
-        companyId: '',
+    const [newMember, setNewMember] = useState({
+        name: '',
+        role: '',
+        roles: [],
+        type: 'individual',
+        contacts: { phone: '', email: '', website: '' },
+        notes: '',
+        links: { groups: [], organizations: [], members: [] },
         isMusician: false,
         instruments: []
     });
     const [editingMember, setEditingMember] = useState(null);
-    const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'company'
-    const companies = (data.teamMembers || []).filter(m => m.type === 'company');
+    const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'group', 'organization'
+    const companies = (data.teamMembers || []).filter(m => m.type === 'company' || m.type === 'organization');
+    const groups = (data.teamMembers || []).filter(m => m.type === 'group');
+    const individuals = (data.teamMembers || []).filter(m => m.type === 'individual');
 
     const handleAdd = async () => {
         if (!newMember.name) return;
         await actions.addTeamMember(newMember);
-        setNewMember({ name: '', role: '', type: 'individual', phone: '', email: '', notes: '', companyId: '', isMusician: false, instruments: [] });
+        setNewMember({ name: '', role: '', roles: [], type: 'individual', contacts: { phone: '', email: '', website: '' }, notes: '', links: { groups: [], organizations: [], members: [] }, isMusician: false, instruments: [] });
     };
 
     const handleUpdateMember = async () => {
@@ -568,11 +570,43 @@ export const TeamView = () => {
             members = members.filter(m => m.isMusician);
         } else if (filter === 'individual') {
             members = members.filter(m => m.type === 'individual');
-        } else if (filter === 'company') {
-            members = members.filter(m => m.type === 'company');
+        } else if (filter === 'company' || filter === 'organization') {
+            members = members.filter(m => m.type === 'company' || m.type === 'organization');
+        } else if (filter === 'group') {
+            members = members.filter(m => m.type === 'group');
         }
         return members;
     }, [data.teamMembers, filter]);
+
+    const memberTaskLookup = useMemo(() => {
+        const map = {};
+        const push = (memberId, task, context) => {
+            if (!memberId) return;
+            if (!map[memberId]) map[memberId] = [];
+            map[memberId].push({ title: task.title || task.taskName || task.type, status: task.status, context });
+        };
+        const considerList = (list, context) => {
+            (list || []).forEach(task => {
+                (task.assignedMembers || []).forEach(am => push(am.memberId, task, context));
+            });
+        };
+
+        considerList(data.tasks || [], 'General Tasks');
+        considerList(data.globalTasks || [], 'Global Tasks');
+        (data.releases || []).forEach(rel => {
+            considerList(rel.tasks || [], `Release: ${rel.name}`);
+            considerList(rel.customTasks || [], `Release Custom: ${rel.name}`);
+        });
+        (data.songs || []).forEach(song => {
+            considerList(song.deadlines || [], `Song: ${song.title}`);
+            considerList(song.customTasks || [], `Song Custom: ${song.title}`);
+            (song.versions || []).forEach(v => {
+                considerList(v.tasks || [], `Version ${v.name} — ${song.title}`);
+                considerList(v.customTasks || [], `Version Custom ${v.name} — ${song.title}`);
+            });
+        });
+        return map;
+    }, [data.tasks, data.globalTasks, data.releases, data.songs]);
 
     return (
         <div className="p-6 pb-24">
@@ -583,7 +617,8 @@ export const TeamView = () => {
                         <option value="all">All Members</option>
                         <option value="musicians">Musicians Only</option>
                         <option value="individual">Individuals</option>
-                        <option value="company">Companies</option>
+                        <option value="group">Groups</option>
+                        <option value="organization">Organizations</option>
                     </select>
                 </div>
             </div>
@@ -592,21 +627,41 @@ export const TeamView = () => {
                 <h3 className="font-black uppercase mb-4 border-b-2 border-black pb-2">Add New Team Member</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                     <input value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} placeholder="Name" className={cn("w-full", THEME.punk.input)} />
-                    <input value={newMember.role} onChange={e => setNewMember({ ...newMember, role: e.target.value })} placeholder="Role" className={cn("w-full", THEME.punk.input)} />
+                    <input value={(newMember.roles || []).join(', ')} onChange={e => setNewMember({ ...newMember, roles: e.target.value.split(',').map(r => r.trim()).filter(Boolean), role: e.target.value.split(',').map(r => r.trim()).filter(Boolean)[0] || '' })} placeholder="Roles (comma-separated)" className={cn("w-full", THEME.punk.input)} />
                     <div className="flex gap-2 items-center">
                         <label className="text-xs font-bold uppercase">Type</label>
                         <select value={newMember.type} onChange={e => setNewMember({ ...newMember, type: e.target.value })} className={cn("w-full", THEME.punk.input)}>
                             <option value="individual">Individual</option>
-                            <option value="company">Company</option>
+                            <option value="group">Group</option>
+                            <option value="organization">Organization</option>
                         </select>
                     </div>
-                    <select value={newMember.companyId} onChange={e => setNewMember({ ...newMember, companyId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
-                        <option value="">Linked Company (optional)</option>
-                        {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <input value={newMember.phone} onChange={e => setNewMember({ ...newMember, phone: e.target.value })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
-                    <input value={newMember.email} onChange={e => setNewMember({ ...newMember, email: e.target.value })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
-                    
+                    <input value={newMember.contacts?.phone || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), phone: e.target.value } })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
+                    <input value={newMember.contacts?.email || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), email: e.target.value } })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
+                    <input value={newMember.contacts?.website || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), website: e.target.value } })} placeholder="Website" className={cn("w-full", THEME.punk.input)} />
+
+                    {/* Relationship links */}
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Groups</label>
+                        <select multiple value={newMember.links?.groups || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), groups: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Organizations</label>
+                        <select multiple value={newMember.links?.organizations || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), organizations: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    {newMember.type === 'group' && (
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold uppercase mb-1">Members</label>
+                            <select multiple value={newMember.links?.members || []} onChange={e => setNewMember({ ...newMember, links: { ...(newMember.links || {}), members: Array.from(e.target.selectedOptions).map(o => o.value) } })} className={cn("w-full", THEME.punk.input)}>
+                                {individuals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+
                     {/* Phase 8: Musician flag and instruments */}
                     <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 font-bold">
@@ -645,10 +700,21 @@ export const TeamView = () => {
                             <h3 className="font-bold text-lg">{v.name}</h3>
                             {v.isMusician && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">🎵 MUSICIAN</span>}
                         </div>
-                        <p className="text-sm opacity-80">{v.role || v.type}</p>
-                        {v.companyId && <p className="text-xs font-bold">Linked: {companies.find(c => c.id === v.companyId)?.name || 'Company'}</p>}
-                        {v.email && <p className="text-xs">📧 {v.email}</p>}
-                        {v.phone && <p className="text-xs">📞 {v.phone}</p>}
+                        <p className="text-sm opacity-80">{(v.roles && v.roles.length > 0 ? v.roles.join(', ') : v.role) || v.type}</p>
+                        {((v.contacts?.email || v.email) || (v.contacts?.phone || v.phone) || v.contacts?.website) && (
+                            <div className="text-xs space-y-1">
+                                {(v.contacts?.email || v.email) && <p>📧 {v.contacts?.email || v.email}</p>}
+                                {(v.contacts?.phone || v.phone) && <p>📞 {v.contacts?.phone || v.phone}</p>}
+                                {v.contacts?.website && <p>🔗 {v.contacts.website}</p>}
+                            </div>
+                        )}
+                        {v.links && (
+                            <div className="text-[10px] font-bold space-y-1">
+                                {(v.links.groups || []).length > 0 && <div>Groups: {(v.links.groups || []).map(id => groups.find(g => g.id === id)?.name || 'Group').join(', ')}</div>}
+                                {(v.links.organizations || []).length > 0 && <div>Orgs: {(v.links.organizations || []).map(id => companies.find(c => c.id === id)?.name || 'Org').join(', ')}</div>}
+                                {(v.links.members || []).length > 0 && <div>Members: {(v.links.members || []).map(id => individuals.find(m => m.id === id)?.name || 'Member').join(', ')}</div>}
+                            </div>
+                        )}
                         {v.isMusician && v.instruments && v.instruments.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-2">
                                 {v.instruments.map(inst => (
@@ -659,8 +725,19 @@ export const TeamView = () => {
                             </div>
                         )}
                         {v.notes && <p className="text-xs opacity-70 mt-2">{v.notes}</p>}
+                        {(memberTaskLookup[v.id] || []).length > 0 && (
+                            <div className="mt-2 p-2 bg-gray-50 border border-black text-[11px] space-y-1">
+                                <div className="font-black uppercase">Linked Tasks</div>
+                                {memberTaskLookup[v.id].map((task, idx) => (
+                                    <div key={idx} className="flex justify-between gap-2">
+                                        <span>{task.title}</span>
+                                        <span className="text-[10px] uppercase">{task.context}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="absolute top-2 right-2 flex gap-1">
-                            <button onClick={() => setEditingMember({...v})} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
+                            <button onClick={() => setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) })} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
                             <button onClick={() => actions.deleteTeamMember(v.id)} className="text-red-500 hover:bg-red-100 p-1"><Icon name="Trash2" size={16}/></button>
                         </div>
                     </div>
@@ -685,24 +762,52 @@ export const TeamView = () => {
                                 <input value={editingMember.name || ''} onChange={e => setEditingMember(prev => ({ ...prev, name: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold uppercase mb-1">Role</label>
-                                <input value={editingMember.role || ''} onChange={e => setEditingMember(prev => ({ ...prev, role: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <label className="block text-xs font-bold uppercase mb-1">Roles</label>
+                                <input value={(editingMember.roles || []).join(', ')} onChange={e => {
+                                    const values = e.target.value.split(',').map(r => r.trim()).filter(Boolean);
+                                    setEditingMember(prev => ({ ...prev, roles: values, role: values[0] || '' }));
+                                }} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Type</label>
                                 <select value={editingMember.type} onChange={e => setEditingMember(prev => ({ ...prev, type: e.target.value }))} className={cn("w-full", THEME.punk.input)}>
                                     <option value="individual">Individual</option>
-                                    <option value="company">Company</option>
+                                    <option value="group">Group</option>
+                                    <option value="organization">Organization</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Phone</label>
-                                <input value={editingMember.phone || ''} onChange={e => setEditingMember(prev => ({ ...prev, phone: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <input value={editingMember.contacts?.phone || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), phone: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Email</label>
-                                <input value={editingMember.email || ''} onChange={e => setEditingMember(prev => ({ ...prev, email: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                                <input value={editingMember.contacts?.email || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), email: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
                             </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Website</label>
+                                <input value={editingMember.contacts?.website || ''} onChange={e => setEditingMember(prev => ({ ...prev, contacts: { ...(prev.contacts || {}), website: e.target.value } }))} className={cn("w-full", THEME.punk.input)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Groups</label>
+                                <select multiple value={editingMember.links?.groups || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), groups: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                    {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Organizations</label>
+                                <select multiple value={editingMember.links?.organizations || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), organizations: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            {editingMember.type === 'group' && (
+                                <div>
+                                    <label className="block text-xs font-bold uppercase mb-1">Members</label>
+                                    <select multiple value={editingMember.links?.members || []} onChange={e => setEditingMember(prev => ({ ...prev, links: { ...(prev.links || {}), members: Array.from(e.target.selectedOptions).map(o => o.value) } }))} className={cn("w-full", THEME.punk.input)}>
+                                        {individuals.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <input 
                                     type="checkbox" 

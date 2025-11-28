@@ -190,7 +190,7 @@ export const UnifiedTaskEditor = ({
     teamMembers = []
 }) => {
     const [form, setForm] = useState({ ...task });
-    const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: 0 });
+    const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: 0, instrument: '' });
     const [budgetError, setBudgetError] = useState(false);
 
     useEffect(() => {
@@ -216,12 +216,13 @@ export const UnifiedTaskEditor = ({
             return;
         }
         setBudgetError(false);
-        const updatedMembers = [...(form.assignedMembers || []), { 
-            memberId: newAssignment.memberId, 
-            cost: parseFloat(newAssignment.cost) || 0 
+        const updatedMembers = [...(form.assignedMembers || []), {
+            memberId: newAssignment.memberId,
+            cost: parseFloat(newAssignment.cost) || 0,
+            instrument: newAssignment.instrument || ''
         }];
         handleChange('assignedMembers', updatedMembers);
-        setNewAssignment({ memberId: '', cost: 0 });
+        setNewAssignment({ memberId: '', cost: 0, instrument: '' });
     };
 
     const removeAssignment = (index) => {
@@ -335,7 +336,7 @@ export const UnifiedTaskEditor = ({
                                 const member = teamMembers.find(tm => tm.id === m.memberId);
                                 return (
                                     <span key={idx} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold flex items-center gap-2">
-                                        {member?.name || 'Member'} ({formatMoney(m.cost)})
+                                {member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})
                                         <button onClick={() => removeAssignment(idx)} className="text-red-600">×</button>
                                     </span>
                                 );
@@ -350,12 +351,18 @@ export const UnifiedTaskEditor = ({
                                 <option value="">Select member...</option>
                                 {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                             </select>
-                            <input 
-                                type="number" 
-                                value={newAssignment.cost || ''} 
+                            <input
+                                type="number"
+                                value={newAssignment.cost || ''}
                                 onChange={e => setNewAssignment(prev => ({ ...prev, cost: e.target.value }))} 
                                 placeholder="Cost" 
-                                className={cn("w-20 text-xs", THEME.punk.input)} 
+                                className={cn("w-20 text-xs", THEME.punk.input)}
+                            />
+                            <input
+                                value={newAssignment.instrument || ''}
+                                onChange={e => setNewAssignment(prev => ({ ...prev, instrument: e.target.value }))}
+                                placeholder="Instrument"
+                                className={cn("w-32 text-xs", THEME.punk.input)}
                             />
                             <button onClick={addAssignment} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
                         </div>

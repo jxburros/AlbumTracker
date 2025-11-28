@@ -353,6 +353,32 @@ export const StoreProvider = ({ children }) => {
     }
   }, [mode, data.stages]);
 
+  const syncVersionRecordingTasks = (version) => {
+    const baseTasks = (version.tasks || []).filter(t => !t.generatedFromInstrument);
+    const instrumentAssignments = [];
+    (version.musicians || []).forEach(m => {
+      (m.instruments || []).forEach(inst => {
+        instrumentAssignments.push({ instrument: inst, memberId: m.memberId });
+      });
+    });
+    const uniqueInstruments = Array.from(new Set([...(version.instruments || []), ...instrumentAssignments.map(i => i.instrument)]));
+    const recordingTasks = uniqueInstruments.map(inst => {
+      const existing = (version.tasks || []).find(t => t.generatedFromInstrument === inst);
+      const assignments = instrumentAssignments.filter(a => a.instrument === inst).map(a => ({ memberId: a.memberId, instrument: inst }));
+      if (existing) {
+        return { ...existing, assignedMembers: assignments };
+      }
+      return createUnifiedTask({
+        type: `Record (${inst})`,
+        category: 'Recording',
+        parentType: 'version',
+        generatedFromInstrument: inst,
+        assignedMembers: assignments
+      });
+    });
+    return { ...version, tasks: [...baseTasks, ...recordingTasks] };
+  };
+
     const stats = useMemo(() => {
     // Use getEffectiveCost directly for consistent cost calculation (paid > quoted > estimated)
     const costValue = getEffectiveCost;
@@ -549,14 +575,26 @@ export const StoreProvider = ({ children }) => {
        const newMember = {
          id: crypto.randomUUID(),
          name: member.name || 'New Member',
-         phone: member.phone || '',
-         email: member.email || '',
+         // Contacts consolidated under contacts for future expansion
+         contacts: {
+           phone: member.contacts?.phone || member.phone || '',
+           email: member.contacts?.email || member.email || '',
+           website: member.contacts?.website || member.website || ''
+         },
+         // Backwards-compatible role string plus structured roles array
          role: member.role || '',
+         roles: member.roles || (member.role ? [member.role] : []),
          notes: member.notes || '',
          type: member.type || 'individual',
-         companyId: member.companyId || '',
+         // Relationship graph between individuals, groups, and orgs
+         links: {
+           groups: member.links?.groups || [],
+           organizations: member.links?.organizations || [],
+           members: member.links?.members || []
+         },
          instruments: member.instruments || [],
-         costs: member.costs || {}
+         costs: member.costs || {},
+         isMusician: member.isMusician || false
        };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers'), { ...newMember, createdAt: serverTimestamp() });
@@ -567,15 +605,25 @@ export const StoreProvider = ({ children }) => {
      },
 
      updateTeamMember: async (memberId, updates) => {
-       if (mode === 'cloud') {
-         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers', memberId), updates);
-       } else {
-         setData(p => ({
-           ...p,
-           teamMembers: (p.teamMembers || []).map(m => m.id === memberId ? { ...m, ...updates } : m)
-         }));
-       }
-     },
+      const normalizedUpdates = {
+        ...updates,
+        contacts: {
+          phone: updates.contacts?.phone || updates.phone || '',
+          email: updates.contacts?.email || updates.email || '',
+          website: updates.contacts?.website || updates.website || ''
+        },
+        roles: updates.roles || (updates.role ? [updates.role] : undefined),
+        links: updates.links || { groups: updates.groups || [], organizations: updates.organizations || [], members: updates.members || [] }
+      };
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers', memberId), normalizedUpdates);
+      } else {
+        setData(p => ({
+          ...p,
+          teamMembers: (p.teamMembers || []).map(m => m.id === memberId ? { ...m, ...normalizedUpdates } : m)
+        }));
+      }
+    },
 
      deleteTeamMember: async (memberId) => {
        if (mode === 'cloud') {
@@ -754,7 +802,10 @@ export const StoreProvider = ({ children }) => {
         ...prev,
         songs: (prev.songs || []).map(song => {
           if (song.id !== songId) return song;
-          const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, musicians: [...(v.musicians || []), musician] } : v);
+          const updatedVersions = (song.versions || []).map(v => {
+            if (v.id !== versionId) return v;
+            return syncVersionRecordingTasks({ ...v, musicians: [...(v.musicians || []), musician] });
+          });
           return { ...song, versions: updatedVersions };
         })
       }));
@@ -765,7 +816,10 @@ export const StoreProvider = ({ children }) => {
         ...prev,
         songs: (prev.songs || []).map(song => {
           if (song.id !== songId) return song;
-          const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, musicians: (v.musicians || []).filter(m => m.id !== musicianId) } : v);
+          const updatedVersions = (song.versions || []).map(v => {
+            if (v.id !== versionId) return v;
+            return syncVersionRecordingTasks({ ...v, musicians: (v.musicians || []).filter(m => m.id !== musicianId) });
+          });
           return { ...song, versions: updatedVersions };
         })
       }));
@@ -804,7 +858,7 @@ export const StoreProvider = ({ children }) => {
       const versionReleaseDate = baseData?.releaseDate || song.releaseDate || '';
       const versionTasks = generateVersionTasks(versionReleaseDate);
       
-      const newVersion = {
+      let newVersion = {
         id: crypto.randomUUID(),
         name: baseData?.name || `${song.title} Alt`,
         // Multi-release linking
@@ -833,6 +887,8 @@ export const StoreProvider = ({ children }) => {
         customTasks: []
       };
 
+      newVersion = syncVersionRecordingTasks(newVersion);
+
       const saveVersions = (versions) => {
         if (mode === 'cloud') {
           updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions });
@@ -852,7 +908,10 @@ export const StoreProvider = ({ children }) => {
     updateSongVersion: async (songId, versionId, updates) => {
       const song = data.songs.find(s => s.id === songId);
       if (!song) return;
-      const updatedVersions = (song.versions || []).map(v => v.id === versionId ? { ...v, ...updates } : v);
+      const updatedVersions = (song.versions || []).map(v => {
+        if (v.id !== versionId) return v;
+        return syncVersionRecordingTasks({ ...v, ...updates });
+      });
       if (mode === 'cloud') {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
       } else {

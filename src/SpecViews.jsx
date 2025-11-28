@@ -114,14 +114,14 @@ export const SongDetailView = ({ song, onBack }) => {
   };
 
   const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
     const budget = taskBudget(taskObj);
     const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
     const nextTotal = current + (parseFloat(entry.cost) || 0);
     if (budget > 0 && nextTotal > budget) return; // prevent over-allocation
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0, instrument: entry.instrument || '' }];
     updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0, instrument: '' } }));
   };
 
   const handleSave = async () => { await actions.updateSong(song.id, form); };
@@ -453,7 +453,7 @@ export const SongDetailView = ({ song, onBack }) => {
                         <div className="flex flex-wrap gap-1">
                           {(task.assignedMembers || []).map(m => {
                             const member = teamMembers.find(tm => tm.id === m.memberId);
-                            return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                            return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                           })}
                         </div>
                         <div className="flex gap-1 items-center">
@@ -462,6 +462,7 @@ export const SongDetailView = ({ song, onBack }) => {
                             {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                           </select>
                           <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                          <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                           <button onClick={() => addAssignment(task.id, task, (assignedMembers) => {
                             const updatedTasks = songTasks.map(t => t.id === task.id ? { ...t, assignedMembers } : t);
                             actions.updateSong(song.id, { deadlines: updatedTasks });
@@ -523,11 +524,11 @@ export const SongDetailView = ({ song, onBack }) => {
                   <div className="font-bold">{task.title}</div>
                   <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
                   {task.description && <div className="text-sm mt-1">{task.description}</div>}
-                  <div className="mt-2 space-y-1">
-                    <div className="flex flex-wrap gap-1">
-                      {(task.assignedMembers || []).map(m => {
-                        const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                    <div className="mt-2 space-y-1">
+                      <div className="flex flex-wrap gap-1">
+                        {(task.assignedMembers || []).map(m => {
+                          const member = teamMembers.find(tm => tm.id === m.memberId);
+                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                       })}
                     </div>
                     <div className="flex gap-1 items-center">
@@ -536,6 +537,7 @@ export const SongDetailView = ({ song, onBack }) => {
                         {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                       <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateSongCustomTask(song.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                       {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                     </div>
@@ -586,14 +588,14 @@ export const GlobalTasksView = () => {
   };
 
   const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
     const budget = taskBudget(taskObj);
     const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
     const nextTotal = current + (parseFloat(entry.cost) || 0);
     if (budget > 0 && nextTotal > budget) return;
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0, instrument: entry.instrument || '' }];
     updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0, instrument: '' } }));
   };
 
   const tasks = useMemo(() => {
@@ -735,7 +737,7 @@ export const GlobalTasksView = () => {
                   <div className="flex flex-wrap gap-1">
                     {(task.assignedMembers || []).map(m => {
                       const member = teamMembers.find(tm => tm.id === m.memberId);
-                      return <span key={m.memberId + m.cost} className="px-2 py-1 border-2 border-black bg-purple-100 font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                      return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 border-2 border-black bg-purple-100 font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                     })}
                   </div>
                   <div className="flex gap-1 items-center">
@@ -744,6 +746,7 @@ export const GlobalTasksView = () => {
                       {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
                     <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                    <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                     <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateGlobalTask(task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                     {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                   </div>
@@ -1023,7 +1026,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                     <div className="flex flex-wrap gap-1">
                       {(task.assignedMembers || []).map(m => {
                         const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
                       })}
                     </div>
                     <div className="flex gap-1 items-center">
@@ -1032,6 +1035,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
                         {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
+                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
                       <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateReleaseTask(release.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
                       {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
                     </div>
