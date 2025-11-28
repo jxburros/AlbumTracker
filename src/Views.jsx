@@ -262,11 +262,189 @@ export const ArchiveView = () => {
 
 export const ActiveView = ({ onEdit }) => {
     const { data } = useStore();
-    const active = data.tasks.filter(t => !t.archived && !t.isCategory && t.status !== 'done');
+    const today = new Date().toISOString().split('T')[0];
+    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // Collect all tasks from various sources
+    const allTasks = useMemo(() => {
+        const tasks = [];
+        
+        // Legacy tasks from the original tasks array
+        const legacyTasks = data.tasks.filter(t => !t.archived && !t.isCategory && t.status !== 'done');
+        legacyTasks.forEach(t => {
+            tasks.push({
+                ...t,
+                source: 'Legacy',
+                sourceName: t.title,
+                effectiveCost: t.actualCost || t.quotedCost || t.estimatedCost || 0,
+                isPaid: t.actualCost > 0
+            });
+        });
+        
+        // Song tasks (deadlines) and custom tasks
+        (data.songs || []).forEach(song => {
+            (song.deadlines || []).filter(d => d.status !== 'Done').forEach(d => {
+                tasks.push({
+                    id: `song-${song.id}-${d.id}`,
+                    title: d.type,
+                    dueDate: d.date,
+                    status: d.status,
+                    source: 'Song',
+                    sourceName: song.title,
+                    estimatedCost: d.estimatedCost || 0,
+                    quotedCost: d.quotedCost || 0,
+                    paidCost: d.paidCost || 0,
+                    effectiveCost: d.paidCost || d.quotedCost || d.estimatedCost || 0,
+                    isPaid: (d.paidCost || 0) > 0
+                });
+            });
+            (song.customTasks || []).filter(t => t.status !== 'Done').forEach(t => {
+                tasks.push({
+                    id: `song-custom-${song.id}-${t.id}`,
+                    title: t.title,
+                    dueDate: t.date,
+                    status: t.status,
+                    source: 'Song',
+                    sourceName: song.title,
+                    estimatedCost: t.estimatedCost || 0,
+                    quotedCost: t.quotedCost || 0,
+                    paidCost: t.paidCost || 0,
+                    effectiveCost: t.paidCost || t.quotedCost || t.estimatedCost || 0,
+                    isPaid: (t.paidCost || 0) > 0
+                });
+            });
+        });
+        
+        // Global tasks
+        (data.globalTasks || []).filter(t => t.status !== 'Done' && !t.isArchived).forEach(t => {
+            tasks.push({
+                id: `global-${t.id}`,
+                title: t.taskName,
+                dueDate: t.date,
+                status: t.status,
+                source: 'Global',
+                sourceName: t.category,
+                estimatedCost: t.estimatedCost || 0,
+                quotedCost: t.quotedCost || 0,
+                paidCost: t.paidCost || 0,
+                effectiveCost: t.paidCost || t.quotedCost || t.estimatedCost || 0,
+                isPaid: (t.paidCost || 0) > 0
+            });
+        });
+        
+        // Release tasks
+        (data.releases || []).forEach(release => {
+            (release.tasks || []).filter(t => t.status !== 'Done').forEach(t => {
+                tasks.push({
+                    id: `release-${release.id}-${t.id}`,
+                    title: t.type,
+                    dueDate: t.date,
+                    status: t.status,
+                    source: 'Release',
+                    sourceName: release.name,
+                    estimatedCost: t.estimatedCost || 0,
+                    quotedCost: t.quotedCost || 0,
+                    paidCost: t.paidCost || 0,
+                    effectiveCost: t.paidCost || t.quotedCost || t.estimatedCost || 0,
+                    isPaid: (t.paidCost || 0) > 0
+                });
+            });
+        });
+        
+        return tasks;
+    }, [data.tasks, data.songs, data.globalTasks, data.releases]);
+    
+    // Filter tasks into categories
+    const inProgress = allTasks.filter(t => t.status === 'In Progress');
+    const overdue = allTasks.filter(t => t.dueDate && t.dueDate < today);
+    const dueSoon = allTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= nextWeek);
+    const unpaid = allTasks.filter(t => !t.isPaid && t.effectiveCost > 0);
+    
+    const TaskCard = ({ task, highlight }) => (
+        <div 
+            key={task.id} 
+            onClick={() => task.source === 'Legacy' ? onEdit(task) : undefined} 
+            className={cn(
+                "p-4 cursor-pointer hover:bg-yellow-50 border-l-4",
+                THEME.punk.card,
+                highlight === 'overdue' ? 'border-l-red-500 bg-red-50' :
+                highlight === 'dueSoon' ? 'border-l-yellow-500 bg-yellow-50' :
+                highlight === 'inProgress' ? 'border-l-blue-500 bg-blue-50' :
+                highlight === 'unpaid' ? 'border-l-purple-500 bg-purple-50' :
+                'border-l-gray-300'
+            )}
+        >
+            <div className="font-bold text-lg">{task.title}</div>
+            <div className="text-xs font-bold text-gray-600">{task.source}: {task.sourceName}</div>
+            <div className="flex flex-wrap gap-2 mt-2 text-xs">
+                {task.dueDate && <span className={cn("px-2 py-1 font-bold border border-black", task.dueDate < today ? 'bg-red-200' : task.dueDate <= nextWeek ? 'bg-yellow-200' : 'bg-gray-200')}>
+                    {task.dueDate < today ? 'OVERDUE: ' : 'Due: '}{task.dueDate}
+                </span>}
+                <span className={cn("px-2 py-1 font-bold border border-black", task.status === 'In Progress' ? 'bg-blue-200' : 'bg-gray-200')}>{task.status}</span>
+                {task.effectiveCost > 0 && <span className={cn("px-2 py-1 font-bold border border-black", task.isPaid ? 'bg-green-200' : 'bg-purple-200')}>{task.isPaid ? 'Paid' : 'Unpaid'}: {formatMoney(task.effectiveCost)}</span>}
+            </div>
+        </div>
+    );
+    
     return (
-        <div className="p-6">
+        <div className="p-6 pb-24">
             <h2 className={cn("mb-6", THEME.punk.textStyle)}>Active Tasks</h2>
-            <div className="grid gap-4">{active.map(t => (<div key={t.id} onClick={() => onEdit(t)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}><div className="font-bold text-lg">{t.title}</div><div className="text-xs opacity-60">{t.dueDate ? `Due: ${t.dueDate}` : 'In Progress'}</div></div>))}</div>
+            
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className={cn("p-4 text-center", THEME.punk.card, "bg-red-50")}>
+                    <div className="text-3xl font-black text-red-600">{overdue.length}</div>
+                    <div className="text-xs font-bold uppercase">Overdue</div>
+                </div>
+                <div className={cn("p-4 text-center", THEME.punk.card, "bg-yellow-50")}>
+                    <div className="text-3xl font-black text-yellow-600">{dueSoon.length}</div>
+                    <div className="text-xs font-bold uppercase">Due This Week</div>
+                </div>
+                <div className={cn("p-4 text-center", THEME.punk.card, "bg-blue-50")}>
+                    <div className="text-3xl font-black text-blue-600">{inProgress.length}</div>
+                    <div className="text-xs font-bold uppercase">In Progress</div>
+                </div>
+                <div className={cn("p-4 text-center", THEME.punk.card, "bg-purple-50")}>
+                    <div className="text-3xl font-black text-purple-600">{unpaid.length}</div>
+                    <div className="text-xs font-bold uppercase">Unpaid</div>
+                </div>
+            </div>
+            
+            {/* Overdue Tasks */}
+            {overdue.length > 0 && (
+                <div className="mb-6">
+                    <h3 className="font-black uppercase text-red-600 mb-3 border-b-4 border-red-600 pb-2">⚠️ Overdue Tasks</h3>
+                    <div className="grid gap-3">{overdue.map(t => <TaskCard key={t.id} task={t} highlight="overdue" />)}</div>
+                </div>
+            )}
+            
+            {/* Due This Week */}
+            {dueSoon.length > 0 && (
+                <div className="mb-6">
+                    <h3 className="font-black uppercase text-yellow-600 mb-3 border-b-4 border-yellow-600 pb-2">📅 Due This Week</h3>
+                    <div className="grid gap-3">{dueSoon.map(t => <TaskCard key={t.id} task={t} highlight="dueSoon" />)}</div>
+                </div>
+            )}
+            
+            {/* In Progress */}
+            {inProgress.length > 0 && (
+                <div className="mb-6">
+                    <h3 className="font-black uppercase text-blue-600 mb-3 border-b-4 border-blue-600 pb-2">🔄 In Progress</h3>
+                    <div className="grid gap-3">{inProgress.map(t => <TaskCard key={t.id} task={t} highlight="inProgress" />)}</div>
+                </div>
+            )}
+            
+            {/* Unpaid Tasks */}
+            {unpaid.length > 0 && (
+                <div className="mb-6">
+                    <h3 className="font-black uppercase text-purple-600 mb-3 border-b-4 border-purple-600 pb-2">💰 Unpaid Tasks</h3>
+                    <div className="grid gap-3">{unpaid.map(t => <TaskCard key={t.id} task={t} highlight="unpaid" />)}</div>
+                </div>
+            )}
+            
+            {allTasks.length === 0 && (
+                <div className="text-center py-10 opacity-50">No active tasks found.</div>
+            )}
         </div>
     );
 };

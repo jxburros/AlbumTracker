@@ -818,6 +818,27 @@ export const StoreProvider = ({ children }) => {
       }
     },
 
+    // Detach a version from a release (Phase 4: ability to decouple/unlink releases from versions)
+    detachVersionFromRelease: async (songId, versionId, releaseId) => {
+      const song = data.songs.find(s => s.id === songId);
+      if (!song) return;
+      const updatedVersions = (song.versions || []).map(v => {
+        if (v.id !== versionId) return v;
+        const releaseIds = (v.releaseIds || []).filter(id => id !== releaseId);
+        const releaseOverrides = { ...(v.releaseOverrides || {}) };
+        delete releaseOverrides[releaseId];
+        return { ...v, releaseIds, releaseOverrides };
+      });
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
+      } else {
+        setData(p => ({
+          ...p,
+          songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
+        }));
+      }
+    },
+
     // Delete a song version (except core)
     deleteSongVersion: async (songId, versionId) => {
       if (versionId === 'core') return; // Cannot delete core version

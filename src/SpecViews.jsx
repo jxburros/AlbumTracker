@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
@@ -197,12 +197,6 @@ export const SongDetailView = ({ song, onBack }) => {
               {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Video Type</label>
-            <select value={form.videoType || 'None'} onChange={e => { handleFieldChange('videoType', e.target.value); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
-              {VIDEO_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 font-bold">
               <input type="checkbox" checked={form.isSingle || false} onChange={e => { handleFieldChange('isSingle', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
@@ -298,10 +292,6 @@ export const SongDetailView = ({ song, onBack }) => {
                   <button onClick={() => { if (confirm('Delete this version?')) actions.deleteSongVersion(song.id, v.id); }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
                 )}
                 {v.id === 'core' && <span className="px-2 py-1 bg-yellow-200 text-xs font-bold border border-black">CORE</span>}
-                <label className="flex items-center gap-1 text-xs font-bold">
-                  <input type="checkbox" checked={v.basedOnCore || false} onChange={e => actions.updateSongVersion(song.id, v.id, { basedOnCore: e.target.checked })} className="w-4 h-4" />
-                  Inherits from Core
-                </label>
               </div>
               
               {/* Availability Windows */}
@@ -363,14 +353,15 @@ export const SongDetailView = ({ song, onBack }) => {
                 <span className="font-bold">Releases:</span>
                 <select onChange={e => actions.attachVersionToRelease(song.id, v.id, e.target.value, data.releases.find(r => r.id === e.target.value)?.releaseDate)} className={cn("px-2 py-1 text-xs", THEME.punk.input)} value="">
                   <option value="">Attach to release...</option>
-                  {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  {(data.releases || []).filter(r => !(v.releaseIds || []).includes(r.id)).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
                 {(v.releaseIds || []).map(rid => {
                   const rel = data.releases.find(r => r.id === rid);
                   const overrideDate = v.releaseOverrides?.[rid];
                   return (
-                    <span key={rid} className="px-2 py-1 border-2 border-black bg-yellow-100 font-bold">
+                    <span key={rid} className="px-2 py-1 border-2 border-black bg-yellow-100 font-bold flex items-center gap-1">
                       {rel?.name || 'Release'} — {overrideDate || rel?.releaseDate || 'TBD'}
+                      <button onClick={() => actions.detachVersionFromRelease(song.id, v.id, rid)} className="text-red-600 hover:bg-red-100 ml-1" title="Unlink release">×</button>
                     </span>
                   );
                 })}
@@ -758,8 +749,9 @@ export const GlobalTasksView = () => {
                 </td>
                 <td className="p-3"><span className={cn("px-2 py-1 text-xs font-bold", task.status === 'Done' ? 'bg-green-200' : task.status === 'In Progress' ? 'bg-blue-200' : task.status === 'Delayed' ? 'bg-red-200' : 'bg-gray-200')}>{task.status}</span></td>
                 <td className="p-3 text-center">
-                  <button onClick={() => setEditingTask({ ...task })} className="p-1 hover:bg-blue-100 text-blue-500 mr-1"><Icon name="Settings" size={14} /></button>
-                  <button onClick={() => handleDeleteTask(task.id)} className="p-1 hover:bg-red-100 text-red-500"><Icon name="Trash2" size={14} /></button>
+                  <button onClick={() => setEditingTask({ ...task })} className="p-1 hover:bg-blue-100 text-blue-500 mr-1" title="Edit"><Icon name="Settings" size={14} /></button>
+                  <button onClick={() => actions.updateGlobalTask(task.id, { isArchived: !task.isArchived })} className={cn("p-1 mr-1", task.isArchived ? "hover:bg-green-100 text-green-500" : "hover:bg-yellow-100 text-yellow-600")} title={task.isArchived ? "Restore" : "Archive"}><Icon name="Archive" size={14} /></button>
+                  <button onClick={() => handleDeleteTask(task.id)} className="p-1 hover:bg-red-100 text-red-500" title="Delete"><Icon name="Trash2" size={14} /></button>
                 </td>
               </tr>
             ))}
