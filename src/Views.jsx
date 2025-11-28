@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS, getEffectiveCost } from './Store';
+import { useState, useMemo, useEffect } from 'react';
+import { useStore, STATUS_OPTIONS } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
@@ -973,10 +973,45 @@ export const MiscView = () => {
 
 export const ArchiveView = () => {
     const { data, actions } = useStore();
+    const archivedTasks = data.tasks.filter(t => t.archived);
+    const archivedGlobal = (data.globalTasks || []).filter(t => t.isArchived);
     return (
         <div className="p-6">
             <h2 className={cn("mb-6", THEME.punk.textStyle)}>Trash</h2>
-            <div className="space-y-2">{data.tasks.filter(t => t.archived).map(t => (<div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}><span>{t.title}</span><button onClick={()=>actions.update('tasks', t.id, {archived:false})} className="text-green-600 font-bold text-xs uppercase">Restore</button></div>))}</div>
+            <div className="space-y-2">
+              {archivedTasks.map(t => (
+                <div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}>
+                  <div>
+                    <div className="font-bold">{t.title}</div>
+                    <div className="text-xs opacity-60">Archived {t.archivedAt ? new Date(t.archivedAt).toLocaleString() : 'recently'} by {t.archivedBy || 'Unknown'}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>actions.restoreItem('tasks', t.id)} className="text-green-600 font-bold text-xs uppercase">Restore</button>
+                    <button onClick={()=>actions.delete('tasks', t.id)} className="text-red-600 font-bold text-xs uppercase">Delete</button>
+                  </div>
+                </div>
+              ))}
+              {archivedGlobal.map(t => (
+                <div key={t.id} className={cn("p-3 flex justify-between items-center", THEME.punk.card)}>
+                  <div>
+                    <div className="font-bold">{t.title}</div>
+                    <div className="text-xs opacity-60">Global task archived {t.archivedAt ? new Date(t.archivedAt).toLocaleString() : ''}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>actions.updateGlobalTask(t.id, { isArchived: false, archived: false })} className="text-green-600 font-bold text-xs uppercase">Restore</button>
+                    <button onClick={()=>actions.deleteGlobalTask(t.id)} className="text-red-600 font-bold text-xs uppercase">Delete</button>
+                  </div>
+                </div>
+              ))}
+              {(data.auditLog || []).slice(0, 10).map(log => (
+                <div key={log.id} className={cn("p-3 text-xs", THEME.punk.card)}>
+                  <div className="font-bold uppercase">{log.action}</div>
+                  <div>{log.entityType} / {log.entityId}</div>
+                  <div className="opacity-60">{new Date(log.timestamp).toLocaleString()} — {log.actor}</div>
+                  {log.reason && <div className="italic">{log.reason}</div>}
+                </div>
+              ))}
+            </div>
         </div>
     );
 };
@@ -1177,6 +1212,81 @@ export const SettingsView = () => {
     const accent = settings.themeColor || 'pink';
     const isConnected = mode === 'cloud';
     const isLoading = mode === 'loading';
+    const [templateDrafts, setTemplateDrafts] = useState(settings.templates || []);
+    const [importText, setImportText] = useState('');
+    const [migrationNotes, setMigrationNotes] = useState(settings.migrationNotes || '');
+    const [migrationRanAt, setMigrationRanAt] = useState(settings.migrationRanAt || '');
+
+    useEffect(() => {
+      setTemplateDrafts(settings.templates || []);
+    }, [settings.templates]);
+
+    const handleAddTemplate = () => {
+      const next = [...templateDrafts, { id: crypto.randomUUID(), name: 'New Template', era: settings.defaultEra || 'Modern', body: '' }];
+      setTemplateDrafts(next);
+      actions.saveSettings({ templates: next });
+    };
+
+    const handleTemplateChange = (id, key, value) => {
+      const updated = templateDrafts.map(t => t.id === id ? { ...t, [key]: value } : t);
+      setTemplateDrafts(updated);
+      actions.saveSettings({ templates: updated });
+    };
+
+    const handleTemplateDelete = (id) => {
+      const updated = templateDrafts.filter(t => t.id !== id);
+      setTemplateDrafts(updated);
+      actions.saveSettings({ templates: updated });
+    };
+
+    const handleImportTemplates = () => {
+      try {
+        const parsed = JSON.parse(importText);
+        if (Array.isArray(parsed)) {
+          setTemplateDrafts(parsed);
+          actions.saveSettings({ templates: parsed });
+          setImportText('');
+        }
+      } catch (e) {
+        alert('Unable to import templates. Please provide valid JSON.');
+      }
+    };
+
+    const exportTemplates = () => {
+      const blob = new Blob([JSON.stringify(templateDrafts, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'album-tracker-templates.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const migrationPreview = {
+      tasks: data.tasks.length,
+      songs: (data.songs || []).length,
+      releases: (data.releases || []).length,
+      globalTasks: (data.globalTasks || []).length,
+      templates: templateDrafts.length,
+      storage: mode === 'cloud' ? 'Cloud' : 'Local'
+    };
+
+    const backupAllData = () => {
+      const payload = { ...data, settings: { ...settings, templates: templateDrafts } };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `album-tracker-backup-${new Date().toISOString()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      actions.saveSettings({ lastBackup: new Date().toISOString() });
+    };
+
+    const runMigrationFlow = async () => {
+      const marker = await actions.runMigration(migrationNotes);
+      setMigrationRanAt(marker.migrationRanAt);
+    };
 
     return (
         <div className="p-6 max-w-xl">
@@ -1272,18 +1382,91 @@ export const SettingsView = () => {
                     </div>
                 </div>
 
-                {/* Eras */}
+                {/* Default Era */}
                 <div className="pt-4 border-t-4 border-black">
-                  <h3 className="font-black text-xs uppercase mb-2">Eras</h3>
-                  <div className="space-y-2">
-                    {(data.eras || []).map(era => (
-                      <div key={era.id} className="flex items-center gap-2">
-                        <input value={era.name} onChange={e => actions.updateEra(era.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
-                        <input type="color" value={era.color || '#000000'} onChange={e => actions.updateEra(era.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
-                        <button onClick={() => actions.deleteEra(era.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                  <h3 className="font-black text-xs uppercase mb-2">Default Era</h3>
+                  <select
+                    value={settings.defaultEra || 'Modern'}
+                    onChange={e => actions.saveSettings({ defaultEra: e.target.value })}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    {['Debut', 'Fearless', 'Speak Now', 'Red', '1989', 'Reputation', 'Lover', 'Folklore', 'Evermore', 'Midnights', 'Modern'].map(era => (
+                      <option key={era} value={era}>{era}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs opacity-70 mt-2">Used as the fallback era for new templates and migration previews.</p>
+                </div>
+
+                {/* Auto Task Toggles */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <h3 className="font-black text-xs uppercase">Auto-Generated Tasks</h3>
+                  {[{ key: 'autoTaskSongs', label: 'Auto-generate song tasks' }, { key: 'autoTaskVideos', label: 'Auto-generate video tasks' }, { key: 'autoTaskReleases', label: 'Auto-generate release tasks' }].map(toggle => (
+                    <label key={toggle.key} className="flex items-center gap-2 text-sm font-bold">
+                      <input
+                        type="checkbox"
+                        checked={settings[toggle.key] !== false}
+                        onChange={e => actions.saveSettings({ [toggle.key]: e.target.checked })}
+                      />
+                      {toggle.label}
+                    </label>
+                  ))}
+                </div>
+
+                {/* Templates */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-black text-xs uppercase">Templates</h3>
+                    <button onClick={handleAddTemplate} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}>+ Add Template</button>
+                  </div>
+                  <div className="space-y-3">
+                    {templateDrafts.map(t => (
+                      <div key={t.id} className={cn("p-3 space-y-2", THEME.punk.card)}>
+                        <input value={t.name} onChange={e => handleTemplateChange(t.id, 'name', e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Template name" />
+                        <select value={t.era || settings.defaultEra || 'Modern'} onChange={e => handleTemplateChange(t.id, 'era', e.target.value)} className={cn("w-full", THEME.punk.input)}>
+                          {['Debut', 'Fearless', 'Speak Now', 'Red', '1989', 'Reputation', 'Lover', 'Folklore', 'Evermore', 'Midnights', 'Modern'].map(era => (
+                            <option key={era} value={era}>{era}</option>
+                          ))}
+                        </select>
+                        <textarea value={t.body || ''} onChange={e => handleTemplateChange(t.id, 'body', e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Template body" />
+                        <div className="flex justify-between text-xs">
+                          <span className="opacity-60">Last updated {t.updatedAt ? new Date(t.updatedAt).toLocaleString() : 'now'}</span>
+                          <button onClick={() => handleTemplateDelete(t.id)} className="text-red-600 font-bold uppercase">Delete</button>
+                        </div>
                       </div>
                     ))}
-                    <button onClick={() => actions.addEra({ name: `Era ${(data.eras?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Era</button>
+                    {templateDrafts.length === 0 && <div className={cn("p-3 text-xs", THEME.punk.card)}>No templates yet. Add one to start building repeatable tasks.</div>}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <button onClick={exportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>Export Templates</button>
+                      <button onClick={handleImportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-blue-600 text-white")}>Import Templates</button>
+                    </div>
+                    <textarea value={importText} onChange={e => setImportText(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Paste template JSON to import" />
+                  </div>
+                </div>
+
+                {/* Migration Onboarding */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <h3 className="font-black text-xs uppercase">Migration Onboarding</h3>
+                  <div className={cn("p-3 text-xs space-y-2", THEME.punk.card)}>
+                    <div className="font-bold">Preview</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(migrationPreview).map(([key, value]) => (
+                        <div key={key} className="flex justify-between border-b border-dashed border-black/30 pb-1">
+                          <span className="uppercase font-bold">{key}</span>
+                          <span>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-2">
+                      <label className="block font-bold mb-1">Notes</label>
+                      <textarea value={migrationNotes} onChange={e => setMigrationNotes(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Add any migration notes or blockers" />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={backupAllData} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-600 text-white")}>Backup ({mode === 'cloud' ? 'Cloud' : 'Local'})</button>
+                      <button onClick={runMigrationFlow} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-amber-500 text-white")}>Run Migration</button>
+                    </div>
+                    {migrationRanAt && <div className="text-[10px] opacity-70">Last migration: {new Date(migrationRanAt).toLocaleString()}</div>}
                   </div>
                 </div>
 

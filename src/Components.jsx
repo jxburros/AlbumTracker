@@ -118,7 +118,7 @@ export const Editor = ({ task, onClose }) => {
             <div className="p-4 border-b-4 border-black flex justify-between bg-gray-100">
                 <span className="font-bold uppercase">Edit {form.isCategory ? 'Category' : 'Task'}</span>
                 <div className="flex gap-2">
-                    <button onClick={() => { actions.update('tasks', form.id, {archived: true}); onClose(); }} className="p-2 hover:bg-red-100 text-red-500"><Icon name="Trash2"/></button>
+                    <button onClick={() => { actions.archiveItem('tasks', form.id, 'Editor archive'); onClose(); }} className="p-2 hover:bg-red-100 text-red-500"><Icon name="Trash2"/></button>
                     <button onClick={onClose} className="p-2 hover:bg-gray-200"><Icon name="X"/></button>
                 </div>
             </div>
