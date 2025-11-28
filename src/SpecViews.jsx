@@ -3,6 +3,8 @@ import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, VIDEO_TYPES, RELEASE_TYPES, 
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
+const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
+
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
