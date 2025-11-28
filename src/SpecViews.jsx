@@ -178,7 +178,7 @@ export const SongDetailView = ({ song, onBack }) => {
         </button>
       </div>
 
-      {/* Basic Information Section (2.2.1) */}
+      {/* Basic Information Section (2.2.1) - Per APP ARCHITECTURE.txt Section 5.1 */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Basic Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -191,6 +191,15 @@ export const SongDetailView = ({ song, onBack }) => {
             <select value={form.category || 'Album'} onChange={e => { handleFieldChange('category', e.target.value); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
               {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+          </div>
+          {/* Writers and Composers per APP ARCHITECTURE.txt Section 5.1 */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Writers</label>
+            <input value={(form.writers || []).join(', ')} onChange={e => handleFieldChange('writers', e.target.value.split(',').map(w => w.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Writer names (comma-separated)" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Composers</label>
+            <input value={(form.composers || []).join(', ')} onChange={e => handleFieldChange('composers', e.target.value.split(',').map(c => c.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Composer names (comma-separated)" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
@@ -248,6 +257,39 @@ export const SongDetailView = ({ song, onBack }) => {
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Partial Payment</label>
             <input type="number" value={form.partially_paid || 0} onChange={e => handleFieldChange('partially_paid', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          {/* Per APP ARCHITECTURE.txt Section 1.4: Era with propagation option */}
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <label className="block text-xs font-bold uppercase mb-1">Era</label>
+                <select 
+                  value={(form.eraIds || [])[0] || ''} 
+                  onChange={e => {
+                    const newEraIds = e.target.value ? [e.target.value] : [];
+                    handleFieldChange('eraIds', newEraIds);
+                    setTimeout(handleSave, 0);
+                  }}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  <option value="">No Era</option>
+                  {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                </select>
+              </div>
+              <div className="flex items-end pb-1">
+                <button 
+                  onClick={() => {
+                    if (confirm('Propagate this Era to all tasks in this song (including versions and videos)?')) {
+                      actions.propagateEraToChildren('song', song.id, form.eraIds || []);
+                    }
+                  }}
+                  className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}
+                  title="Apply era to all child tasks"
+                >
+                  Propagate Era
+                </button>
+              </div>
+            </div>
           </div>
         <div className="md:col-span-2">
           <label className="block text-xs font-bold uppercase mb-1">Core Instruments</label>

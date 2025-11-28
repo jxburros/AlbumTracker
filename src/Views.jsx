@@ -247,9 +247,9 @@ export const CalendarView = ({ onEdit }) => {
                 </div>
             </div>
 
-            {/* Add Event Form */}
-            <div className={cn("mb-4 p-4 flex flex-col gap-3 md:flex-row md:items-end", THEME.punk.card)}>
-                <div className="flex-1 grid md:grid-cols-3 gap-3">
+            {/* Add Event Form - Per APP ARCHITECTURE.txt Section 5.4 */}
+            <div className={cn("mb-4 p-4 flex flex-col gap-3", THEME.punk.card)}>
+                <div className="grid md:grid-cols-4 gap-3">
                     <div>
                         <label className="block text-xs font-bold uppercase mb-1">Title</label>
                         <input value={newEvent.title} onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))} placeholder="Event title" className={cn("w-full", THEME.punk.input)} />
@@ -259,20 +259,48 @@ export const CalendarView = ({ onEdit }) => {
                         <input type="date" value={newEvent.date} onChange={e => setNewEvent(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Description</label>
-                        <input value={newEvent.description} onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))} placeholder="Notes or location" className={cn("w-full", THEME.punk.input)} />
+                        <label className="block text-xs font-bold uppercase mb-1">Time</label>
+                        <input type="time" value={newEvent.time || ''} onChange={e => setNewEvent(prev => ({ ...prev, time: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Location</label>
+                        <input value={newEvent.location || ''} onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))} placeholder="Venue, city" className={cn("w-full", THEME.punk.input)} />
                     </div>
                 </div>
-                <button
-                    onClick={() => {
-                        if (!newEvent.title || !newEvent.date) return;
-                        actions.add('events', { ...newEvent, type: 'Standalone Event' });
-                        setNewEvent({ title: '', date: '', description: '' });
-                    }}
-                    className={cn("px-4 py-2 w-full md:w-auto", THEME.punk.btn, "bg-black text-white")}
-                >
-                    + Add Event
-                </button>
+                <div className="grid md:grid-cols-4 gap-3">
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Description</label>
+                        <input value={newEvent.description} onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))} placeholder="Notes" className={cn("w-full", THEME.punk.input)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Entry Cost</label>
+                        <input type="number" value={newEvent.entryCost || ''} onChange={e => setNewEvent(prev => ({ ...prev, entryCost: parseFloat(e.target.value) || 0 }))} placeholder="0" className={cn("w-full", THEME.punk.input)} />
+                    </div>
+                    <div className="flex items-center">
+                        <label className="flex items-center gap-2 font-bold text-xs">
+                            <input 
+                                type="checkbox" 
+                                checked={newEvent.includePreparation !== false}
+                                onChange={e => setNewEvent(prev => ({ ...prev, includePreparation: e.target.checked }))}
+                                className="w-4 h-4" 
+                            />
+                            Include Prep Tasks
+                        </label>
+                    </div>
+                    <div className="flex items-end">
+                        <button
+                            onClick={() => {
+                                if (!newEvent.title || !newEvent.date) return;
+                                // Use dedicated addEvent action with auto-task generation
+                                actions.addEvent({ ...newEvent, type: 'Standalone Event' }, newEvent.includePreparation !== false);
+                                setNewEvent({ title: '', date: '', description: '', time: '', location: '', entryCost: 0, includePreparation: true });
+                            }}
+                            className={cn("px-4 py-2 w-full", THEME.punk.btn, "bg-black text-white")}
+                        >
+                            + Add Event
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {/* Legend */}
@@ -594,6 +622,7 @@ export const GalleryView = () => {
 
 export const TeamView = () => {
     const { data, actions } = useStore();
+    // Per APP ARCHITECTURE.txt Section 5.5: Team Member properties
     const [newMember, setNewMember] = useState({
         name: '',
         role: '',
@@ -603,7 +632,13 @@ export const TeamView = () => {
         notes: '',
         links: { groups: [], organizations: [], members: [] },
         isMusician: false,
-        instruments: []
+        instruments: [],
+        // Section 5.5: Work Mode for Individuals
+        workMode: 'In-Person',
+        // Section 5.5: Organization Type for Organizations
+        orgType: 'For-Profit',
+        // Section 5.5: Group Type for Groups
+        groupType: ''
     });
     const [editingMember, setEditingMember] = useState(null);
     const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'group', 'organization'
@@ -614,7 +649,8 @@ export const TeamView = () => {
     const handleAdd = async () => {
         if (!newMember.name) return;
         await actions.addTeamMember(newMember);
-        setNewMember({ name: '', role: '', roles: [], type: 'individual', contacts: { phone: '', email: '', website: '' }, notes: '', links: { groups: [], organizations: [], members: [] }, isMusician: false, instruments: [] });
+        // Reset with all new fields per APP ARCHITECTURE.txt Section 5.5
+        setNewMember({ name: '', role: '', roles: [], type: 'individual', contacts: { phone: '', email: '', website: '' }, notes: '', links: { groups: [], organizations: [], members: [] }, isMusician: false, instruments: [], workMode: 'In-Person', orgType: 'For-Profit', groupType: '' });
     };
 
     const handleUpdateMember = async () => {
@@ -696,6 +732,35 @@ export const TeamView = () => {
                             <option value="organization">Organization</option>
                         </select>
                     </div>
+                    {/* Per APP ARCHITECTURE.txt Section 5.5: Work Mode for Individuals */}
+                    {newMember.type === 'individual' && (
+                        <div className="flex gap-2 items-center">
+                            <label className="text-xs font-bold uppercase">Work Mode</label>
+                            <select value={newMember.workMode || 'In-Person'} onChange={e => setNewMember({ ...newMember, workMode: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                                <option value="In-Person">In-Person</option>
+                                <option value="Remote">Remote</option>
+                                <option value="Traveling">Traveling</option>
+                            </select>
+                        </div>
+                    )}
+                    {/* Per APP ARCHITECTURE.txt Section 5.5: Organization Type */}
+                    {newMember.type === 'organization' && (
+                        <div className="flex gap-2 items-center">
+                            <label className="text-xs font-bold uppercase">Org Type</label>
+                            <select value={newMember.orgType || 'For-Profit'} onChange={e => setNewMember({ ...newMember, orgType: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                                <option value="For-Profit">For-Profit</option>
+                                <option value="Nonprofit">Nonprofit</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    )}
+                    {/* Per APP ARCHITECTURE.txt Section 5.5: Group Type */}
+                    {newMember.type === 'group' && (
+                        <div className="flex gap-2 items-center">
+                            <label className="text-xs font-bold uppercase">Group Type</label>
+                            <input value={newMember.groupType || ''} onChange={e => setNewMember({ ...newMember, groupType: e.target.value })} placeholder="e.g., Band, Crew" className={cn("w-full", THEME.punk.input)} />
+                        </div>
+                    )}
                     <input value={newMember.contacts?.phone || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), phone: e.target.value } })} placeholder="Phone" className={cn("w-full", THEME.punk.input)} />
                     <input value={newMember.contacts?.email || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), email: e.target.value } })} placeholder="Email" className={cn("w-full", THEME.punk.input)} />
                     <input value={newMember.contacts?.website || ''} onChange={e => setNewMember({ ...newMember, contacts: { ...(newMember.contacts || {}), website: e.target.value } })} placeholder="Website" className={cn("w-full", THEME.punk.input)} />
@@ -797,6 +862,19 @@ export const TeamView = () => {
                             </div>
                         )}
                         <div className="absolute top-2 right-2 flex gap-1">
+                            {/* Per APP ARCHITECTURE.txt Section 5.5: Shortcut to create Standalone Task with Team Member pre-filled */}
+                            <button 
+                                onClick={async () => {
+                                    const task = await actions.createTaskForTeamMember(v.id);
+                                    if (task) {
+                                        alert(`Created task "${task.title}" for ${v.name}`);
+                                    }
+                                }} 
+                                className="text-green-600 hover:bg-green-100 p-1" 
+                                title="Create task for this member"
+                            >
+                                <Icon name="Plus" size={16}/>
+                            </button>
                             <button onClick={() => setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) })} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
                             <button onClick={() => actions.deleteTeamMember(v.id)} className="text-red-500 hover:bg-red-100 p-1"><Icon name="Trash2" size={16}/></button>
                         </div>

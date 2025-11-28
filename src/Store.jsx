@@ -7,14 +7,32 @@ const StoreContext = createContext();
 
 export const useStore = () => useContext(StoreContext);
 
-// Status enum for consistency across all entities
-export const STATUS_OPTIONS = ['Not Started', 'In Progress', 'Done', 'Delayed'];
+// Status enum for consistency across all entities - per APP ARCHITECTURE.txt Section 1.7
+export const STATUS_OPTIONS = [
+  'Not Started',
+  'In-Progress',
+  'Waiting on Someone Else',
+  'Paid But Not Complete',
+  'Complete But Not Paid',
+  'Complete',
+  'Other'
+];
 
+// Progress Calculation per APP ARCHITECTURE.txt Section 1.7:
+// Complete = 1 point
+// In-Progress, Waiting on Someone Else, Paid But Not Complete, Complete But Not Paid = 0.5 points
+// All others = 0
 export const STATUS_POINTS = {
-  'Done': 1,
-  'In Progress': 0.5,
-  'Delayed': 0,
+  'Complete': 1,
+  'Done': 1, // Legacy alias for backwards compatibility
+  'In-Progress': 0.5,
+  'In Progress': 0.5, // Legacy alias
+  'Waiting on Someone Else': 0.5,
+  'Paid But Not Complete': 0.5,
+  'Complete But Not Paid': 0.5,
   'Not Started': 0,
+  'Other': 0,
+  'Delayed': 0, // Legacy status
   default: 0
 };
 
@@ -174,11 +192,15 @@ export const VIDEO_TYPE_OPTIONS = [
   { key: 'custom', label: 'Custom' }
 ];
 
-// Task types for songs - comprehensive list
+// Task types for songs - per APP ARCHITECTURE.txt Section 3.1 and 3.2
+// Core Version tasks: Demo, Record, Mix, Master, Release
+// Version tasks: Record, Mix, Master, Release, plus Record (Instrument) for each instrument
+// Stems tasks (when stemsNeeded): Receive Stems, Release Stems
 export const SONG_TASK_TYPES = [
-  // Production Tasks
+  // Core Production Tasks per Section 3.1
+  { type: 'Demo', category: 'Production', daysBeforeRelease: 100, appliesTo: 'all' },
   { type: 'Arrangement', category: 'Production', daysBeforeRelease: 90, appliesTo: 'all' },
-  { type: 'Demo', category: 'Production', daysBeforeRelease: 80, appliesTo: 'all' },
+  { type: 'Record', category: 'Recording', daysBeforeRelease: 70, appliesTo: 'all' },
   { type: 'Vocal Recording', category: 'Recording', daysBeforeRelease: 60, appliesTo: 'all' },
   { type: 'Instrument Recording', category: 'Recording', daysBeforeRelease: 55, appliesTo: 'all' },
   { type: 'Mix', category: 'Post-Production', daysBeforeRelease: 42, appliesTo: 'all' },
@@ -191,15 +213,28 @@ export const SONG_TASK_TYPES = [
   { type: 'Release', category: 'Distribution', daysBeforeRelease: 0, appliesTo: 'all' }
 ];
 
-// Video task types - Phase 2 enhancement with auto-generated tasks
+// Stems-related tasks per APP ARCHITECTURE.txt Section 3.2
+// Auto-generated when stemsNeeded is true on Song or Version
+export const STEMS_TASK_TYPES = [
+  { type: 'Receive Stems', category: 'Post-Production', daysBeforeRelease: 35 },
+  { type: 'Release Stems', category: 'Distribution', daysBeforeRelease: 7 }
+];
+
+// Video task types - per APP ARCHITECTURE.txt Section 3.3
+// Video tasks: Plan, Hire Crew, Film, Edit, Submit, Release
 export const VIDEO_TASK_TYPES = [
-  { type: 'Video Concept', category: 'Video', daysBeforeRelease: 45, videoTypes: ['music', 'Full'] },
-  { type: 'Hire Crew', category: 'Video', daysBeforeRelease: 40, videoTypes: ['music', 'Full'] },
+  { type: 'Plan', category: 'Video', daysBeforeRelease: 60, videoTypes: ['music', 'Full', 'lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'custom'] },
+  { type: 'Video Concept', category: 'Video', daysBeforeRelease: 50, videoTypes: ['music', 'Full'] },
+  { type: 'Hire Crew', category: 'Video', daysBeforeRelease: 45, videoTypes: ['music', 'Full'] },
   { type: 'Video Shoot', category: 'Video', daysBeforeRelease: 35, videoTypes: ['music', 'Full'] },
+  { type: 'Film', category: 'Video', daysBeforeRelease: 35, videoTypes: ['music', 'Full'] },
   { type: 'Video Edit', category: 'Video', daysBeforeRelease: 25, videoTypes: ['music', 'Full', 'lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop'] },
+  { type: 'Edit', category: 'Video', daysBeforeRelease: 25, videoTypes: ['music', 'Full', 'lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'custom'] },
+  { type: 'Submit', category: 'Video', daysBeforeRelease: 14, videoTypes: ['music', 'Full', 'lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'custom'] },
   { type: 'Video Delivery', category: 'Video', daysBeforeRelease: 14, videoTypes: ['lyric', 'enhancedLyric', 'visualizer', 'Lyric', 'Enhanced', 'Enhanced + Loop'] },
   { type: 'Full Video Delivery', category: 'Video', daysBeforeRelease: 30, videoTypes: ['music', 'Full'] },
-  { type: 'Video Release', category: 'Distribution', daysBeforeRelease: 0, videoTypes: ['lyric', 'enhancedLyric', 'music', 'visualizer', 'custom', 'Full', 'Lyric', 'Enhanced', 'Enhanced + Loop'] }
+  { type: 'Video Release', category: 'Distribution', daysBeforeRelease: 0, videoTypes: ['lyric', 'enhancedLyric', 'music', 'visualizer', 'custom', 'Full', 'Lyric', 'Enhanced', 'Enhanced + Loop'] },
+  { type: 'Release', category: 'Distribution', daysBeforeRelease: 0, videoTypes: ['lyric', 'enhancedLyric', 'music', 'visualizer', 'custom', 'Full', 'Lyric', 'Enhanced', 'Enhanced + Loop'] }
 ];
 
 // Generate tasks for a video based on its type
@@ -230,15 +265,70 @@ export const generateVideoTasks = (releaseDate, videoTypeKey) => {
   return tasks;
 };
 
-// Release task types - auto-spawn when release is created
+// Release task types - per APP ARCHITECTURE.txt Section 3.4
+// Auto-spawn when release is created: Record/Mix/Master all songs (as meta-progress tasks), Submit album, Create album art, Release album, Physical production tasks (optional)
 export const RELEASE_TASK_TYPES = [
   { type: 'Cover Art Design', category: 'Marketing', daysBeforeRelease: 45 },
+  { type: 'Create Album Art', category: 'Marketing', daysBeforeRelease: 45 },
   { type: 'Cover Art Approval', category: 'Marketing', daysBeforeRelease: 35 },
   { type: 'Album Reveal', category: 'Marketing', daysBeforeRelease: 14 },
   { type: 'Pre-order Setup', category: 'Distribution', daysBeforeRelease: 21 },
   { type: 'Metadata Submission', category: 'Distribution', daysBeforeRelease: 14 },
+  { type: 'Submit Album', category: 'Distribution', daysBeforeRelease: 14 },
+  { type: 'Release Album', category: 'Distribution', daysBeforeRelease: 0 },
   { type: 'Release', category: 'Distribution', daysBeforeRelease: 0 }
 ];
+
+// Physical release task types (optional, for releases with hasPhysicalCopies)
+// These tasks are used when a Release entity has hasPhysicalCopies=true
+// hasPhysicalCopies is a boolean field on Release objects in data.releases
+// Per APP ARCHITECTURE.txt Section 3.4: "Physical production tasks (optional)"
+export const PHYSICAL_RELEASE_TASK_TYPES = [
+  { type: 'Physical Manufacturing Order', category: 'Distribution', daysBeforeRelease: 60 },
+  { type: 'Physical Quality Check', category: 'Distribution', daysBeforeRelease: 21 },
+  { type: 'Physical Distribution Setup', category: 'Distribution', daysBeforeRelease: 14 }
+];
+
+// Event task types - per APP ARCHITECTURE.txt Section 3.5
+// When an Event is created: Attend Event, Optional preparation tasks
+export const EVENT_TASK_TYPES = [
+  { type: 'Attend Event', category: 'Events', daysBeforeEvent: 0, required: true },
+  { type: 'Prepare for Event', category: 'Events', daysBeforeEvent: 7, required: false },
+  { type: 'Rehearsal', category: 'Events', daysBeforeEvent: 3, required: false },
+  { type: 'Travel Arrangements', category: 'Events', daysBeforeEvent: 14, required: false },
+  { type: 'Equipment Setup', category: 'Events', daysBeforeEvent: 1, required: false },
+  { type: 'Soundcheck', category: 'Events', daysBeforeEvent: 0, required: false }
+];
+
+// Generate tasks for an event
+export const generateEventTasks = (eventDate, includePreparation = true) => {
+  if (!eventDate) return [];
+  
+  const date = new Date(eventDate);
+  const tasks = [];
+  
+  EVENT_TASK_TYPES.forEach(taskType => {
+    // Always include required tasks, optionally include preparation tasks
+    if (taskType.required || includePreparation) {
+      const taskDate = new Date(date);
+      taskDate.setDate(taskDate.getDate() - taskType.daysBeforeEvent);
+      
+      tasks.push(createUnifiedTask({
+        type: taskType.type,
+        category: taskType.category,
+        date: taskDate.toISOString().split('T')[0],
+        dueDate: taskDate.toISOString().split('T')[0],
+        parentType: 'event',
+        isOptional: !taskType.required
+      }));
+    }
+  });
+  
+  // Sort by date
+  tasks.sort((a, b) => a.date.localeCompare(b.date));
+  
+  return tasks;
+};
 
 // Deadline types (legacy - kept for compatibility)
 export const DEADLINE_TYPES = ['Mix', 'Master', 'Artwork', 'Upload', 'VideoDelivery', 'Release'];
@@ -253,7 +343,8 @@ export const VERSION_TYPES = ['Album', 'Radio Edit', 'Acoustic', 'Extended', 'Lo
 export const GLOBAL_TASK_CATEGORIES = ['Branding', 'Web', 'Legal', 'Visuals', 'Marketing', 'Events', 'Audio', 'Video', 'Merch', 'Other'];
 
 // Helper function to calculate task dates based on release date
-export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
+// Per APP ARCHITECTURE.txt Section 3.1 and 3.2
+export const calculateSongTasks = (releaseDate, isSingle, videoType, stemsNeeded = false) => {
   if (!releaseDate) return [];
   
   const release = new Date(releaseDate);
@@ -276,6 +367,22 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
       parentType: 'song'
     }));
   });
+  
+  // Add stems tasks if stemsNeeded per Section 3.2
+  if (stemsNeeded) {
+    STEMS_TASK_TYPES.forEach(taskType => {
+      const taskDate = new Date(release);
+      taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
+      
+      tasks.push(createUnifiedTask({
+        type: taskType.type,
+        category: taskType.category,
+        date: taskDate.toISOString().split('T')[0],
+        dueDate: taskDate.toISOString().split('T')[0],
+        parentType: 'song'
+      }));
+    });
+  }
   
   // Add video tasks based on video type
   if (videoType && videoType !== 'None') {
@@ -302,8 +409,8 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
 };
 
 // Legacy function - calls the new one for backwards compatibility
-export const calculateDeadlines = (releaseDate, isSingle, videoType) => {
-  return calculateSongTasks(releaseDate, isSingle, videoType);
+export const calculateDeadlines = (releaseDate, isSingle, videoType, stemsNeeded = false) => {
+  return calculateSongTasks(releaseDate, isSingle, videoType, stemsNeeded);
 };
 
 // Helper function to calculate release tasks
@@ -768,6 +875,70 @@ export const StoreProvider = ({ children }) => {
        }
      },
 
+     // Per APP ARCHITECTURE.txt Section 5.4: Event properties
+     // Events have: Name, Era/Stage, Team Members, Tasks, Notes, Location, Time/Date, Entry Cost, Estimated cost & amount paid, Progress
+     addEvent: async (event, includePreparation = true) => {
+       const defaultEraIds = event.eraIds || (data.settings?.defaultEraId ? [data.settings.defaultEraId] : []);
+       // Generate auto-tasks per Section 3.5
+       const autoTasks = generateEventTasks(event.date, includePreparation);
+       
+       const newEvent = {
+         id: crypto.randomUUID(),
+         title: event.title || 'New Event',
+         type: event.type || 'Standalone Event',
+         date: event.date || '',
+         // Section 5.4: Time separate from date
+         time: event.time || '',
+         // Section 5.4: Location
+         location: event.location || '',
+         description: event.description || '',
+         notes: event.notes || '',
+         // Section 5.4: Entry Cost (counts as a hidden Completed Paid Task)
+         entryCost: event.entryCost || 0,
+         // Cost layers with precedence: paidCost > quotedCost > estimatedCost
+         estimatedCost: event.estimatedCost || 0,
+         quotedCost: event.quotedCost || 0,
+         paidCost: event.paidCost || 0,
+         // Exclusivity
+         exclusiveType: event.exclusiveType || '',
+         platforms: event.platforms || [],
+         // Metadata
+         eraIds: defaultEraIds,
+         stageIds: event.stageIds || [],
+         tagIds: event.tagIds || [],
+         teamMemberIds: event.teamMemberIds || [],
+         // Auto-generated tasks per Section 3.5
+         tasks: autoTasks,
+         customTasks: []
+       };
+       
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_events'), { ...newEvent, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({...p, events: [...(p.events || []), newEvent]}));
+       }
+       return newEvent;
+     },
+
+     updateEvent: async (eventId, updates) => {
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId), updates);
+       } else {
+         setData(p => ({
+           ...p,
+           events: (p.events || []).map(e => e.id === eventId ? { ...e, ...updates } : e)
+         }));
+       }
+     },
+
+     deleteEvent: async (eventId) => {
+       if (mode === 'cloud') {
+         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId));
+       } else {
+         setData(p => ({...p, events: (p.events || []).filter(e => e.id !== eventId)}));
+       }
+     },
+
  
 
     addEra: async (era) => {
@@ -849,6 +1020,7 @@ export const StoreProvider = ({ children }) => {
       }
     },
     addTeamMember: async (member) => {
+       // Per APP ARCHITECTURE.txt Section 1.3 and 5.5
        const newMember = {
          id: crypto.randomUUID(),
          name: member.name || 'New Member',
@@ -863,6 +1035,12 @@ export const StoreProvider = ({ children }) => {
          roles: member.roles || (member.role ? [member.role] : []),
          notes: member.notes || '',
          type: member.type || 'individual',
+         // Section 5.5: Work Mode (Remote/In-Person/Traveling) - for Individuals
+         workMode: member.workMode || 'In-Person',
+         // Section 5.5: Organization Type (For-Profit/Nonprofit/Other) - for Organizations
+         orgType: member.orgType || 'For-Profit',
+         // Section 5.5: Group Type - for Groups
+         groupType: member.groupType || '',
          // Relationship graph between individuals, groups, and orgs
          links: {
            groups: member.links?.groups || [],
@@ -910,7 +1088,7 @@ export const StoreProvider = ({ children }) => {
        }
      },
      
-     // Song-specific actions
+     // Song-specific actions - per APP ARCHITECTURE.txt Section 5.1
     addSong: async (song) => {
       const defaultEraIds = song.eraIds || (data.settings?.defaultEraId ? [data.settings.defaultEraId] : []);
       const metaDefaults = {
@@ -918,7 +1096,8 @@ export const StoreProvider = ({ children }) => {
         stageIds: song.stageIds || [],
         tagIds: song.tagIds || []
       };
-      const deadlines = calculateDeadlines(song.releaseDate, song.isSingle, song.videoType).map(t => applyMetadataDefaults(t, metaDefaults));
+      // Pass stemsNeeded to calculateDeadlines per Section 3.2
+      const deadlines = calculateDeadlines(song.releaseDate, song.isSingle, song.videoType, song.stemsNeeded).map(t => applyMetadataDefaults(t, metaDefaults));
     const newSong = propagateSongMetadata({
         id: crypto.randomUUID(),
         title: song.title || 'New Song',
@@ -929,6 +1108,9 @@ export const StoreProvider = ({ children }) => {
         isSingle: song.isSingle || false,
         videoType: song.videoType || 'None',
         stemsNeeded: song.stemsNeeded || false,
+        // Writers and Composers per APP ARCHITECTURE.txt Section 5.1
+        writers: song.writers || [],
+        composers: song.composers || [],
         // Cost layers with precedence: paidCost > quotedCost > estimatedCost
         estimatedCost: song.estimatedCost || 0,
         quotedCost: song.quotedCost || 0,
@@ -1413,6 +1595,129 @@ export const StoreProvider = ({ children }) => {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks', taskId));
        } else {
          setData(p => ({...p, globalTasks: (p.globalTasks || []).filter(t => t.id !== taskId)}));
+       }
+     },
+     
+     // Per APP ARCHITECTURE.txt Section 5.5: Shortcut to create Standalone Task with Team Member pre-filled
+     createTaskForTeamMember: async (memberId, taskData = {}) => {
+       const member = data.teamMembers?.find(m => m.id === memberId);
+       const memberName = member?.name || 'Team Member';
+       const taskTitle = taskData.title || `Task for ${memberName}`;
+       
+       const newTask = createUnifiedTask({
+         type: 'Global',
+         title: taskTitle,
+         category: taskData.category || 'Other',
+         date: taskData.date || '',
+         description: taskData.description || '',
+         assignedTo: memberName,
+         status: taskData.status || 'Not Started',
+         estimatedCost: taskData.estimatedCost || 0,
+         quotedCost: taskData.quotedCost || 0,
+         paidCost: taskData.paidCost || 0,
+         notes: taskData.notes || '',
+         parentType: 'global',
+         // Pre-fill assigned members with this team member
+         assignedMembers: [{ memberId: memberId, cost: 0, instrument: '' }]
+       });
+       
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks'), { ...newTask, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({...p, globalTasks: [...(p.globalTasks || []), newTask]}));
+       }
+       return newTask;
+     },
+     
+     // Per APP ARCHITECTURE.txt Section 1.4: Propagate Era changes to child Tasks and linked Items
+     propagateEraToChildren: async (entityType, entityId, eraIds) => {
+       if (entityType === 'song') {
+         const song = data.songs?.find(s => s.id === entityId);
+         if (!song) return;
+         
+         // Update song deadlines/tasks with new era
+         const updatedDeadlines = (song.deadlines || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (song.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         // Update version tasks
+         const updatedVersions = (song.versions || []).map(v => ({
+           ...v,
+           eraIds,
+           tasks: (v.tasks || []).map(t => ({ ...t, eraIds })),
+           customTasks: (v.customTasks || []).map(t => ({ ...t, eraIds }))
+         }));
+         
+         // Update videos
+         const updatedVideos = (song.videos || []).map(v => ({
+           ...v,
+           eraIds,
+           tasks: (v.tasks || []).map(t => ({ ...t, eraIds })),
+           customTasks: (v.customTasks || []).map(t => ({ ...t, eraIds }))
+         }));
+         
+         const updatedSong = {
+           ...song,
+           eraIds,
+           deadlines: updatedDeadlines,
+           customTasks: updatedCustomTasks,
+           versions: updatedVersions,
+           videos: updatedVideos
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', entityId), updatedSong);
+         } else {
+           setData(p => ({
+             ...p,
+             songs: (p.songs || []).map(s => s.id === entityId ? updatedSong : s)
+           }));
+         }
+       } else if (entityType === 'release') {
+         const release = data.releases?.find(r => r.id === entityId);
+         if (!release) return;
+         
+         // Update release tasks
+         const updatedTasks = (release.tasks || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (release.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         const updatedRelease = {
+           ...release,
+           eraIds,
+           tasks: updatedTasks,
+           customTasks: updatedCustomTasks
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', entityId), updatedRelease);
+         } else {
+           setData(p => ({
+             ...p,
+             releases: (p.releases || []).map(r => r.id === entityId ? updatedRelease : r)
+           }));
+         }
+       } else if (entityType === 'event') {
+         const event = data.events?.find(e => e.id === entityId);
+         if (!event) return;
+         
+         // Update event tasks
+         const updatedTasks = (event.tasks || []).map(t => ({ ...t, eraIds }));
+         const updatedCustomTasks = (event.customTasks || []).map(t => ({ ...t, eraIds }));
+         
+         const updatedEvent = {
+           ...event,
+           eraIds,
+           tasks: updatedTasks,
+           customTasks: updatedCustomTasks
+         };
+         
+         if (mode === 'cloud') {
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', entityId), updatedEvent);
+         } else {
+           setData(p => ({
+             ...p,
+             events: (p.events || []).map(e => e.id === entityId ? updatedEvent : e)
+           }));
+         }
        }
      },
      
