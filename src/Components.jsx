@@ -13,6 +13,7 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   const { data, stats } = useStore();
   const settings = data.settings || {};
   const colorClass = COLORS[settings.themeColor || 'pink'].split(' ')[2]; 
+  const isDark = settings.themeMode === 'dark';
 
   const menu = [
       // New Spec Views (primary)
@@ -33,26 +34,43 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   ];
 
   return (
-    <div className={cn("fixed inset-y-0 left-0 z-40 w-64 bg-white transform transition-transform duration-200 flex flex-col", THEME.punk.border, "border-y-0 border-l-0", isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0")}>
-      <div className="p-6 border-b-4 border-black bg-gray-50 flex justify-between items-center">
+    <div className={cn(
+      "fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 flex flex-col",
+      isDark ? "bg-slate-800 border-r-4 border-slate-600" : "bg-white border-r-4 border-black",
+      "border-y-0 border-l-0", 
+      isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+    )}>
+      <div className={cn(
+        "p-6 border-b-4 flex justify-between items-center",
+        isDark ? "bg-slate-900 border-slate-600" : "bg-gray-50 border-black"
+      )}>
         <div>
            <h1 className={cn("text-xl flex items-center gap-2", THEME.punk.textStyle, colorClass)}><Icon name="Music" /> TRACKER</h1>
-           <div className="text-xs font-bold opacity-60 mt-1">{settings.artistName || 'Artist'}</div>
+           <div className={cn("text-xs font-bold mt-1", isDark ? "text-slate-400" : "opacity-60")}>{settings.artistName || 'Artist'}</div>
         </div>
-        <button onClick={() => setIsOpen(false)} className="md:hidden"><Icon name="X" /></button>
+        <button onClick={() => setIsOpen(false)} className={cn("md:hidden", isDark && "text-slate-50")}><Icon name="X" /></button>
       </div>
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
          {menu.map(i => (
             <button key={i.id} onClick={() => {setActiveTab(i.id); setIsOpen(false)}} 
-               className={cn("w-full flex items-center gap-3 px-4 py-3 text-left", THEME.punk.btn, activeTab === i.id ? `bg-black text-white` : `hover:bg-gray-100`)}>
+               className={cn(
+                 "w-full flex items-center gap-3 px-4 py-3 text-left font-bold uppercase tracking-wide border-4 transition-transform hover:-translate-y-0.5",
+                 isDark ? "border-slate-600" : "border-black",
+                 activeTab === i.id 
+                   ? (isDark ? "bg-slate-600 text-white" : "bg-black text-white")
+                   : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-gray-100")
+               )}>
                <Icon name={i.icon} size={18} /> {i.label}
             </button>
          ))}
       </nav>
-      <div className={cn("p-4 m-4 bg-gray-50", THEME.punk.card)}>
-          <div className="text-xs font-black uppercase opacity-50 mb-2">Rollout Cost</div>
+      <div className={cn(
+        "p-4 m-4 border-4",
+        isDark ? "bg-slate-700 border-slate-600 shadow-[4px_4px_0px_0px_rgba(100,116,139,1)]" : "bg-gray-50 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+      )}>
+          <div className={cn("text-xs font-black uppercase mb-2", isDark ? "text-slate-400" : "opacity-50")}>Rollout Cost</div>
           <div className={cn("text-2xl font-black", colorClass)}>{formatMoney(stats.grandTotal || stats.act || 0)}</div>
-          <div className="text-xs font-bold mt-1 space-y-1">
+          <div className={cn("text-xs font-bold mt-1 space-y-1", isDark && "text-slate-300")}>
              <div className="flex justify-between"><span>Songs:</span><span>{formatMoney(stats.songsTotal || 0)}</span></div>
              <div className="flex justify-between"><span>Global:</span><span>{formatMoney(stats.globalTasksTotal || 0)}</span></div>
              <div className="flex justify-between"><span>Releases:</span><span>{formatMoney(stats.releasesTotal || 0)}</span></div>

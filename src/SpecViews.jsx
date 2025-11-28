@@ -1856,6 +1856,89 @@ export const TaskDashboardView = () => {
     return groups;
   }, [allTasks]);
 
+  // Phase 9: Generate notifications/alerts
+  const notifications = useMemo(() => {
+    const alerts = [];
+    
+    // Overdue tasks
+    const overdueTasks = allTasks.filter(t => t.date && t.date < today && t.status !== 'Done');
+    if (overdueTasks.length > 0) {
+      alerts.push({
+        id: 'overdue',
+        type: 'error',
+        icon: '⚠️',
+        message: `${overdueTasks.length} task${overdueTasks.length > 1 ? 's are' : ' is'} overdue!`,
+        count: overdueTasks.length
+      });
+    }
+    
+    // Tasks due this week
+    const dueThisWeek = allTasks.filter(t => t.date && t.date >= today && t.date <= nextWeek && t.status !== 'Done');
+    if (dueThisWeek.length > 0) {
+      alerts.push({
+        id: 'due-soon',
+        type: 'warning',
+        icon: '📅',
+        message: `${dueThisWeek.length} task${dueThisWeek.length > 1 ? 's' : ''} due this week`,
+        count: dueThisWeek.length
+      });
+    }
+    
+    // Upcoming releases (within 30 days)
+    const upcomingReleases = (data.releases || []).filter(r => 
+      r.releaseDate && r.releaseDate >= today && r.releaseDate <= nextMonth
+    );
+    if (upcomingReleases.length > 0) {
+      alerts.push({
+        id: 'releases',
+        type: 'info',
+        icon: '🎵',
+        message: `${upcomingReleases.length} release${upcomingReleases.length > 1 ? 's' : ''} coming up in the next 30 days`,
+        count: upcomingReleases.length
+      });
+    }
+    
+    // Songs with upcoming release dates
+    const upcomingSongs = (data.songs || []).filter(s =>
+      s.releaseDate && s.releaseDate >= today && s.releaseDate <= nextMonth
+    );
+    if (upcomingSongs.length > 0) {
+      alerts.push({
+        id: 'songs',
+        type: 'info',
+        icon: '🎶',
+        message: `${upcomingSongs.length} song${upcomingSongs.length > 1 ? 's' : ''} releasing soon`,
+        count: upcomingSongs.length
+      });
+    }
+    
+    // Budget exceeded check (if we have data)
+    const totalBudget = (data.settings?.totalBudget || 0);
+    if (totalBudget > 0 && stats.totalCost > totalBudget) {
+      alerts.push({
+        id: 'budget',
+        type: 'error',
+        icon: '💰',
+        message: `Budget exceeded by ${formatMoney(stats.totalCost - totalBudget)}`,
+        count: 1
+      });
+    }
+    
+    // Delayed tasks
+    const delayedTasks = allTasks.filter(t => t.status === 'Delayed');
+    if (delayedTasks.length > 0) {
+      alerts.push({
+        id: 'delayed',
+        type: 'warning',
+        icon: '🔴',
+        message: `${delayedTasks.length} task${delayedTasks.length > 1 ? 's' : ''} marked as delayed`,
+        count: delayedTasks.length
+      });
+    }
+    
+    return alerts;
+  }, [allTasks, data.releases, data.songs, data.settings?.totalBudget, stats.totalCost, today, nextWeek, nextMonth]);
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'Done': return 'bg-green-200 text-green-800';
@@ -1929,6 +2012,37 @@ export const TaskDashboardView = () => {
           <div className="text-xs font-bold uppercase">Estimated Remaining</div>
         </div>
       </div>
+
+      {/* Phase 9: Notifications/Alerts Section */}
+      {notifications.length > 0 && (
+        <div className={cn("p-4 mb-6", THEME.punk.card)}>
+          <h3 className="font-black uppercase mb-3 border-b-2 border-black pb-2">🔔 Notifications</h3>
+          <div className="space-y-2">
+            {notifications.map(alert => (
+              <div 
+                key={alert.id}
+                className={cn(
+                  "flex items-center gap-3 p-3 border-l-4",
+                  alert.type === 'error' ? 'bg-red-50 border-red-500' :
+                  alert.type === 'warning' ? 'bg-yellow-50 border-yellow-500' :
+                  'bg-blue-50 border-blue-500'
+                )}
+              >
+                <span className="text-xl">{alert.icon}</span>
+                <span className="font-bold flex-1">{alert.message}</span>
+                <span className={cn(
+                  "px-2 py-1 text-xs font-bold rounded-full",
+                  alert.type === 'error' ? 'bg-red-200 text-red-800' :
+                  alert.type === 'warning' ? 'bg-yellow-200 text-yellow-800' :
+                  'bg-blue-200 text-blue-800'
+                )}>
+                  {alert.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {view === 'overview' ? (
         /* Overview by Category */
