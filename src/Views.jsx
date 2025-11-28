@@ -267,7 +267,7 @@ export const CalendarView = ({ onEdit }) => {
                         <input value={newEvent.location || ''} onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))} placeholder="Venue, city" className={cn("w-full", THEME.punk.input)} />
                     </div>
                 </div>
-                <div className="grid md:grid-cols-3 gap-3">
+                <div className="grid md:grid-cols-4 gap-3">
                     <div>
                         <label className="block text-xs font-bold uppercase mb-1">Description</label>
                         <input value={newEvent.description} onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))} placeholder="Notes" className={cn("w-full", THEME.punk.input)} />
@@ -276,13 +276,24 @@ export const CalendarView = ({ onEdit }) => {
                         <label className="block text-xs font-bold uppercase mb-1">Entry Cost</label>
                         <input type="number" value={newEvent.entryCost || ''} onChange={e => setNewEvent(prev => ({ ...prev, entryCost: parseFloat(e.target.value) || 0 }))} placeholder="0" className={cn("w-full", THEME.punk.input)} />
                     </div>
+                    <div className="flex items-center">
+                        <label className="flex items-center gap-2 font-bold text-xs">
+                            <input 
+                                type="checkbox" 
+                                checked={newEvent.includePreparation !== false}
+                                onChange={e => setNewEvent(prev => ({ ...prev, includePreparation: e.target.checked }))}
+                                className="w-4 h-4" 
+                            />
+                            Include Prep Tasks
+                        </label>
+                    </div>
                     <div className="flex items-end">
                         <button
                             onClick={() => {
                                 if (!newEvent.title || !newEvent.date) return;
                                 // Use dedicated addEvent action with auto-task generation
-                                actions.addEvent({ ...newEvent, type: 'Standalone Event' });
-                                setNewEvent({ title: '', date: '', description: '', time: '', location: '', entryCost: 0 });
+                                actions.addEvent({ ...newEvent, type: 'Standalone Event' }, newEvent.includePreparation !== false);
+                                setNewEvent({ title: '', date: '', description: '', time: '', location: '', entryCost: 0, includePreparation: true });
                             }}
                             className={cn("px-4 py-2 w-full", THEME.punk.btn, "bg-black text-white")}
                         >

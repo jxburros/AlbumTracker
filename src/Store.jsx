@@ -280,6 +280,9 @@ export const RELEASE_TASK_TYPES = [
 ];
 
 // Physical release task types (optional, for releases with hasPhysicalCopies)
+// These tasks are used when a Release entity has hasPhysicalCopies=true
+// hasPhysicalCopies is a boolean field on Release objects in data.releases
+// Per APP ARCHITECTURE.txt Section 3.4: "Physical production tasks (optional)"
 export const PHYSICAL_RELEASE_TASK_TYPES = [
   { type: 'Physical Manufacturing Order', category: 'Distribution', daysBeforeRelease: 60 },
   { type: 'Physical Quality Check', category: 'Distribution', daysBeforeRelease: 21 },
