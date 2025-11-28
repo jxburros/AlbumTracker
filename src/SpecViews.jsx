@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
+import { ItemCard, ItemRow, ItemTimelineEntry, DetailPane } from './ItemComponents';
 
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
@@ -34,13 +35,6 @@ export const SongListView = ({ onSelectSong }) => {
     if (onSelectSong) onSelectSong(newSong);
   };
 
-  const toggleSort = (field) => {
-    if (sortBy === field) { setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (<span className="ml-1 text-xs">{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>);
-
   return (
     <div className="p-6 pb-24">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
@@ -57,37 +51,40 @@ export const SongListView = ({ onSelectSong }) => {
           <button onClick={handleAddSong} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Song</button>
         </div>
       </div>
-      <div className={cn("overflow-x-auto", THEME.punk.card)}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-black text-white">
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
-              <th className="p-3 text-center">Single?</th>
-              <th className="p-3 text-left">Exclusive</th>
-              <th className="p-3 text-center">Stems?</th>
-              <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
-            </tr>
-          </thead>
-          <tbody>
-            {songs.length === 0 ? (
-              <tr><td colSpan="7" className="p-10 text-center opacity-50">No songs yet. Click Add Song to create one.</td></tr>
-            ) : (
-              songs.map(song => (
-                <tr key={song.id} onClick={() => onSelectSong && onSelectSong(song)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                  <td className="p-3 font-bold">{song.title}</td>
-                  <td className="p-3">{song.category}</td>
-                  <td className="p-3">{song.releaseDate || '-'}</td>
-                  <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
-                  <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
-                  <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
-                  <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className={cn("p-3", THEME.punk.card)}>
+        {songs.length === 0 ? (
+          <div className="p-10 text-center opacity-50">No songs yet. Click Add Song to create one.</div>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-6 gap-3 text-[10px] font-black uppercase border-b-4 border-black pb-2">
+              <span>Song</span><span>Date</span><span>Tags</span><span>Era / Stage</span><span>Progress</span><span>Team</span>
+            </div>
+            {songs.map(song => {
+              const teamLookup = Object.fromEntries((data.teamMembers || []).map(m => [m.id, m.name]));
+              const songTasks = (song.deadlines || []).length + (song.customTasks || []).length + (song.versions || []).reduce((sum, v) => sum + (v.tasks || []).length, 0);
+              const doneTasks = (song.deadlines || []).filter(t => t.status === 'Done').length + (song.customTasks || []).filter(t => t.status === 'Done').length + (song.versions || []).reduce((sum, v) => sum + (v.tasks || []).filter(t => t.status === 'Done').length, 0);
+              const progressLabel = songTasks > 0 ? `${doneTasks}/${songTasks}` : 'No tasks';
+              const attachedReleases = (data.releases || []).filter(r => (r.attachedSongIds || []).includes(song.id));
+              const tags = [song.category, song.isSingle ? 'Single' : null, song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : null].filter(Boolean);
+              const teamMembers = (song.musicians || []).map(m => teamLookup[m.memberId] || 'Musician');
+              return (
+                <ItemRow
+                  key={song.id}
+                  item={{
+                    id: song.id,
+                    name: song.title,
+                    primaryDate: song.releaseDate || 'TBD',
+                    tags,
+                    stage: attachedReleases.map(r => r.name).join(', ') || 'Unlinked',
+                    progressLabel,
+                    teamMembers,
+                  }}
+                  onClick={() => onSelectSong && onSelectSong(song)}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -270,6 +267,31 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
         </div>
       </div>
+
+      <DetailPane title="Song Detail Pane">
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Narrative, collaborators, staging notes" />
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Exclusivity</label>
+              <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+                {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Primary Platforms</label>
+              <input value={(form.platforms || []).join(', ')} onChange={e => handleFieldChange('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Spotify, YouTube, Vinyl" className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Progress</label>
+              <div className="px-3 py-2 border-2 border-black bg-gray-50 text-sm font-black">{songTasks.length + songCustomTasks.length > 0 ? `${songTasks.filter(t => t.status === 'Done').length + songCustomTasks.filter(t => t.status === 'Done').length}/${songTasks.length + songCustomTasks.length}` : 'No tasks yet'}</div>
+            </div>
+          </div>
+        </div>
+      </DetailPane>
     </div>
 
       {/* Versions - Phase 1: Enhanced with video types, tasks, availability windows */}
@@ -393,6 +415,29 @@ export const SongDetailView = ({ song, onBack }) => {
                   })}
                 </div>
               </div>
+
+              <DetailPane title="Version Detail Pane">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+                    <textarea value={v.notes || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { notes: e.target.value })} className={cn("w-full h-20", THEME.punk.input)} placeholder="Mix differences, edits, era" />
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Platforms</label>
+                      <input value={(v.platforms || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { platforms: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="DSP list, YouTube, vinyl" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      {['Estimated', 'Quoted', 'Paid'].map(k => (
+                        <div key={k}>
+                          <label className="font-black uppercase block mb-1">{k}</label>
+                          <input type="number" value={v[`${k.toLowerCase()}Cost`] || 0} onChange={e => actions.updateSongVersion(song.id, v.id, { [`${k.toLowerCase()}Cost`]: parseFloat(e.target.value) || 0 })} className={cn("w-full", THEME.punk.input)} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </DetailPane>
               
               {/* Version Tasks Count - Tasks now shown in unified view below */}
               {v.id !== 'core' && (v.tasks || []).length > 0 && (
@@ -945,6 +990,19 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
+      <DetailPane title="Release Detail Pane">
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Distribution Platforms</label>
+            <input value={(form.platforms || []).join(', ')} onChange={e => handleFieldChange('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Additional Costs / Notes</label>
+            <textarea value={form.detailNotes || form.notes || ''} onChange={e => handleFieldChange('detailNotes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Physical production, marketing earmarks" />
+          </div>
+        </div>
+      </DetailPane>
+
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Required Recordings</h3>
@@ -1472,46 +1530,32 @@ export const CombinedTimelineView = () => {
         <span className="px-2 py-1 bg-red-100 border-l-4 border-l-red-500 border border-black">Exclusivity</span>
       </div>
 
-      <div className={cn("overflow-x-auto", THEME.punk.card)}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-black text-white">
-              <th className="p-3 text-left">Date</th>
-              <th className="p-3 text-left">Source</th>
-              <th className="p-3 text-left">Label</th>
-              <th className="p-3 text-left">Name</th>
-              <th className="p-3 text-left">Category</th>
-              <th className="p-3 text-left">Status</th>
-              <th className="p-3 text-right">Est. Cost</th>
-              <th className="p-3 text-left">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {timelineItems.length === 0 ? (
-              <tr><td colSpan="8" className="p-10 text-center opacity-50">No timeline items found.</td></tr>
-            ) : timelineItems.map(item => (
-              <tr 
-                key={item.id} 
-                onClick={() => handleItemClick(item)}
-                className={cn(
-                  "border-b border-gray-200 cursor-pointer hover:opacity-80", 
-                  getSourceColor(item.sourceType),
-                  item.isExclusivityStart && "border-l-4 border-l-red-500 bg-red-50",
-                  item.isExclusivityEnd && "border-l-4 border-l-gray-500 bg-gray-50"
-                )}
-              >
-                <td className="p-3 font-bold">{item.date || '-'}</td>
-                <td className="p-3"><span className="px-2 py-1 text-xs font-bold bg-white border border-black">{item.sourceType}</span></td>
-                <td className="p-3">{item.label}</td>
-                <td className="p-3 font-bold">{item.name}</td>
-                <td className="p-3">{item.category}</td>
-                <td className="p-3">{item.status && <span className={cn("px-2 py-1 text-xs font-bold", item.status === 'Done' ? 'bg-green-200' : item.status === 'In Progress' ? 'bg-blue-200' : item.status === 'Delayed' ? 'bg-red-200' : 'bg-gray-200')}>{item.status}</span>}</td>
-                <td className="p-3 text-right">{formatMoney(item.estimatedCost || 0)}</td>
-                <td className="p-3 max-w-xs truncate">{item.notes || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className={cn("p-4", THEME.punk.card)}>
+        {timelineItems.length === 0 ? (
+          <div className="p-10 text-center opacity-50">No timeline items found.</div>
+        ) : (
+          <div className="space-y-2">
+            {timelineItems.map(item => {
+              const tags = [item.category].filter(Boolean);
+              const progressLabel = item.status || '';
+              return (
+                <ItemTimelineEntry
+                  key={item.id}
+                  item={{
+                    name: item.label,
+                    primaryDate: item.date,
+                    source: item.sourceType,
+                    tags,
+                    progressLabel,
+                    notes: item.notes,
+                    accent: getSourceColor(item.sourceType)
+                  }}
+                  onClick={() => handleItemClick(item)}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}
@@ -1772,6 +1816,32 @@ export const VideosView = ({ onSelectSong }) => {
                             </button>
                           </div>
                         </div>
+                        <DetailPane title="Video Detail Pane">
+                          <div className="grid md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase mb-1">Notes</label>
+                              <textarea value={video.notes || ''} onChange={e => actions.updateSongVideo(song.id, video.id, { notes: e.target.value })} className={cn("w-full h-16", THEME.punk.input)} placeholder="Director, storyline, exclusivity" />
+                            </div>
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase mb-1">Exclusivity</label>
+                                <input value={video.exclusiveType || ''} onChange={e => actions.updateSongVideo(song.id, video.id, { exclusiveType: e.target.value })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube first, platform exclusive" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase mb-1">Platforms</label>
+                                <input value={(video.platforms || []).join(', ')} onChange={e => actions.updateSongVideo(song.id, video.id, { platforms: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, TikTok, IG" />
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                {['Estimated', 'Quoted', 'Paid'].map(k => (
+                                  <div key={k}>
+                                    <label className="font-black uppercase block mb-1">{k}</label>
+                                    <input type="number" value={video[`${k.toLowerCase()}Cost`] || 0} onChange={e => actions.updateSongVideo(song.id, video.id, { [`${k.toLowerCase()}Cost`]: parseFloat(e.target.value) || 0 })} className={cn("w-full", THEME.punk.input)} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </DetailPane>
                         {/* Custom tasks placeholder */}
                         <div className="text-[10px] text-gray-500 mt-1">Custom tasks: {(video.customTasks || []).length}</div>
                       </div>

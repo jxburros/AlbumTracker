@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS } from './Store';
+import { useStore, STATUS_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
+import { DetailPane } from './ItemComponents';
 
 export const ListView = ({ onEdit }) => {
     const { data, actions } = useStore();
@@ -199,6 +200,13 @@ export const CalendarView = ({ onEdit }) => {
         }
     };
 
+    const updateSelectedEvent = (field, value) => {
+        if (selectedItem?._kind === 'event') {
+            actions.update('events', selectedItem.id, { [field]: value });
+            setSelectedItem(prev => prev ? { ...prev, [field]: value } : prev);
+        }
+    };
+
     return (
         <div className="h-full flex flex-col p-6 pb-24">
             {/* Header with navigation */}
@@ -302,6 +310,32 @@ export const CalendarView = ({ onEdit }) => {
                         {/* Phase 5: Custom tasks for events */}
                         {selectedItem._kind === 'event' && (
                             <>
+                                <DetailPane title="Event Detail Pane">
+                                    <div className="space-y-2 text-xs">
+                                        <div>
+                                            <label className="block font-black uppercase mb-1">Notes</label>
+                                            <textarea value={selectedItem.notes || ''} onChange={e => updateSelectedEvent('notes', e.target.value)} className={cn("w-full h-16", THEME.punk.input)} placeholder="Venue, exclusivity, ticketing" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block font-black uppercase mb-1">Exclusivity</label>
+                                                <input value={selectedItem.exclusiveType || ''} onChange={e => updateSelectedEvent('exclusiveType', e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Fans-first, livestream only" />
+                                            </div>
+                                            <div>
+                                                <label className="block font-black uppercase mb-1">Platforms</label>
+                                                <input value={(selectedItem.platforms || []).join(', ')} onChange={e => updateSelectedEvent('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {['Estimated', 'Quoted', 'Paid'].map(k => (
+                                                <div key={k}>
+                                                    <label className="block font-black uppercase mb-1">{k}</label>
+                                                    <input type="number" value={selectedItem[`${k.toLowerCase()}Cost`] || 0} onChange={e => updateSelectedEvent(`${k.toLowerCase()}Cost`, parseFloat(e.target.value) || 0)} className={cn("w-full", THEME.punk.input)} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </DetailPane>
                                 <div className="mt-4 border-t-2 border-black pt-4">
                                     <div className="font-bold text-xs uppercase mb-2">Custom Tasks</div>
                                     {(selectedItem.customTasks || []).length === 0 ? (
@@ -846,11 +880,93 @@ export const TeamView = () => {
 
 export const MiscView = () => {
     const { data, actions } = useStore();
-    const add = () => { const d = prompt('Desc:'); const a = prompt('Amount:'); if(d && a) actions.add('misc', {description:d, amount:parseFloat(a)}); };
+    const [expenseDraft, setExpenseDraft] = useState({ description: '', amount: '', category: 'General' });
+
+    const costedItems = useMemo(() => {
+        const rows = [];
+        const pushItem = (name, source, date, cost, notes = '') => {
+            if ((cost || 0) <= 0) return;
+            rows.push({ id: `${source}-${name}-${date}`, name, source, date: date || 'TBD', cost, notes });
+        };
+
+        data.tasks.forEach(t => pushItem(t.title, 'Standalone Task', t.dueDate, getEffectiveCost(t), t.notes));
+
+        (data.songs || []).forEach(song => {
+            (song.deadlines || []).forEach(task => pushItem(`${task.type} — ${song.title}`, 'Song Task', task.date, getEffectiveCost(task), task.notes));
+            (song.customTasks || []).forEach(task => pushItem(`${task.title} — ${song.title}`, 'Song Custom', task.date, getEffectiveCost(task), task.notes || task.description));
+            (song.versions || []).forEach(v => {
+                pushItem(`${v.name} — ${song.title}`, 'Version', v.releaseDate, getEffectiveCost(v), v.notes);
+                (v.tasks || []).forEach(task => pushItem(`${task.type} — ${v.name}`, 'Version Task', task.date, getEffectiveCost(task), task.notes));
+            });
+            (song.videos || []).forEach(video => {
+                pushItem(`${video.title} — ${song.title}`, 'Video', video.releaseDate, getEffectiveCost(video), video.notes);
+                (video.tasks || []).forEach(task => pushItem(`${task.type} — ${video.title}`, 'Video Task', task.date, getEffectiveCost(task), task.notes));
+            });
+        });
+
+        (data.globalTasks || []).forEach(task => pushItem(task.taskName, 'Global Task', task.date, getEffectiveCost(task), task.notes));
+        (data.releases || []).forEach(rel => {
+            pushItem(rel.name, 'Release', rel.releaseDate, getEffectiveCost(rel), rel.notes || rel.detailNotes);
+            (rel.tasks || []).forEach(task => pushItem(`${task.type} — ${rel.name}`, 'Release Task', task.date, getEffectiveCost(task), task.notes));
+            (rel.customTasks || []).forEach(task => pushItem(`${task.title} — ${rel.name}`, 'Release Custom', task.date, getEffectiveCost(task), task.description));
+        });
+
+        (data.events || []).forEach(evt => {
+            pushItem(evt.title, 'Event', evt.date, getEffectiveCost(evt), evt.notes);
+            (evt.customTasks || []).forEach(task => pushItem(`${task.title} — ${evt.title}`, 'Event Task', task.date, getEffectiveCost(task), task.notes));
+        });
+
+        (data.misc || []).forEach(m => pushItem(m.description, 'Misc', m.date, m.amount, 'Legacy expense'));
+
+        return rows.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }, [data]);
+
+    const addExpenseTask = () => {
+        const amount = parseFloat(expenseDraft.amount);
+        if (!expenseDraft.description || isNaN(amount)) return;
+        actions.add('tasks', {
+            title: expenseDraft.description,
+            paidCost: amount,
+            status: 'Done',
+            isHiddenExpense: true,
+            category: expenseDraft.category,
+            dueDate: new Date().toISOString().split('T')[0],
+            notes: 'Expense-only task'
+        });
+        setExpenseDraft({ description: '', amount: '', category: 'General' });
+    };
+
     return (
-        <div className="p-6">
-            <div className="flex justify-between mb-6"><h2 className={THEME.punk.textStyle}>Expenses</h2><button onClick={add} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add</button></div>
-            <div className={THEME.punk.card}>{data.misc.map(m => (<div key={m.id} className="flex justify-between p-3 border-b border-gray-100"><span>{m.description}</span><span className="font-bold">{formatMoney(m.amount)}</span></div>))}</div>
+        <div className="p-6 pb-24">
+            <div className="flex justify-between mb-6 items-center">
+                <h2 className={THEME.punk.textStyle}>Expenses</h2>
+                <div className="flex gap-2">
+                    <input value={expenseDraft.description} onChange={e => setExpenseDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("px-3 py-2 text-sm", THEME.punk.input)} />
+                    <input type="number" value={expenseDraft.amount} onChange={e => setExpenseDraft(prev => ({ ...prev, amount: e.target.value }))} placeholder="$" className={cn("px-3 py-2 text-sm w-28", THEME.punk.input)} />
+                    <input value={expenseDraft.category} onChange={e => setExpenseDraft(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className={cn("px-3 py-2 text-sm w-32", THEME.punk.input)} />
+                    <button onClick={addExpenseTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Expense Task</button>
+                </div>
+            </div>
+            <div className={cn("mb-4 p-3", THEME.punk.card)}>
+                <div className="grid grid-cols-4 text-[10px] font-black uppercase mb-2 border-b-4 border-black pb-2">
+                    <span>Item</span><span>Source</span><span>Date</span><span className="text-right">Cost</span>
+                </div>
+                <div className="divide-y divide-gray-200">
+                    {costedItems.length === 0 ? (
+                        <div className="p-4 text-center opacity-50">No costed tasks recorded.</div>
+                    ) : costedItems.map(item => (
+                        <div key={item.id} className="grid grid-cols-4 py-2 text-sm gap-2">
+                            <div>
+                                <div className="font-bold">{item.name}</div>
+                                {item.notes && <div className="text-[11px] opacity-60">{item.notes}</div>}
+                            </div>
+                            <div className="text-xs font-bold">{item.source}</div>
+                            <div className="text-xs">{item.date}</div>
+                            <div className="text-right font-black">{formatMoney(item.cost)}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 };
