@@ -67,7 +67,6 @@ export const Editor = ({ task, onClose }) => {
     const [form, setForm] = useState(task ? {...task} : {});
     const [tab, setTab] = useState('details');
     const [sub, setSub] = useState('');
-    const checklistStates = ['Complete', 'Paid', 'Complete but unpaid', 'Paid but incomplete', 'Archived'];
     const artistName = data.settings?.artistName || 'Artist';
 
     useEffect(() => {
