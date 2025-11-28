@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, getPrimaryDate, getTaskDueDate } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
@@ -1133,14 +1133,32 @@ export const CombinedTimelineView = () => {
 
   const timelineItems = useMemo(() => {
     const items = [];
+    const resolvePrimary = (entity, extraReleaseIds = []) => getPrimaryDate(entity, data.releases || [], extraReleaseIds);
+    const resolveDue = (task) => getTaskDueDate(task);
+    const linkedReleaseIdsForSong = (songId) => {
+      const directLinks = (data.releases || []).filter(r => (r.attachedSongIds || []).includes(songId)).map(r => r.id);
+      const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId)).map(r => r.id);
+      const coreLink = data.songs.find(s => s.id === songId)?.coreReleaseId;
+      return Array.from(new Set([...(coreLink ? [coreLink] : []), ...directLinks, ...versionLinks]));
+    };
+    const linkedReleaseIdsForVersion = (songId, versionId) => {
+      const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId && v.versionId === versionId)).map(r => r.id);
+      return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...versionLinks]));
+    };
+    const linkedReleaseIdsForVideo = (songId, videoId) => {
+      const videoLinks = (data.releases || []).filter(r => (r.attachedVideoIds || []).includes(videoId)).map(r => r.id);
+      return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...videoLinks]));
+    };
+    const linkedReleaseIdsForStandaloneVideo = (videoId) => (data.releases || []).filter(r => (r.attachedStandaloneVideoIds || []).includes(videoId)).map(r => r.id);
 
     // Song Tasks (formerly deadlines)
     (data.songs || []).forEach(song => {
+      const primarySongDate = resolvePrimary(song, linkedReleaseIdsForSong(song.id));
       const songTasks = song.deadlines || [];
       songTasks.forEach(task => {
         items.push({
           id: 'song-task-' + task.id,
-          date: task.date,
+          date: resolveDue(task) || primarySongDate,
           sourceType: 'Song Task',
           label: task.type,
           name: song.title,
@@ -1158,7 +1176,7 @@ export const CombinedTimelineView = () => {
       customTasks.forEach(task => {
         items.push({
           id: 'custom-' + task.id,
-          date: task.date,
+          date: resolveDue(task) || primarySongDate,
           sourceType: 'Song Custom',
           label: task.title || 'Custom task',
           name: song.title,
@@ -1173,10 +1191,11 @@ export const CombinedTimelineView = () => {
       
       // Version tasks
       (song.versions || []).filter(v => v.id !== 'core').forEach(version => {
+        const versionPrimaryDate = resolvePrimary(version, linkedReleaseIdsForVersion(song.id, version.id));
         (version.tasks || []).forEach(task => {
           items.push({
             id: 'version-task-' + song.id + '-' + version.id + '-' + task.id,
-            date: task.date,
+            date: resolveDue(task) || versionPrimaryDate,
             sourceType: 'Version Task',
             label: task.type,
             name: `${version.name} (${song.title})`,
@@ -1192,10 +1211,12 @@ export const CombinedTimelineView = () => {
       
       // Video tasks
       (song.videos || []).forEach(video => {
+        const videoReleaseIds = linkedReleaseIdsForVideo(song.id, video.id);
+        const videoPrimaryDate = resolvePrimary(video, videoReleaseIds);
         (video.tasks || []).forEach(task => {
           items.push({
             id: 'video-task-' + song.id + '-' + video.id + '-' + task.id,
-            date: task.date,
+            date: resolveDue(task) || videoPrimaryDate,
             sourceType: 'Video Task',
             label: task.type,
             name: `${video.title} (${song.title})`,
@@ -1207,12 +1228,13 @@ export const CombinedTimelineView = () => {
             clickable: true
           });
         });
-        
+
         // Video release date
-        if (video.releaseDate) {
+        const videoDate = videoPrimaryDate;
+        if (videoDate) {
           items.push({
             id: 'video-release-' + song.id + '-' + video.id,
-            date: video.releaseDate,
+            date: videoDate,
             sourceType: 'Video',
             label: 'Video Release',
             name: video.title,
@@ -1264,12 +1286,51 @@ export const CombinedTimelineView = () => {
       }
     });
 
+    // Standalone videos
+    (data.standaloneVideos || []).forEach(video => {
+      const videoReleaseIds = linkedReleaseIdsForStandaloneVideo(video.id);
+      const videoDate = resolvePrimary(video, videoReleaseIds);
+      (video.tasks || []).forEach(task => {
+        const taskDate = resolveDue(task) || videoDate;
+        items.push({
+          id: 'standalone-video-task-' + video.id + '-' + task.id,
+          date: taskDate,
+          sourceType: 'Video Task',
+          label: task.type,
+          name: `${video.title} (Standalone)`,
+          category: 'Video',
+          status: task.status,
+          estimatedCost: task.estimatedCost,
+          notes: task.notes,
+          songId: null,
+          clickable: true
+        });
+      });
+
+      if (videoDate) {
+        items.push({
+          id: 'standalone-video-release-' + video.id,
+          date: videoDate,
+          sourceType: 'Video',
+          label: 'Video Release',
+          name: `${video.title} (Standalone)`,
+          category: 'Video',
+          status: null,
+          estimatedCost: video.estimatedCost,
+          notes: video.notes,
+          songId: null,
+          clickable: true
+        });
+      }
+    });
+
     // Events
     (data.events || []).forEach(event => {
-      if (event.date) {
+      const eventDate = resolvePrimary(event);
+      if (eventDate) {
         items.push({
           id: 'event-' + event.id,
-          date: event.date,
+          date: eventDate,
           sourceType: 'Event',
           label: event.type || 'Event',
           name: event.title,
@@ -1284,10 +1345,11 @@ export const CombinedTimelineView = () => {
       
       // Phase 5: Event custom tasks
       (event.customTasks || []).forEach(task => {
-        if (task.date) {
+        const taskDate = resolveDue(task) || eventDate;
+        if (taskDate) {
           items.push({
             id: 'event-task-' + event.id + '-' + task.id,
-            date: task.date,
+            date: taskDate,
             sourceType: 'Event Task',
             label: task.title,
             name: event.title,
@@ -1304,9 +1366,10 @@ export const CombinedTimelineView = () => {
 
     // Global Tasks
     (data.globalTasks || []).filter(t => !t.isArchived).forEach(task => {
+      const taskDate = resolveDue(task);
       items.push({
         id: 'global-' + task.id,
-        date: task.date,
+        date: taskDate,
         sourceType: 'Global',
         label: 'Task',
         name: task.taskName,
@@ -1322,12 +1385,13 @@ export const CombinedTimelineView = () => {
     // Releases and their tasks
     (data.releases || []).forEach(release => {
       // Release date itself
-      items.push({ 
-        id: 'release-' + release.id, 
-        date: release.releaseDate, 
-        sourceType: 'Release', 
-        label: 'Release', 
-        name: release.name, 
+      const releaseDate = resolvePrimary(release);
+      items.push({
+        id: 'release-' + release.id,
+        date: releaseDate,
+        sourceType: 'Release',
+        label: 'Release',
+        name: release.name,
         category: release.type, 
         status: null, 
         estimatedCost: release.estimatedCost, 
@@ -1338,12 +1402,13 @@ export const CombinedTimelineView = () => {
       
       // Release tasks
       (release.tasks || []).forEach(task => {
-        items.push({ 
-          id: 'release-task-' + task.id, 
-          date: task.date, 
-          sourceType: 'Release Task', 
-          label: task.type, 
-          name: release.name, 
+        const taskDate = resolveDue(task) || releaseDate;
+        items.push({
+          id: 'release-task-' + task.id,
+          date: taskDate,
+          sourceType: 'Release Task',
+          label: task.type,
+          name: release.name,
           category: task.category, 
           status: task.status, 
           estimatedCost: task.estimatedCost, 

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useStore, STATUS_OPTIONS } from './Store';
+import { useStore, STATUS_OPTIONS, getTaskDueDate, getPrimaryDate } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 
@@ -68,100 +68,126 @@ export const CalendarView = ({ onEdit }) => {
     const items = useMemo(() => {
         const map = {};
         
+        const linkedReleaseIdsForSong = (songId) => {
+            const directLinks = (data.releases || []).filter(r => (r.attachedSongIds || []).includes(songId)).map(r => r.id);
+            const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId)).map(r => r.id);
+            const coreLink = data.songs.find(s => s.id === songId)?.coreReleaseId;
+            return Array.from(new Set([...(coreLink ? [coreLink] : []), ...directLinks, ...versionLinks]));
+        };
+        const linkedReleaseIdsForVersion = (songId, versionId) => {
+            const versionLinks = (data.releases || []).filter(r => (r.attachedVersions || []).some(v => v.songId === songId && v.versionId === versionId)).map(r => r.id);
+            return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...versionLinks]));
+        };
+        const linkedReleaseIdsForVideo = (songId, videoId) => {
+            const videoLinks = (data.releases || []).filter(r => (r.attachedVideoIds || []).includes(videoId)).map(r => r.id);
+            return Array.from(new Set([...linkedReleaseIdsForSong(songId), ...videoLinks]));
+        };
+
         // Legacy tasks
-        data.tasks.filter(t => t.dueDate && !t.archived).forEach(t => { 
-            map[t.dueDate] = map[t.dueDate] || []; 
-            map[t.dueDate].push({ ...t, _kind: 'task' }); 
+        data.tasks.filter(t => !t.archived).forEach(t => {
+            const due = getTaskDueDate(t);
+            if (!due) return;
+            map[due] = map[due] || [];
+            map[due].push({ ...t, dueDate: due, _kind: 'task' });
         });
-        
+
         // Events
-        data.events.forEach(e => { 
-            if (e.date) { 
-                map[e.date] = map[e.date] || []; 
-                map[e.date].push({ ...e, _kind: 'event' }); 
-            } 
+        data.events.forEach(e => {
+            const eventDate = getPrimaryDate(e, data.releases || []);
+            if (eventDate) {
+                map[eventDate] = map[eventDate] || [];
+                map[eventDate].push({ ...e, date: eventDate, _kind: 'event' });
+            }
         });
-        
+
         // Releases
         (data.releases || []).forEach(r => {
-            if (r.releaseDate) {
-                map[r.releaseDate] = map[r.releaseDate] || [];
-                map[r.releaseDate].push({
+            const primaryReleaseDate = getPrimaryDate(r, data.releases || []);
+            if (primaryReleaseDate) {
+                map[primaryReleaseDate] = map[primaryReleaseDate] || [];
+                map[primaryReleaseDate].push({
                     id: `release-${r.id}`,
                     _releaseId: r.id,
                     title: `${r.name} Release`,
-                    date: r.releaseDate,
+                    date: primaryReleaseDate,
                     _kind: 'release',
                     releaseType: r.type
                 });
             }
         });
-        
+
         // Songs (release dates)
         (data.songs || []).forEach(song => {
-            if (song.releaseDate) {
-                map[song.releaseDate] = map[song.releaseDate] || [];
-                map[song.releaseDate].push({
+            const songDate = getPrimaryDate(song, data.releases || [], linkedReleaseIdsForSong(song.id));
+            if (songDate) {
+                map[songDate] = map[songDate] || [];
+                map[songDate].push({
                     id: `song-${song.id}`,
                     _songId: song.id,
                     title: `🎵 ${song.title}`,
-                    date: song.releaseDate,
+                    date: songDate,
                     _kind: 'song'
                 });
             }
-            
+
             // Song tasks
             (song.deadlines || []).forEach(task => {
-                if (task.date) {
-                    map[task.date] = map[task.date] || [];
-                    map[task.date].push({
-                        id: `song-task-${song.id}-${task.id}`,
+                const due = getTaskDueDate(task) || songDate;
+                if (!due) return;
+                map[due] = map[due] || [];
+                map[due].push({
+                    id: `song-task-${song.id}-${task.id}`,
+                    _songId: song.id,
+                    title: `${task.type} - ${song.title}`,
+                    date: due,
+                    status: task.status,
+                    _kind: 'song-task'
+                });
+            });
+
+            // Song versions (non-core versions with their own release dates)
+            (song.versions || []).filter(v => v.id !== 'core').forEach(v => {
+                const versionDate = getPrimaryDate(v, data.releases || [], linkedReleaseIdsForVersion(song.id, v.id));
+                if (versionDate) {
+                    map[versionDate] = map[versionDate] || [];
+                    map[versionDate].push({
+                        id: `version-${song.id}-${v.id}`,
                         _songId: song.id,
-                        title: `${task.type} - ${song.title}`,
-                        date: task.date,
-                        status: task.status,
-                        _kind: 'song-task'
+                        _versionId: v.id,
+                        title: `🎵 ${v.name}`,
+                        date: versionDate,
+                        _kind: 'version'
                     });
                 }
             });
-            
-            // Song versions (non-core versions with their own release dates)
-            (song.versions || []).filter(v => v.id !== 'core' && v.releaseDate).forEach(v => {
-                map[v.releaseDate] = map[v.releaseDate] || [];
-                map[v.releaseDate].push({
-                    id: `version-${song.id}-${v.id}`,
-                    _songId: song.id,
-                    _versionId: v.id,
-                    title: `🎵 ${v.name}`,
-                    date: v.releaseDate,
-                    _kind: 'version'
-                });
-            });
-            
+
             // Videos
             (song.videos || []).forEach(video => {
-                if (video.releaseDate) {
-                    map[video.releaseDate] = map[video.releaseDate] || [];
-                    map[video.releaseDate].push({
+                const videoDate = getPrimaryDate(video, data.releases || [], linkedReleaseIdsForVideo(song.id, video.id));
+                if (videoDate) {
+                    map[videoDate] = map[videoDate] || [];
+                    map[videoDate].push({
                         id: `video-${song.id}-${video.id}`,
                         _songId: song.id,
                         _videoId: video.id,
                         title: `📹 ${video.title}`,
-                        date: video.releaseDate,
+                        date: videoDate,
                         _kind: 'video'
                     });
                 }
             });
         });
-        
+
         // Global tasks
-        (data.globalTasks || []).filter(t => t.date && !t.isArchived).forEach(t => {
-            map[t.date] = map[t.date] || [];
-            map[t.date].push({
+        (data.globalTasks || []).filter(t => !t.isArchived).forEach(t => {
+            const taskDate = getTaskDueDate(t);
+            if (!taskDate) return;
+            map[taskDate] = map[taskDate] || [];
+            map[taskDate].push({
                 id: `global-${t.id}`,
                 _globalTaskId: t.id,
                 title: `📋 ${t.taskName}`,
-                date: t.date,
+                date: taskDate,
                 status: t.status,
                 _kind: 'global-task'
             });
@@ -787,7 +813,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `song-${song.id}-${d.id}`,
                     title: d.type,
-                    dueDate: d.date,
+                    dueDate: getTaskDueDate(d),
                     status: d.status,
                     source: 'Song',
                     sourceName: song.title,
@@ -802,7 +828,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `song-custom-${song.id}-${t.id}`,
                     title: t.title,
-                    dueDate: t.date,
+                    dueDate: getTaskDueDate(t),
                     status: t.status,
                     source: 'Song',
                     sourceName: song.title,
@@ -820,7 +846,7 @@ export const ActiveView = ({ onEdit }) => {
             tasks.push({
                 id: `global-${t.id}`,
                 title: t.taskName,
-                dueDate: t.date,
+                dueDate: getTaskDueDate(t),
                 status: t.status,
                 source: 'Global',
                 sourceName: t.category,
@@ -838,7 +864,7 @@ export const ActiveView = ({ onEdit }) => {
                 tasks.push({
                     id: `release-${release.id}-${t.id}`,
                     title: t.type,
-                    dueDate: t.date,
+                    dueDate: getTaskDueDate(t) || release.releaseDate,
                     status: t.status,
                     source: 'Release',
                     sourceName: release.name,

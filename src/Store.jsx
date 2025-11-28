@@ -41,6 +41,38 @@ export const createUnifiedTask = (overrides = {}) => ({
   ...overrides
 });
 
+// Resolve a task's due date while supporting legacy `date` fields
+export const getTaskDueDate = (task = {}) => task.dueDate || task.date || '';
+
+// Resolve the primary date for any item based on overrides, direct dates, and attached releases
+export const getPrimaryDate = (item = {}, releases = [], extraReleaseIds = []) => {
+  if (!item) return '';
+  if (item.primary_date) return item.primary_date;
+  if (item.primaryDate) return item.primaryDate;
+  if (item.primaryDateOverride) return item.primaryDateOverride;
+  if (item.releaseDate) return item.releaseDate;
+
+  const overrideDates = item.releaseOverrides ? Object.values(item.releaseOverrides).filter(Boolean) : [];
+  if (overrideDates.length > 0) return overrideDates.sort()[0];
+
+  const collectedReleaseIds = [
+    ...(item.coreReleaseId ? [item.coreReleaseId] : []),
+    ...(item.releaseIds || []),
+    ...extraReleaseIds
+  ];
+
+  const releaseDates = collectedReleaseIds
+    .map(id => releases.find(r => r.id === id)?.releaseDate)
+    .filter(Boolean)
+    .sort();
+
+  if (releaseDates.length > 0) return releaseDates[0];
+  if (item.date) return item.date;
+  if (item.exclusiveStartDate) return item.exclusiveStartDate;
+  if (item.exclusiveEndDate) return item.exclusiveEndDate;
+  return '';
+};
+
 // Compute effective cost with precedence: paid > quoted > estimated
 export const getEffectiveCost = (entity = {}) => {
   if (entity.paidCost !== undefined && entity.paidCost > 0) return entity.paidCost;
@@ -104,6 +136,7 @@ export const generateVideoTasks = (releaseDate, videoTypeKey) => {
         type: taskType.type,
         category: taskType.category,
         date: taskDate.toISOString().split('T')[0],
+        dueDate: taskDate.toISOString().split('T')[0],
         parentType: 'video'
       }));
     }
@@ -157,6 +190,7 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
       type: taskType.type,
       category: taskType.category,
       date: taskDate.toISOString().split('T')[0],
+      dueDate: taskDate.toISOString().split('T')[0],
       parentType: 'song'
     }));
   });
@@ -172,6 +206,7 @@ export const calculateSongTasks = (releaseDate, isSingle, videoType) => {
           type: taskType.type,
           category: taskType.category,
           date: taskDate.toISOString().split('T')[0],
+          dueDate: taskDate.toISOString().split('T')[0],
           parentType: 'song'
         }));
       }
@@ -199,12 +234,13 @@ export const calculateReleaseTasks = (releaseDate) => {
   RELEASE_TASK_TYPES.forEach(taskType => {
     const taskDate = new Date(release);
     taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
-    
+
     // Use unified task schema
     tasks.push(createUnifiedTask({
       type: taskType.type,
       category: taskType.category,
       date: taskDate.toISOString().split('T')[0],
+      dueDate: taskDate.toISOString().split('T')[0],
       parentType: 'release'
     }));
   });
@@ -236,10 +272,11 @@ export const recalculateDeadlines = (existingDeadlines, releaseDate, isSingle, v
   });
   
   newDeadlines.forEach(deadline => {
-    if (!deadline.isOverridden && offsets[deadline.type] !== undefined) {
+    if (!deadline.isOverridden && deadline.status !== 'Done' && offsets[deadline.type] !== undefined) {
       const newDate = new Date(release);
       newDate.setDate(newDate.getDate() + offsets[deadline.type]);
       deadline.date = newDate.toISOString().split('T')[0];
+      deadline.dueDate = newDate.toISOString().split('T')[0];
     }
   });
   
@@ -259,10 +296,11 @@ export const recalculateReleaseTasks = (existingTasks, releaseDate) => {
   });
   
   newTasks.forEach(task => {
-    if (!task.isOverridden && offsets[task.type] !== undefined) {
+    if (!task.isOverridden && task.status !== 'Done' && offsets[task.type] !== undefined) {
       const newDate = new Date(release);
       newDate.setDate(newDate.getDate() + offsets[task.type]);
       task.date = newDate.toISOString().split('T')[0];
+      task.dueDate = newDate.toISOString().split('T')[0];
     }
   });
   
@@ -950,6 +988,7 @@ export const StoreProvider = ({ children }) => {
         title: task.title || 'New Task',
         description: task.description || '',
         date: task.date || '',
+        dueDate: task.date || task.dueDate || '',
         status: task.status || 'Not Started',
         estimatedCost: task.estimatedCost || 0,
         quotedCost: task.quotedCost || 0,
@@ -1117,21 +1156,37 @@ export const StoreProvider = ({ children }) => {
               return { ...v, releaseOverrides };
             });
             const effectiveSongDate = song.releaseDate && song.releaseDate <= releaseDate ? song.releaseDate : releaseDate;
-            return { ...song, releaseDate: effectiveSongDate, versions: updatedVersions };
+            const updatedDeadlines = song.releaseDate
+              ? recalculateDeadlines(song.deadlines || [], effectiveSongDate, song.isSingle, song.videoType)
+              : song.deadlines;
+            return { ...song, releaseDate: effectiveSongDate, versions: updatedVersions, deadlines: updatedDeadlines };
           });
-          return { ...prev, songs: updatedSongs };
+          const updatedReleases = (prev.releases || []).map(r => {
+            if (r.id !== releaseId) return r;
+            const tasks = recalculateReleaseTasks(r.tasks || [], releaseDate);
+            return { ...r, releaseDate, tasks };
+          });
+          return { ...prev, songs: updatedSongs, releases: updatedReleases };
         });
       };
 
       if (mode === 'cloud') {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), updates);
+        const release = data.releases.find(r => r.id === releaseId);
+        const recalculatedTasks = updates.releaseDate ? recalculateReleaseTasks(release?.tasks || [], updates.releaseDate) : undefined;
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), {
+          ...updates,
+          ...(recalculatedTasks ? { tasks: recalculatedTasks } : {})
+        });
         if (updates.releaseDate) applyReleaseSync(updates.releaseDate);
       } else {
-        setData(p => ({
-          ...p,
-          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, ...updates } : r)
-        }));
-        if (updates.releaseDate) applyReleaseSync(updates.releaseDate);
+        if (updates.releaseDate) {
+          applyReleaseSync(updates.releaseDate);
+        } else {
+          setData(p => ({
+            ...p,
+            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, ...updates } : r)
+          }));
+        }
       }
     },
      
@@ -1235,6 +1290,7 @@ export const StoreProvider = ({ children }) => {
         title: task.title || 'New Task',
         description: task.description || '',
         date: task.date || '',
+        dueDate: task.date || task.dueDate || '',
         status: task.status || 'Not Started',
         estimatedCost: task.estimatedCost || 0,
         quotedCost: task.quotedCost || 0,
@@ -1454,6 +1510,7 @@ export const StoreProvider = ({ children }) => {
         title: task.title || 'New Task',
         description: task.description || '',
         date: task.date || '',
+        dueDate: task.date || task.dueDate || '',
         status: task.status || 'Not Started',
         estimatedCost: task.estimatedCost || 0,
         quotedCost: task.quotedCost || 0,
