@@ -108,7 +108,6 @@ export const SongDetailView = ({ song, onBack }) => {
   const [newVersionMusicians, setNewVersionMusicians] = useState({});
   const [newAssignments, setNewAssignments] = useState({});
 
-  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
   const teamMembers = data.teamMembers || [];
 
   const taskBudget = (task = {}) => {
@@ -128,8 +127,6 @@ export const SongDetailView = ({ song, onBack }) => {
     updater(updatedMembers);
     setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
   };
-
-  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
   const handleSave = async () => { await actions.updateSong(song.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
@@ -220,7 +217,7 @@ export const SongDetailView = ({ song, onBack }) => {
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
             <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
-              {exclusivityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </div>
           <div>
@@ -286,7 +283,7 @@ export const SongDetailView = ({ song, onBack }) => {
               <div className="flex flex-wrap gap-3 items-center mb-2">
                 <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} />
                 <select value={v.exclusiveType || 'None'} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveType: e.target.value })} className={cn("px-2 py-1 text-sm", THEME.punk.input)}>
-                  {exclusivityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
                 <input value={(v.instruments || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("px-2 py-1 text-sm", THEME.punk.input)} placeholder="Instruments" />
               </div>
@@ -676,8 +673,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
 
-  const exclusivityOptions = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
-
   const currentRelease = data.releases.find(r => r.id === release.id) || release;
 
   const handleSave = async () => { await actions.updateRelease(release.id, form); };
@@ -733,7 +728,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
             <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
-              {exclusivityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           </div>
           <div>
