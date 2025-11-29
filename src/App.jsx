@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
-import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, VideosView, FinancialsView, ProgressView } from './SpecViews';
+import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, VideosView, FinancialsView, ProgressView, EventsListView, EventDetailView, ExpensesListView, ExpenseDetailView } from './SpecViews';
 import { THEME, cn } from './utils';
 
 function AppInner() {
@@ -11,6 +11,8 @@ function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedSong, setSelectedSong] = useState(null);
   const [selectedRelease, setSelectedRelease] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedExpense, setSelectedExpense] = useState(null);
   const { data } = useStore();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
@@ -36,6 +38,18 @@ function AppInner() {
     setTab('releaseDetail');
   };
 
+  // Handle event selection
+  const handleSelectEvent = (event) => {
+    setSelectedEvent(event);
+    setTab('eventDetail');
+  };
+
+  // Handle expense selection
+  const handleSelectExpense = (expense) => {
+    setSelectedExpense(expense);
+    setTab('expenseDetail');
+  };
+
   return (
     <div
       className={cn(
@@ -48,7 +62,7 @@ function AppInner() {
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
         activeTab={tab}
-        setActiveTab={(t) => { setTab(t); setSelectedSong(null); setSelectedRelease(null); }}
+        setActiveTab={(t) => { setTab(t); setSelectedSong(null); setSelectedRelease(null); setSelectedEvent(null); setSelectedExpense(null); }}
       />
 
       <main
@@ -79,6 +93,14 @@ function AppInner() {
           {tab === 'releases' && <ReleasesListView onSelectRelease={handleSelectRelease} />}
           {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} />}
           {tab === 'timeline' && <CombinedTimelineView />}
+          
+          {/* Events Item Pages - Following unified Item/Page architecture */}
+          {tab === 'events' && <EventsListView onSelectEvent={handleSelectEvent} />}
+          {tab === 'eventDetail' && selectedEvent && <EventDetailView event={selectedEvent} onBack={() => { setSelectedEvent(null); setTab('events'); }} />}
+          
+          {/* Expenses Item Pages - Following unified Item/Page architecture */}
+          {tab === 'expenses' && <ExpensesListView onSelectExpense={handleSelectExpense} />}
+          {tab === 'expenseDetail' && selectedExpense && <ExpenseDetailView expense={selectedExpense} onBack={() => { setSelectedExpense(null); setTab('expenses'); }} />}
           
           {/* Task Dashboard - replaces confusing Plan view */}
           {tab === 'dashboard' && <TaskDashboardView />}

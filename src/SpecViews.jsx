@@ -3773,3 +3773,643 @@ export const ProgressView = () => {
     </div>
   );
 };
+
+// Events List View - Following same pattern as Songs and Releases per unified Item/Page architecture
+export const EventsListView = ({ onSelectEvent }) => {
+  const { data, actions } = useStore();
+  const [sortBy, setSortBy] = useState('date');
+  const [sortDir, setSortDir] = useState('asc');
+  const [filterType, setFilterType] = useState('all');
+  const [viewMode, setViewMode] = useState('list');
+
+  const toggleSort = (field) => {
+    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => (
+    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
+
+  const eventProgress = (event) => {
+    const tasks = [...(event.tasks || []), ...(event.customTasks || [])];
+    return calculateTaskProgress(tasks).progress;
+  };
+
+  const events = useMemo(() => {
+    let filtered = [...(data.events || [])];
+    if (filterType !== 'all') {
+      filtered = filtered.filter(e => e.type === filterType);
+    }
+    filtered.sort((a, b) => {
+      let valA = a[sortBy] || '';
+      let valB = b[sortBy] || '';
+      if (sortBy === 'estimatedCost') { valA = getEffectiveCost(a); valB = getEffectiveCost(b); }
+      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
+      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
+    });
+    return filtered;
+  }, [data.events, sortBy, sortDir, filterType]);
+
+  const handleAddEvent = async () => {
+    const newEvent = await actions.addEvent({ title: 'New Event', date: '', type: 'Standalone Event' }, false);
+    if (onSelectEvent) onSelectEvent(newEvent);
+  };
+
+  const eventTypes = useMemo(() => {
+    const types = new Set();
+    (data.events || []).forEach(e => e.type && types.add(e.type));
+    return Array.from(types);
+  }, [data.events]);
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>Events</h2>
+        <div className="flex flex-wrap gap-2">
+          <div className="flex border-4 border-black">
+            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View">
+              <Icon name="List" size={16} />
+            </button>
+            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View">
+              <Icon name="PieChart" size={16} />
+            </button>
+          </div>
+          <select value={filterType} onChange={e => setFilterType(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+            <option value="all">All Types</option>
+            {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button onClick={handleAddEvent} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Event</button>
+        </div>
+      </div>
+      
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {events.length === 0 ? (
+            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No events yet. Click Add Event to create one.</div>
+          ) : (
+            events.map(event => (
+              <div key={event.id} onClick={() => onSelectEvent && onSelectEvent(event)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
+                <div className="font-bold text-lg mb-2">{event.title}</div>
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{event.type || 'Event'}</span></div>
+                  <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{event.date || 'TBD'}</span></div>
+                  <div className="flex justify-between"><span className="opacity-60">Location:</span><span className="font-bold">{event.location || '-'}</span></div>
+                  <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{eventProgress(event)}%</span></div>
+                  <div className="flex justify-between"><span className="opacity-60">Est. Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(event))}</span></div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('type')}>Type <SortIcon field="type" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('date')}>Date <SortIcon field="date" /></th>
+                <th className="p-3 text-left">Time</th>
+                <th className="p-3 text-left">Location</th>
+                <th className="p-3 text-right">Progress</th>
+                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.length === 0 ? (
+                <tr><td colSpan="7" className="p-10 text-center opacity-50">No events yet. Click Add Event to create one.</td></tr>
+              ) : (
+                events.map(event => (
+                  <tr key={event.id} onClick={() => onSelectEvent && onSelectEvent(event)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
+                    <td className="p-3 font-bold">{event.title}</td>
+                    <td className="p-3">{event.type || '-'}</td>
+                    <td className="p-3">{event.date || '-'}</td>
+                    <td className="p-3">{event.time || '-'}</td>
+                    <td className="p-3">{event.location || '-'}</td>
+                    <td className="p-3 text-right">{eventProgress(event)}%</td>
+                    <td className="p-3 text-right">{formatMoney(getEffectiveCost(event))}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Event Detail View - Following same pattern as SongDetailView and ReleaseDetailView
+export const EventDetailView = ({ event, onBack }) => {
+  const { data, actions } = useStore();
+  const [form, setForm] = useState({ ...event });
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+  const [newAssignments, setNewAssignments] = useState({});
+  const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+
+  const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
+
+  const addAssignment = (taskKey, taskObj, updater) => {
+    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
+    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
+    updater(updatedMembers);
+    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
+  };
+
+  const handleSave = async () => { await actions.updateEvent(event.id, form); };
+  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+
+  const handleAddCustomTask = async () => {
+    await actions.addEventCustomTask(event.id, newTask);
+    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+    setShowAddTask(false);
+  };
+
+  const handleDeleteCustomTask = async (taskId) => {
+    if (confirm('Delete this task?')) { await actions.deleteEventCustomTask(event.id, taskId); }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (confirm('Delete this event?')) { await actions.deleteEvent(event.id); onBack(); }
+  };
+
+  const currentEvent = useMemo(() => data.events.find(e => e.id === event.id) || event, [data.events, event]);
+  const eventTasks = useMemo(() => currentEvent.tasks || [], [currentEvent.tasks]);
+  const eventCustomTasks = useMemo(() => currentEvent.customTasks || [], [currentEvent.customTasks]);
+  const allEventTasks = useMemo(() => [...eventTasks, ...eventCustomTasks], [eventTasks, eventCustomTasks]);
+  const { progress: eventProgressValue } = calculateTaskProgress(allEventTasks);
+  const tasksCost = eventTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
+  const customTasksCost = eventCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
+  const totalCost = getEffectiveCost(currentEvent) + tasksCost + customTasksCost;
+
+  const filteredEventTasks = useMemo(() => {
+    let tasks = [...eventTasks];
+    if (taskFilterStatus !== 'all') {
+      tasks = tasks.filter(t => t.status === taskFilterStatus);
+    }
+    return tasks;
+  }, [eventTasks, taskFilterStatus]);
+
+  const assignedTeamMembers = useMemo(() => {
+    const memberIds = new Set();
+    allEventTasks.forEach(task => {
+      (task.assignedMembers || []).forEach(m => memberIds.add(m.memberId));
+    });
+    return teamMembers.filter(m => memberIds.has(m.id));
+  }, [allEventTasks, teamMembers]);
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex justify-between items-center mb-6">
+        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
+          <Icon name="ChevronLeft" size={16} /> Back to Events
+        </button>
+        <button onClick={handleDeleteEvent} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}>
+          <Icon name="Trash2" size={16} />
+        </button>
+      </div>
+
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Event Information</h3>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Title</label>
+            <input value={form.title || ''} onChange={e => handleFieldChange('title', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Type</label>
+            <input value={form.type || ''} onChange={e => handleFieldChange('type', e.target.value)} onBlur={handleSave} placeholder="Concert, Festival, Livestream" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Date</label>
+            <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Time</label>
+            <input type="time" value={form.time || ''} onChange={e => handleFieldChange('time', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Location</label>
+            <input value={form.location || ''} onChange={e => handleFieldChange('location', e.target.value)} onBlur={handleSave} placeholder="Venue, City" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Entry Cost</label>
+            <input type="number" value={form.entryCost || 0} onChange={e => handleFieldChange('entryCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Exclusive Type</label>
+            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+            <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-2 text-xs font-black bg-yellow-200 border-2 border-black">Progress: {eventProgressValue}%</span>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Event notes..." />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Description</label>
+            <textarea value={form.description || ''} onChange={e => handleFieldChange('description', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Public description..." />
+          </div>
+        </div>
+      </div>
+
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
+            <div className="space-y-1">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">{m.name}</div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Auto Tasks:</span><span className="font-bold">{eventTasks.length}</span></div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Custom Tasks:</span><span className="font-bold">{eventCustomTasks.length}</span></div>
+              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black"><span>Progress:</span><span className="font-bold">{eventProgressValue}%</span></div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Schedule</label>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Date:</span><span className="font-bold">{currentEvent.date || 'TBD'}</span></div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Time:</span><span className="font-bold">{currentEvent.time || 'TBD'}</span></div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Location:</span><span className="font-bold">{currentEvent.location || 'TBD'}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
+          <h3 className="font-black uppercase">All Tasks</h3>
+          <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+            <option value="all">All Status</option>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 border-b-2 border-black">
+                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left">Date</th>
+                <th className="p-2 text-left">Status</th>
+                <th className="p-2 text-right">Est. Cost</th>
+                <th className="p-2 text-left">Assignments</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEventTasks.length === 0 ? (
+                <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet.</td></tr>
+              ) : (
+                filteredEventTasks.map(task => (
+                  <tr key={task.id} className="border-b border-gray-200 bg-blue-50">
+                    <td className="p-2 font-bold">{task.type}</td>
+                    <td className="p-2">
+                      <input type="date" value={task.date || ''} onChange={e => {
+                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, date: e.target.value } : t);
+                        actions.updateEvent(event.id, { tasks: updatedTasks });
+                      }} className="border-2 border-black p-1 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <select value={task.status || 'Not Started'} onChange={e => {
+                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
+                        actions.updateEvent(event.id, { tasks: updatedTasks });
+                      }} className="border-2 border-black p-1 text-xs">
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input type="number" value={task.estimatedCost || 0} onChange={e => {
+                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, estimatedCost: parseFloat(e.target.value) || 0 } : t);
+                        actions.updateEvent(event.id, { tasks: updatedTasks });
+                      }} className="border-2 border-black p-1 text-xs w-20 text-right" />
+                    </td>
+                    <td className="p-2 text-xs">
+                      <div className="flex flex-wrap gap-1">
+                        {(task.assignedMembers || []).map(m => {
+                          const member = teamMembers.find(tm => tm.id === m.memberId);
+                          return <span key={m.memberId} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
+                        })}
+                      </div>
+                      <div className="flex gap-1 items-center mt-1">
+                        <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+                          <option value="">Assign</option>
+                          {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="$" className={cn("px-2 py-1 text-xs w-16", THEME.punk.input)} />
+                        <button onClick={() => addAssignment(task.id, task, (assignedMembers) => {
+                          const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, assignedMembers } : t);
+                          actions.updateEvent(event.id, { tasks: updatedTasks });
+                        })} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>+</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Custom Tasks</h3>
+          <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+        </div>
+        {showAddTask && (
+          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
+              <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
+              <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask({ ...newTask, estimatedCost: parseFloat(e.target.value) || 0 })} placeholder="Est. Cost" className={cn("w-full", THEME.punk.input)} />
+              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
+            </div>
+          </div>
+        )}
+        {eventCustomTasks.length === 0 ? (
+          <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {eventCustomTasks.map(task => (
+              <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
+                <div className="flex-1">
+                  <div className="font-bold">{task.title}</div>
+                  <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
+                </div>
+                <button onClick={() => handleDeleteCustomTask(task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={cn("p-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
+        <div className="space-y-2">
+          <div className="flex justify-between"><span>Event Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentEvent))}</span></div>
+          <div className="flex justify-between"><span>Entry Cost:</span><span className="font-bold">{formatMoney(currentEvent.entryCost || 0)}</span></div>
+          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney(tasksCost + customTasksCost)}</span></div>
+          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost + (currentEvent.entryCost || 0))}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Expenses List View - Following same pattern as Songs and Releases
+export const ExpensesListView = ({ onSelectExpense }) => {
+  const { data, actions } = useStore();
+  const [sortBy, setSortBy] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState('list');
+
+  const toggleSort = (field) => {
+    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => (
+    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
+
+  const expenses = useMemo(() => {
+    let filtered = [...(data.expenses || [])];
+    if (!showArchived) filtered = filtered.filter(e => !e.isArchived);
+    if (filterCategory !== 'all') filtered = filtered.filter(e => e.category === filterCategory);
+    filtered.sort((a, b) => {
+      let valA = a[sortBy] || '';
+      let valB = b[sortBy] || '';
+      if (sortBy === 'paidCost') { valA = getEffectiveCost(a); valB = getEffectiveCost(b); }
+      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
+      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
+    });
+    return filtered;
+  }, [data.expenses, sortBy, sortDir, filterCategory, showArchived]);
+
+  const handleAddExpense = async () => {
+    const newExpense = await actions.addExpense({ name: 'New Expense', date: new Date().toISOString().split('T')[0], category: 'General' });
+    if (onSelectExpense) onSelectExpense(newExpense);
+  };
+
+  const expenseCategories = useMemo(() => {
+    const categories = new Set();
+    (data.expenses || []).forEach(e => e.category && categories.add(e.category));
+    return Array.from(categories);
+  }, [data.expenses]);
+
+  const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + getEffectiveCost(e), 0), [expenses]);
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>Expenses</h2>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex border-4 border-black">
+            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View"><Icon name="List" size={16} /></button>
+            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View"><Icon name="PieChart" size={16} /></button>
+          </div>
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+            <option value="all">All Categories</option>
+            {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs font-bold">
+            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="w-4 h-4" />
+            Show Archived
+          </label>
+          <button onClick={handleAddExpense} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Expense</button>
+        </div>
+      </div>
+
+      <div className={cn("p-4 mb-6", THEME.punk.card, "bg-green-50")}>
+        <div className="flex justify-between items-center">
+          <span className="font-bold">Total Expenses:</span>
+          <span className="text-2xl font-black text-green-600">{formatMoney(totalExpenses)}</span>
+        </div>
+      </div>
+      
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {expenses.length === 0 ? (
+            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No expenses yet.</div>
+          ) : expenses.map(expense => (
+            <div key={expense.id} onClick={() => onSelectExpense && onSelectExpense(expense)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card, expense.isArchived && "opacity-50")}>
+              <div className="font-bold text-lg mb-2">{expense.name}</div>
+              <div className="text-xs space-y-1">
+                <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{expense.category || '-'}</span></div>
+                <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{expense.date || '-'}</span></div>
+                <div className="flex justify-between"><span className="opacity-60">Amount:</span><span className="font-bold text-green-600">{formatMoney(getEffectiveCost(expense))}</span></div>
+              </div>
+              {expense.isArchived && <span className="mt-2 block text-xs text-orange-600 font-bold">ARCHIVED</span>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('name')}>Name <SortIcon field="name" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('date')}>Date <SortIcon field="date" /></th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('paidCost')}>Amount <SortIcon field="paidCost" /></th>
+                <th className="p-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.length === 0 ? (
+                <tr><td colSpan="6" className="p-10 text-center opacity-50">No expenses yet.</td></tr>
+              ) : expenses.map(expense => (
+                <tr key={expense.id} className={cn("border-b border-gray-200 hover:bg-yellow-50", expense.isArchived && "opacity-50")}>
+                  <td className="p-3 font-bold cursor-pointer" onClick={() => onSelectExpense && onSelectExpense(expense)}>{expense.name}</td>
+                  <td className="p-3">{expense.category || '-'}</td>
+                  <td className="p-3">{expense.date || '-'}</td>
+                  <td className="p-3">{expense.status || '-'}</td>
+                  <td className="p-3 text-right font-bold text-green-600">{formatMoney(getEffectiveCost(expense))}</td>
+                  <td className="p-3 text-center">
+                    <div className="flex gap-2 justify-center">
+                      {!expense.isArchived ? (
+                        <button onClick={(e) => { e.stopPropagation(); actions.archiveExpense(expense.id); }} className="text-orange-500 p-1 hover:bg-orange-50" title="Archive"><Icon name="Archive" size={14} /></button>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); actions.updateExpense(expense.id, { isArchived: false }); }} className="text-green-500 p-1 hover:bg-green-50" title="Restore">↩</button>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete?')) actions.deleteExpense(expense.id); }} className="text-red-500 p-1 hover:bg-red-50" title="Delete"><Icon name="Trash2" size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Expense Detail View
+export const ExpenseDetailView = ({ expense, onBack }) => {
+  const { data, actions } = useStore();
+  const [form, setForm] = useState({ ...expense });
+
+  const handleSave = async () => { await actions.updateExpense(expense.id, form); };
+  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+
+  const handleDeleteExpense = async () => {
+    if (confirm('Delete this expense?')) { await actions.deleteExpense(expense.id); onBack(); }
+  };
+
+  const currentExpense = useMemo(() => data.expenses?.find(e => e.id === expense.id) || expense, [data.expenses, expense]);
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex justify-between items-center mb-6">
+        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
+          <Icon name="ChevronLeft" size={16} /> Back to Expenses
+        </button>
+        <div className="flex gap-2">
+          {!currentExpense.isArchived ? (
+            <button onClick={() => { actions.archiveExpense(expense.id); onBack(); }} className={cn("px-4 py-2", THEME.punk.btn, "bg-orange-500 text-white")}><Icon name="Archive" size={16} /></button>
+          ) : (
+            <button onClick={() => actions.updateExpense(expense.id, { isArchived: false })} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Restore</button>
+          )}
+          <button onClick={handleDeleteExpense} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
+        </div>
+      </div>
+
+      {currentExpense.isArchived && (
+        <div className={cn("p-4 mb-6 bg-orange-100 border-4 border-orange-500", THEME.punk.card)}>
+          <span className="font-bold text-orange-800">⚠️ This expense is archived</span>
+        </div>
+      )}
+
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Expense Information</h3>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Name</label>
+            <input value={form.name || ''} onChange={e => handleFieldChange('name', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Category</label>
+            <input value={form.category || ''} onChange={e => handleFieldChange('category', e.target.value)} onBlur={handleSave} placeholder="General, Marketing, Production" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Date</label>
+            <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Status</label>
+            <select value={form.status || 'Complete'} onChange={e => { handleFieldChange('status', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+            <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Amount</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Vendor</label>
+            <select value={form.vendorId || ''} onChange={e => { handleFieldChange('vendorId', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+              <option value="">No Vendor</option>
+              {(data.vendors || []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Description</label>
+            <textarea value={form.description || ''} onChange={e => handleFieldChange('description', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Expense details..." />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
+          </div>
+        </div>
+      </div>
+
+      <div className={cn("p-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
+        <div className="space-y-2">
+          <div className="flex justify-between"><span>Estimated:</span><span className="font-bold">{formatMoney(currentExpense.estimatedCost || 0)}</span></div>
+          <div className="flex justify-between"><span>Quoted:</span><span className="font-bold">{formatMoney(currentExpense.quotedCost || 0)}</span></div>
+          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">PAID:</span><span className="font-black text-green-600">{formatMoney(getEffectiveCost(currentExpense))}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+};

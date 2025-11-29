@@ -16,21 +16,22 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   const isDark = settings.themeMode === 'dark';
 
   const menu = [
-      // New Spec Views (primary)
+      // New Spec Views (primary) - Following unified Item/Page architecture
       { id: 'songs', label: 'Songs', icon: 'Music' },
       { id: 'videos', label: 'Videos', icon: 'PlayCircle' },
-      { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
+      { id: 'events', label: 'Events', icon: 'Calendar' },
       { id: 'releases', label: 'Releases', icon: 'Download' },
-      { id: 'timeline', label: 'Timeline', icon: 'Calendar' },
+      { id: 'expenses', label: 'Expenses', icon: 'Receipt' },
+      { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
+      { id: 'timeline', label: 'Timeline', icon: 'List' },
       { id: 'dashboard', label: 'Dashboard', icon: 'PieChart' },
       { id: 'financials', label: 'Financials', icon: 'DollarSign' },
       { id: 'progress', label: 'Progress', icon: 'TrendingUp' },
       // Original views (secondary)
       { id: 'active', label: 'Active', icon: 'Zap' },
-      { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
+      { id: 'calendar', label: 'Calendar View', icon: 'Calendar' },
       { id: 'gallery', label: 'Photos', icon: 'Image' },
       { id: 'team', label: 'Team', icon: 'Users' },
-      { id: 'misc', label: 'Expenses', icon: 'Receipt' },
       { id: 'archive', label: 'Trash', icon: 'Archive' },
       { id: 'settings', label: 'Settings', icon: 'Settings' },
   ];
