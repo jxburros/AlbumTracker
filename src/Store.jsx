@@ -725,7 +725,11 @@ export const StoreProvider = ({ children }) => {
              const taskDocs = list.filter(d => d.id !== 'settings');
              setData(prev => ({ ...prev, tasks: taskDocs, settings: settingsDoc || prev.settings }));
           } else {
-             const key = col.replace('album_', '').replace('_expenses', '');
+             // Handle collection name mapping
+             let key = col.replace('album_', '');
+             // Special case for misc_expenses (legacy)
+             if (key === 'misc_expenses') key = 'misc';
+             // Map to correct state keys
              const mappedKey = key === 'task' ? 'tasks' : key === 'teamMembers' ? 'teamMembers' : key;
              setData(prev => ({ ...prev, [mappedKey]: list }));
           }
@@ -2513,8 +2517,10 @@ export const StoreProvider = ({ children }) => {
        const newExpense = {
          id: crypto.randomUUID(),
          // Unified Item fields per Section 6
-         name: expense.name || expense.description || 'New Expense',
-         description: expense.description || expense.notes || '',
+         // Use name if provided, otherwise default to 'New Expense'
+         name: expense.name || 'New Expense',
+         // Description is separate from name
+         description: expense.description || '',
          date: expense.date || new Date().toISOString().split('T')[0],
          // Cost layers with precedence: paidCost > quotedCost > estimatedCost
          estimatedCost: expense.estimatedCost || 0,

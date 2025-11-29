@@ -935,8 +935,8 @@ export const GlobalTasksView = () => {
     // 'all' shows everything
     
     if (filterCategory !== 'all') {
-      // Match by category name or categoryId
-      filtered = filtered.filter(t => t.category === filterCategory || t.categoryId === filterCategory);
+      // Match by category name (dropdown uses category names as values)
+      filtered = filtered.filter(t => t.category === filterCategory);
     }
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
     if (searchText) {
