@@ -96,69 +96,95 @@ export const createUnifiedItem = (overrides = {}) => ({
 
 // Normalize any existing Item to the unified format for consistent UI display
 // This allows existing data to be displayed using unified components
-export const normalizeToUnifiedItem = (item = {}, itemType = 'generic') => ({
-  ...createUnifiedItem({ type: itemType }),
-  id: item.id,
-  type: itemType,
-  name: item.name || item.title || item.taskName || '',
-  description: item.description || item.notes || '',
-  primary_date: item.primary_date || item.primaryDate || item.releaseDate || item.date || '',
-  era_ids: item.era_ids || item.eraIds || [],
-  tag_ids: item.tag_ids || item.tagIds || [],
-  stage_ids: item.stage_ids || item.stageIds || [],
-  team_member_ids: item.team_member_ids || item.teamMemberIds || item.assignedMembers?.map(m => m.memberId) || [],
-  estimatedCost: item.estimatedCost || item.estimated_cost || 0,
-  quotedCost: item.quotedCost || item.quoted_cost || 0,
-  paidCost: item.paidCost || item.amount_paid || item.amountPaid || 0,
-  // Legacy aliases
-  primaryDate: item.primaryDate || item.primary_date || item.releaseDate || item.date || '',
-  eraIds: item.eraIds || item.era_ids || [],
-  tagIds: item.tagIds || item.tag_ids || [],
-  stageIds: item.stageIds || item.stage_ids || [],
-  teamMemberIds: item.teamMemberIds || item.team_member_ids || item.assignedMembers?.map(m => m.memberId) || [],
-  // Preserve original item data
-  _original: item
-});
+export const normalizeToUnifiedItem = (item = {}, itemType = 'generic') => {
+  // Preserve original ID or generate new one
+  const id = item.id || crypto.randomUUID();
+  
+  // Handle assignedMembers which could be an array of objects or IDs
+  const extractMemberIds = (members) => {
+    if (!members || !Array.isArray(members)) return [];
+    return members.map(m => typeof m === 'object' ? (m.memberId || m.id) : m).filter(Boolean);
+  };
+  
+  return {
+    ...createUnifiedItem({ type: itemType }),
+    id,
+    type: itemType,
+    name: item.name || item.title || item.taskName || '',
+    description: item.description || item.notes || '',
+    primary_date: item.primary_date || item.primaryDate || item.releaseDate || item.date || '',
+    era_ids: item.era_ids || item.eraIds || [],
+    tag_ids: item.tag_ids || item.tagIds || [],
+    stage_ids: item.stage_ids || item.stageIds || [],
+    team_member_ids: item.team_member_ids || item.teamMemberIds || extractMemberIds(item.assignedMembers),
+    estimatedCost: item.estimatedCost || item.estimated_cost || 0,
+    quotedCost: item.quotedCost || item.quoted_cost || 0,
+    paidCost: item.paidCost || item.amount_paid || item.amountPaid || 0,
+    // Legacy aliases
+    primaryDate: item.primaryDate || item.primary_date || item.releaseDate || item.date || '',
+    eraIds: item.eraIds || item.era_ids || [],
+    tagIds: item.tagIds || item.tag_ids || [],
+    stageIds: item.stageIds || item.stage_ids || [],
+    teamMemberIds: item.teamMemberIds || item.team_member_ids || extractMemberIds(item.assignedMembers),
+    // Preserve original item data
+    _original: item
+  };
+};
 
 // Normalize any existing Task to the unified format for consistent UI display
-export const normalizeToUnifiedTask = (task = {}, parentType = null) => ({
-  ...createUnifiedTask({ parentType }),
-  id: task.id,
-  parent_item_id: task.parent_item_id || task.parentItemId || task.parentId || null,
-  name: task.name || task.title || task.type || task.taskName || '',
-  status: task.status || 'Not Started',
-  due_date: task.due_date || task.dueDate || task.date || '',
-  team_member_ids: task.team_member_ids || task.teamMemberIds || task.assignedMembers || [],
-  estimated_cost: task.estimated_cost ?? task.estimatedCost ?? 0,
-  quoted_cost: task.quoted_cost ?? task.quotedCost ?? 0,
-  amount_paid: task.amount_paid ?? task.paidCost ?? task.amountPaid ?? 0,
-  partially_paid: task.partially_paid ?? task.partiallyPaid ?? false,
-  era_ids: task.era_ids || task.eraIds || [],
-  tag_ids: task.tag_ids || task.tagIds || [],
-  stage_ids: task.stage_ids || task.stageIds || [],
-  notes: task.notes || task.description || '',
-  type: task.type || 'Custom',
-  category: task.category || 'Other',
-  parentType: parentType || task.parentType || null,
-  isOverridden: task.isOverridden || false,
-  isArchived: task.isArchived || false,
-  // Legacy aliases - parent_item_id is source of truth for parent reference
-  parentId: task.parent_item_id || task.parentItemId || task.parentId || null,
-  parentItemId: task.parent_item_id || task.parentItemId || task.parentId || null,
-  title: task.title || task.name || task.type || task.taskName || '',
-  description: task.description || task.notes || '',
-  date: task.due_date || task.dueDate || task.date || '',
-  dueDate: task.due_date || task.dueDate || task.date || '',
-  estimatedCost: task.estimatedCost ?? task.estimated_cost ?? 0,
-  quotedCost: task.quotedCost ?? task.quoted_cost ?? 0,
-  paidCost: task.paidCost ?? task.amount_paid ?? task.amountPaid ?? 0,
-  assignedMembers: task.assignedMembers || task.team_member_ids || task.teamMemberIds || [],
-  eraIds: task.eraIds || task.era_ids || [],
-  tagIds: task.tagIds || task.tag_ids || [],
-  stageIds: task.stageIds || task.stage_ids || [],
-  // Preserve original task data
-  _original: task
-});
+export const normalizeToUnifiedTask = (task = {}, parentType = null) => {
+  // Preserve original ID or generate new one
+  const id = task.id || crypto.randomUUID();
+  
+  // Handle assignedMembers which could be an array of objects or IDs
+  const extractMemberIds = (members) => {
+    if (!members || !Array.isArray(members)) return [];
+    return members.map(m => typeof m === 'object' ? (m.memberId || m.id) : m).filter(Boolean);
+  };
+  
+  // Preserve assignedMembers in original format for UI components
+  const assignedMembers = task.assignedMembers || [];
+  
+  return {
+    ...createUnifiedTask({ parentType }),
+    id,
+    parent_item_id: task.parent_item_id || task.parentItemId || task.parentId || null,
+    name: task.name || task.title || task.type || task.taskName || '',
+    status: task.status || 'Not Started',
+    due_date: task.due_date || task.dueDate || task.date || '',
+    team_member_ids: task.team_member_ids || task.teamMemberIds || extractMemberIds(assignedMembers),
+    estimated_cost: task.estimated_cost ?? task.estimatedCost ?? 0,
+    quoted_cost: task.quoted_cost ?? task.quotedCost ?? 0,
+    amount_paid: task.amount_paid ?? task.paidCost ?? task.amountPaid ?? 0,
+    partially_paid: task.partially_paid ?? task.partiallyPaid ?? false,
+    era_ids: task.era_ids || task.eraIds || [],
+    tag_ids: task.tag_ids || task.tagIds || [],
+    stage_ids: task.stage_ids || task.stageIds || [],
+    notes: task.notes || task.description || '',
+    type: task.type || 'Custom',
+    category: task.category || 'Other',
+    parentType: parentType || task.parentType || null,
+    isOverridden: task.isOverridden || false,
+    isArchived: task.isArchived || false,
+    // Legacy aliases - parent_item_id is source of truth for parent reference
+    parentId: task.parent_item_id || task.parentItemId || task.parentId || null,
+    parentItemId: task.parent_item_id || task.parentItemId || task.parentId || null,
+    title: task.title || task.name || task.type || task.taskName || '',
+    description: task.description || task.notes || '',
+    date: task.due_date || task.dueDate || task.date || '',
+    dueDate: task.due_date || task.dueDate || task.date || '',
+    estimatedCost: task.estimatedCost ?? task.estimated_cost ?? 0,
+    quotedCost: task.quotedCost ?? task.quoted_cost ?? 0,
+    paidCost: task.paidCost ?? task.amount_paid ?? task.amountPaid ?? 0,
+    // Preserve original assignedMembers format for UI components
+    assignedMembers: assignedMembers,
+    eraIds: task.eraIds || task.era_ids || [],
+    tagIds: task.tagIds || task.tag_ids || [],
+    stageIds: task.stageIds || task.stage_ids || [],
+    // Preserve original task data
+    _original: task
+  };
+};
 
 // Unified Task schema factory - per APP ARCHITECTURE.txt Section 6
 // All Tasks share this common structure regardless of parent type
