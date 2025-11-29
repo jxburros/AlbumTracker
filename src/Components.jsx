@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload } from 'lucide-react';
+import { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp } from 'lucide-react';
 import { useStore, STATUS_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, COLORS, formatMoney, STAGES, cn } from './utils';
 
 export const Icon = ({ name, ...props }) => {
-  const icons = { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload };
+  const icons = { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp };
   const I = icons[name] || Circle;
   return <I {...props} />;
 };
@@ -23,6 +23,8 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
       { id: 'releases', label: 'Releases', icon: 'Download' },
       { id: 'timeline', label: 'Timeline', icon: 'Calendar' },
       { id: 'dashboard', label: 'Dashboard', icon: 'PieChart' },
+      { id: 'financials', label: 'Financials', icon: 'DollarSign' },
+      { id: 'progress', label: 'Progress', icon: 'TrendingUp' },
       // Original views (secondary)
       { id: 'active', label: 'Active', icon: 'Zap' },
       { id: 'calendar', label: 'Calendar', icon: 'Calendar' },

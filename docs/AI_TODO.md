@@ -56,6 +56,8 @@ Order check: current phase ordering already aligns with dependencies (data found
 
 ## Phase 9 — Advanced Global Systems (depends on stable tasks/releases/timelines) ✓ PARTIALLY COMPLETE
 - [x] Implement notification system (due dates, release dates, overdue tasks, budget exceeded).
+- [x] Build Financials View with filter panel (Stage/Era/Release/Song/Version/Item Type) and cost mode selection (paid/quoted/estimated/effective).
+- [x] Build Progress View with filters (Era/Stage/Tag/Item Type/Release/Song) and progress tracking.
 - [ ] Provide reporting/exporting (PDF/CSV/printable) for releases summary, budget summary, task list, song version comparison, album rollout timeline.
 - [ ] Add activity log/change history covering tasks, costs, release dates, song versions, team members, release membership changes, and completion/archival/trash actions.
 - [x] Build master dashboard showing releases, songs, versions, video tasks, budget progress, upcoming deadlines, exclusivity windows, notifications.
@@ -63,3 +65,20 @@ Order check: current phase ordering already aligns with dependencies (data found
 ## Phase 10 — Final UX Polish & Dark Mode Fix ✓ MOSTLY COMPLETE
 - [x] Improve dark mode readability and accent color usage.
 - [ ] Ensure UI consistency across tasks, songs, timeline, releases, videos, and calendar.
+
+---
+
+## Section 3 — Item More/Edit Info Pages ✓ PARTIALLY COMPLETE
+Per `music-tracker-implementation-plan.md` Section 3:
+- [x] Display Information module (read-only linked data) for SongDetailView
+- [x] Task sorting and filtering controls in SongDetailView
+- [x] Clickable column headers for sorting
+- [ ] Display Information module for ReleaseDetailView
+- [ ] Display Information module for VideoDetailView
+- [ ] Task sorting/filtering for ReleaseDetailView
+
+---
+
+## Remaining Items
+
+See `docs/REMAINING_TODO.md` for a tiered TODO list of remaining implementation items sorted by complexity.

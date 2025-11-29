@@ -987,14 +987,18 @@ export const StoreProvider = ({ children }) => {
            return newTask;
          }
          case 'createGlobalTask': {
-           const globalTask = createUnifiedTaskType({
-             name: baseTitle,
+           const globalTask = createUnifiedTask({
+             type: 'Global',
+             title: baseTitle,
+             taskName: baseTitle,
              status: action.template?.status || 'Not Started',
-             primaryDate: action.template?.primaryDate || action.template?.date || '',
-             tags: action.template?.tags || [],
-             people: action.template?.people || [],
-             cost: action.template?.cost || {},
-             progress: action.template?.progress || {}
+             date: action.template?.primaryDate || action.template?.date || '',
+             category: action.template?.category || 'Other',
+             estimatedCost: action.template?.estimatedCost || 0,
+             quotedCost: action.template?.quotedCost || 0,
+             paidCost: action.template?.paidCost || 0,
+             notes: action.template?.notes || '',
+             parentType: 'global'
            });
            await actions.add('globalTasks', globalTask);
            return globalTask;

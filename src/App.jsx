@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
-import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, VideosView } from './SpecViews';
+import { SongListView, SongDetailView, GlobalTasksView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, VideosView, FinancialsView, ProgressView } from './SpecViews';
 import { THEME, cn } from './utils';
 
 function AppInner() {
@@ -82,6 +82,10 @@ function AppInner() {
           
           {/* Task Dashboard - replaces confusing Plan view */}
           {tab === 'dashboard' && <TaskDashboardView />}
+          
+          {/* Financial and Progress Views */}
+          {tab === 'financials' && <FinancialsView />}
+          {tab === 'progress' && <ProgressView />}
           
           {/* Original Views */}
           {tab === 'list' && <ListView onEdit={setEditing} />}

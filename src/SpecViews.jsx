@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
@@ -104,7 +104,7 @@ export const SongListView = ({ onSelectSong }) => {
   );
 };
 
-// Song Detail View (Spec 2.2)
+// Song Detail View (Spec 2.2) - Enhanced for Section 3: Item More/Edit Info Pages
 export const SongDetailView = ({ song, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...song });
@@ -114,8 +114,13 @@ export const SongDetailView = ({ song, onBack }) => {
   const [newSongMusician, setNewSongMusician] = useState({ memberId: '', instruments: '' });
   const [newVersionMusicians, setNewVersionMusicians] = useState({});
   const [newAssignments, setNewAssignments] = useState({});
+  // Section 3: Task sorting/filtering state
+  const [taskSortBy, setTaskSortBy] = useState('date');
+  const [taskSortDir, setTaskSortDir] = useState('asc');
+  const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+  const [taskFilterCategory, setTaskFilterCategory] = useState('all');
 
-  const teamMembers = data.teamMembers || [];
+  const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
   const taskBudget = (task = {}) => {
     if (task.paidCost !== undefined) return task.paidCost || 0;
@@ -162,19 +167,71 @@ export const SongDetailView = ({ song, onBack }) => {
     if (confirm('Delete this song?')) { await actions.deleteSong(song.id); onBack(); }
   };
 
-  const currentSong = data.songs.find(s => s.id === song.id) || song;
-  const songTasks = currentSong.deadlines || [];
-  const songCustomTasks = currentSong.customTasks || [];
-  const allSongTasks = [
+  const currentSong = useMemo(() => data.songs.find(s => s.id === song.id) || song, [data.songs, song]);
+  const songTasks = useMemo(() => currentSong.deadlines || [], [currentSong.deadlines]);
+  const songCustomTasks = useMemo(() => currentSong.customTasks || [], [currentSong.customTasks]);
+  const allSongTasks = useMemo(() => [
     ...songTasks,
     ...songCustomTasks,
     ...(currentSong.versions || []).flatMap(v => [...(v.tasks || []), ...(v.customTasks || [])])
-  ];
+  ], [songTasks, songCustomTasks, currentSong.versions]);
   const { progress: songProgressValue } = calculateTaskProgress(allSongTasks);
   // Use getEffectiveCost for proper cost precedence (paid > quoted > estimated)
   const tasksCost = songTasks.reduce((sum, d) => sum + getEffectiveCost(d), 0);
   const customTasksCost = songCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
   const totalCost = getEffectiveCost(currentSong) + tasksCost + customTasksCost;
+
+  // Section 3: Filtered and sorted tasks
+  const filteredSongTasks = useMemo(() => {
+    let tasks = [...songTasks];
+    if (taskFilterStatus !== 'all') {
+      tasks = tasks.filter(t => t.status === taskFilterStatus);
+    }
+    if (taskFilterCategory !== 'all') {
+      tasks = tasks.filter(t => t.category === taskFilterCategory);
+    }
+    tasks.sort((a, b) => {
+      const valA = a[taskSortBy] || '';
+      const valB = b[taskSortBy] || '';
+      return taskSortDir === 'asc' 
+        ? (valA < valB ? -1 : valA > valB ? 1 : 0)
+        : (valA > valB ? -1 : valA < valB ? 1 : 0);
+    });
+    return tasks;
+  }, [songTasks, taskFilterStatus, taskFilterCategory, taskSortBy, taskSortDir]);
+
+  // Section 3: Get linked releases for Display Information
+  const linkedReleases = useMemo(() => {
+    const releaseIds = new Set();
+    if (currentSong.coreReleaseId) releaseIds.add(currentSong.coreReleaseId);
+    (currentSong.versions || []).forEach(v => {
+      (v.releaseIds || []).forEach(rid => releaseIds.add(rid));
+    });
+    return (data.releases || []).filter(r => releaseIds.has(r.id));
+  }, [currentSong, data.releases]);
+
+  // Get assigned team members for Display Information
+  const assignedTeamMembers = useMemo(() => {
+    const memberIds = new Set();
+    // From song musicians
+    (currentSong.musicians || []).forEach(m => memberIds.add(m.memberId));
+    // From version musicians
+    (currentSong.versions || []).forEach(v => {
+      (v.musicians || []).forEach(m => memberIds.add(m.memberId));
+    });
+    // From task assignments
+    allSongTasks.forEach(task => {
+      (task.assignedMembers || []).forEach(m => memberIds.add(m.memberId));
+    });
+    return teamMembers.filter(m => memberIds.has(m.id));
+  }, [currentSong, allSongTasks, teamMembers]);
+
+  // Get unique task categories for filter dropdown
+  const taskCategories = useMemo(() => {
+    const categories = new Set();
+    songTasks.forEach(t => t.category && categories.add(t.category));
+    return Array.from(categories);
+  }, [songTasks]);
 
   return (
     <div className="p-6 pb-24">
@@ -331,6 +388,61 @@ export const SongDetailView = ({ song, onBack }) => {
                 </span>
               );
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3: Display Information Module - Read-only linked data */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        <div className="grid md:grid-cols-3 gap-4">
+          {/* Linked Releases */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Linked Releases</label>
+            <div className="space-y-1">
+              {linkedReleases.length === 0 ? (
+                <span className="text-xs opacity-50">No releases linked</span>
+              ) : linkedReleases.map(r => (
+                <div key={r.id} className="px-2 py-1 bg-green-100 border-2 border-black text-xs font-bold">
+                  {r.name} ({r.releaseDate || 'TBD'})
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Assigned Team Members */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
+            <div className="space-y-1">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Summary Stats */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Versions:</span>
+                <span className="font-bold">{(currentSong.versions || []).filter(v => v.id !== 'core').length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Videos:</span>
+                <span className="font-bold">{(currentSong.videos || []).length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Tasks:</span>
+                <span className="font-bold">{allSongTasks.length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black">
+                <span>Progress:</span>
+                <span className="font-bold">{songProgressValue}%</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -518,10 +630,32 @@ export const SongDetailView = ({ song, onBack }) => {
       </div>
 
       {/* Unified Tasks Section - Shows all tasks from core song and versions together */}
+      {/* Section 3: Enhanced with sorting and filtering */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+        <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
           <h3 className="font-black uppercase">All Tasks</h3>
-          <button onClick={handleRecalculateDeadlines} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Task Filters */}
+            <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Status</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={taskFilterCategory} onChange={e => setTaskFilterCategory(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Categories</option>
+              {taskCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {/* Task Sorting */}
+            <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="date">Sort by Date</option>
+              <option value="type">Sort by Type</option>
+              <option value="status">Sort by Status</option>
+              <option value="estimatedCost">Sort by Cost</option>
+            </select>
+            <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
+              {taskSortDir === 'asc' ? '↑' : '↓'}
+            </button>
+            <button onClick={handleRecalculateDeadlines} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
+          </div>
         </div>
         
         {/* Legend */}
@@ -537,23 +671,23 @@ export const SongDetailView = ({ song, onBack }) => {
             <thead>
               <tr className="bg-gray-100 border-b-2 border-black">
                 <th className="p-2 text-left">Version</th>
-                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Type {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left">Category</th>
-                <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-right">Est. Cost</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('status'); setTaskSortDir(taskSortBy === 'status' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Status {taskSortBy === 'status' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-right cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('estimatedCost'); setTaskSortDir(taskSortBy === 'estimatedCost' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Est. Cost {taskSortBy === 'estimatedCost' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left">Assignments</th>
                 <th className="p-2 text-left">Notes</th>
               </tr>
             </thead>
             <tbody>
-              {/* Core Song Tasks */}
-              {songTasks.length === 0 && (currentSong.versions || []).every(v => (v.tasks || []).length === 0) ? (
+              {/* Core Song Tasks - now uses filtered/sorted tasks */}
+              {filteredSongTasks.length === 0 && (currentSong.versions || []).every(v => (v.tasks || []).length === 0) ? (
                 <tr><td colSpan="8" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
               ) : (
                 <>
                   {/* Core song tasks */}
-                  {songTasks.map(task => (
+                  {filteredSongTasks.map(task => (
                     <tr key={`core-${task.id}`} className="border-b border-gray-200 bg-yellow-50">
                       <td className="p-2"><span className="px-2 py-1 text-xs font-bold bg-yellow-200 border border-black">Core</span></td>
                       <td className="p-2 font-bold">{task.type}{task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}</td>
@@ -2470,6 +2604,744 @@ export const TaskDashboardView = () => {
           </table>
         </div>
       )}
+    </div>
+  );
+};
+
+// Financials View - Per music-tracker-implementation-plan.md Section 5
+// Build filter panel for Stage/Era/Release/Song/Version/Item Type + paid/quoted/projected toggles
+// Render tables and charts based on cost precedence
+export const FinancialsView = () => {
+  const { data } = useStore();
+  const [filterStage, setFilterStage] = useState('all');
+  const [filterEra, setFilterEra] = useState('all');
+  const [filterRelease, setFilterRelease] = useState('all');
+  const [filterSong, setFilterSong] = useState('all');
+  const [filterItemType, setFilterItemType] = useState('all');
+  const [costMode, setCostMode] = useState('effective'); // 'paid', 'quoted', 'estimated', 'effective'
+  
+  // Get cost value based on selected mode
+  const getCostValue = useCallback((item) => {
+    if (costMode === 'paid') return item.paidCost || item.amount_paid || 0;
+    if (costMode === 'quoted') return item.quotedCost || item.quoted_cost || 0;
+    if (costMode === 'estimated') return item.estimatedCost || item.estimated_cost || 0;
+    return getEffectiveCost(item);
+  }, [costMode]);
+  
+  // Collect all cost items with their source information
+  const costItems = useMemo(() => {
+    const items = [];
+    
+    // Song costs
+    (data.songs || []).forEach(song => {
+      // Apply filters
+      if (filterSong !== 'all' && song.id !== filterSong) return;
+      if (filterEra !== 'all' && !(song.eraIds || []).includes(filterEra)) return;
+      if (filterStage !== 'all' && !(song.stageIds || []).includes(filterStage)) return;
+      if (filterRelease !== 'all' && song.coreReleaseId !== filterRelease && 
+          !(song.versions || []).some(v => (v.releaseIds || []).includes(filterRelease))) return;
+      if (filterItemType !== 'all' && filterItemType !== 'song') return;
+      
+      const songCost = getCostValue(song);
+      if (songCost > 0) {
+        items.push({
+          id: `song-${song.id}`,
+          name: song.title,
+          source: 'Song',
+          sourceId: song.id,
+          itemType: 'song',
+          estimatedCost: song.estimatedCost || 0,
+          quotedCost: song.quotedCost || 0,
+          paidCost: song.paidCost || 0,
+          effectiveCost: getEffectiveCost(song),
+          date: song.releaseDate,
+          eraIds: song.eraIds,
+          stageIds: song.stageIds
+        });
+      }
+      
+      // Song tasks
+      (song.deadlines || []).forEach(task => {
+        const taskCost = getCostValue(task);
+        if (taskCost > 0 || (costMode === 'effective' && getEffectiveCost(task) > 0)) {
+          items.push({
+            id: `song-task-${song.id}-${task.id}`,
+            name: `${task.type} - ${song.title}`,
+            source: 'Song Task',
+            sourceId: song.id,
+            itemType: 'task',
+            estimatedCost: task.estimatedCost || 0,
+            quotedCost: task.quotedCost || 0,
+            paidCost: task.paidCost || 0,
+            effectiveCost: getEffectiveCost(task),
+            date: task.date,
+            eraIds: task.eraIds || song.eraIds,
+            stageIds: task.stageIds || song.stageIds
+          });
+        }
+      });
+      
+      // Custom tasks
+      (song.customTasks || []).forEach(task => {
+        const taskCost = getCostValue(task);
+        if (taskCost > 0 || (costMode === 'effective' && getEffectiveCost(task) > 0)) {
+          items.push({
+            id: `song-custom-${song.id}-${task.id}`,
+            name: `${task.title} - ${song.title}`,
+            source: 'Song Custom',
+            sourceId: song.id,
+            itemType: 'task',
+            estimatedCost: task.estimatedCost || 0,
+            quotedCost: task.quotedCost || 0,
+            paidCost: task.paidCost || 0,
+            effectiveCost: getEffectiveCost(task),
+            date: task.date,
+            eraIds: task.eraIds || song.eraIds,
+            stageIds: task.stageIds || song.stageIds
+          });
+        }
+      });
+      
+      // Versions
+      (song.versions || []).filter(v => v.id !== 'core').forEach(v => {
+        if (filterItemType !== 'all' && filterItemType !== 'version') return;
+        const versionCost = getCostValue(v);
+        if (versionCost > 0) {
+          items.push({
+            id: `version-${song.id}-${v.id}`,
+            name: `${v.name} - ${song.title}`,
+            source: 'Version',
+            sourceId: song.id,
+            itemType: 'version',
+            estimatedCost: v.estimatedCost || 0,
+            quotedCost: v.quotedCost || 0,
+            paidCost: v.paidCost || 0,
+            effectiveCost: getEffectiveCost(v),
+            date: v.releaseDate,
+            eraIds: v.eraIds || song.eraIds,
+            stageIds: v.stageIds || song.stageIds
+          });
+        }
+        
+        // Version tasks
+        (v.tasks || []).forEach(task => {
+          const taskCost = getCostValue(task);
+          if (taskCost > 0 || (costMode === 'effective' && getEffectiveCost(task) > 0)) {
+            items.push({
+              id: `version-task-${song.id}-${v.id}-${task.id}`,
+              name: `${task.type} - ${v.name}`,
+              source: 'Version Task',
+              sourceId: song.id,
+              itemType: 'task',
+              estimatedCost: task.estimatedCost || 0,
+              quotedCost: task.quotedCost || 0,
+              paidCost: task.paidCost || 0,
+              effectiveCost: getEffectiveCost(task),
+              date: task.date,
+              eraIds: task.eraIds || v.eraIds || song.eraIds,
+              stageIds: task.stageIds || v.stageIds || song.stageIds
+            });
+          }
+        });
+      });
+      
+      // Videos
+      (song.videos || []).forEach(video => {
+        if (filterItemType !== 'all' && filterItemType !== 'video') return;
+        const videoCost = getCostValue(video);
+        if (videoCost > 0) {
+          items.push({
+            id: `video-${song.id}-${video.id}`,
+            name: `${video.title} - ${song.title}`,
+            source: 'Video',
+            sourceId: song.id,
+            itemType: 'video',
+            estimatedCost: video.estimatedCost || 0,
+            quotedCost: video.quotedCost || 0,
+            paidCost: video.paidCost || 0,
+            effectiveCost: getEffectiveCost(video),
+            date: video.releaseDate,
+            eraIds: video.eraIds || song.eraIds,
+            stageIds: video.stageIds || song.stageIds
+          });
+        }
+      });
+    });
+    
+    // Release costs
+    (data.releases || []).forEach(release => {
+      if (filterRelease !== 'all' && release.id !== filterRelease) return;
+      if (filterItemType !== 'all' && filterItemType !== 'release') return;
+      
+      const releaseCost = getCostValue(release);
+      if (releaseCost > 0) {
+        items.push({
+          id: `release-${release.id}`,
+          name: release.name,
+          source: 'Release',
+          sourceId: release.id,
+          itemType: 'release',
+          estimatedCost: release.estimatedCost || 0,
+          quotedCost: release.quotedCost || 0,
+          paidCost: release.paidCost || 0,
+          effectiveCost: getEffectiveCost(release),
+          date: release.releaseDate,
+          eraIds: release.eraIds,
+          stageIds: release.stageIds
+        });
+      }
+      
+      // Release tasks
+      (release.tasks || []).forEach(task => {
+        const taskCost = getCostValue(task);
+        if (taskCost > 0 || (costMode === 'effective' && getEffectiveCost(task) > 0)) {
+          items.push({
+            id: `release-task-${release.id}-${task.id}`,
+            name: `${task.type} - ${release.name}`,
+            source: 'Release Task',
+            sourceId: release.id,
+            itemType: 'task',
+            estimatedCost: task.estimatedCost || 0,
+            quotedCost: task.quotedCost || 0,
+            paidCost: task.paidCost || 0,
+            effectiveCost: getEffectiveCost(task),
+            date: task.date,
+            eraIds: task.eraIds || release.eraIds,
+            stageIds: task.stageIds || release.stageIds
+          });
+        }
+      });
+    });
+    
+    // Global tasks
+    (data.globalTasks || []).forEach(task => {
+      if (filterItemType !== 'all' && filterItemType !== 'global') return;
+      const taskCost = getCostValue(task);
+      if (taskCost > 0 || (costMode === 'effective' && getEffectiveCost(task) > 0)) {
+        items.push({
+          id: `global-${task.id}`,
+          name: task.taskName || task.title,
+          source: 'Global Task',
+          sourceId: task.id,
+          itemType: 'global',
+          estimatedCost: task.estimatedCost || 0,
+          quotedCost: task.quotedCost || 0,
+          paidCost: task.paidCost || 0,
+          effectiveCost: getEffectiveCost(task),
+          date: task.date,
+          eraIds: task.eraIds,
+          stageIds: task.stageIds,
+          category: task.category
+        });
+      }
+    });
+    
+    // Events
+    (data.events || []).forEach(event => {
+      if (filterItemType !== 'all' && filterItemType !== 'event') return;
+      const eventCost = getCostValue(event);
+      if (eventCost > 0) {
+        items.push({
+          id: `event-${event.id}`,
+          name: event.title,
+          source: 'Event',
+          sourceId: event.id,
+          itemType: 'event',
+          estimatedCost: event.estimatedCost || 0,
+          quotedCost: event.quotedCost || 0,
+          paidCost: event.paidCost || 0,
+          effectiveCost: getEffectiveCost(event),
+          date: event.date,
+          eraIds: event.eraIds,
+          stageIds: event.stageIds
+        });
+      }
+    });
+    
+    return items.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  }, [data, filterStage, filterEra, filterRelease, filterSong, filterItemType, costMode, getCostValue]);
+  
+  // Calculate totals
+  const totals = useMemo(() => {
+    return costItems.reduce((acc, item) => ({
+      estimated: acc.estimated + (item.estimatedCost || 0),
+      quoted: acc.quoted + (item.quotedCost || 0),
+      paid: acc.paid + (item.paidCost || 0),
+      effective: acc.effective + (item.effectiveCost || 0)
+    }), { estimated: 0, quoted: 0, paid: 0, effective: 0 });
+  }, [costItems]);
+  
+  // Group by source for summary
+  const sourceGroups = useMemo(() => {
+    const groups = {};
+    costItems.forEach(item => {
+      if (!groups[item.source]) {
+        groups[item.source] = { count: 0, estimated: 0, quoted: 0, paid: 0, effective: 0 };
+      }
+      groups[item.source].count++;
+      groups[item.source].estimated += item.estimatedCost || 0;
+      groups[item.source].quoted += item.quotedCost || 0;
+      groups[item.source].paid += item.paidCost || 0;
+      groups[item.source].effective += item.effectiveCost || 0;
+    });
+    return groups;
+  }, [costItems]);
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>Financials</h2>
+        <div className="flex gap-2">
+          <select value={costMode} onChange={e => setCostMode(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+            <option value="effective">Effective Cost (Paid → Quoted → Estimated)</option>
+            <option value="paid">Paid Only</option>
+            <option value="quoted">Quoted Only</option>
+            <option value="estimated">Estimated Only</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Filter Panel - Per Section 5 of implementation plan */}
+      <div className={cn("p-4 mb-6 bg-gray-50", THEME.punk.card)}>
+        <div className="grid md:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+            <select value={filterStage} onChange={e => setFilterStage(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Stages</option>
+              {(data.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Era</label>
+            <select value={filterEra} onChange={e => setFilterEra(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Eras</option>
+              {(data.eras || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Release</label>
+            <select value={filterRelease} onChange={e => setFilterRelease(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Releases</option>
+              {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Song</label>
+            <select value={filterSong} onChange={e => setFilterSong(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Songs</option>
+              {(data.songs || []).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Item Type</label>
+            <select value={filterItemType} onChange={e => setFilterItemType(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Types</option>
+              <option value="song">Songs</option>
+              <option value="version">Versions</option>
+              <option value="video">Videos</option>
+              <option value="release">Releases</option>
+              <option value="global">Global Tasks</option>
+              <option value="event">Events</option>
+              <option value="task">Tasks</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className={cn("p-4 text-center", THEME.punk.card)}>
+          <div className="text-2xl font-black text-gray-600">{formatMoney(totals.estimated)}</div>
+          <div className="text-xs font-bold uppercase">Estimated</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card)}>
+          <div className="text-2xl font-black text-blue-600">{formatMoney(totals.quoted)}</div>
+          <div className="text-xs font-bold uppercase">Quoted</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-green-50")}>
+          <div className="text-2xl font-black text-green-600">{formatMoney(totals.paid)}</div>
+          <div className="text-xs font-bold uppercase">Paid</div>
+        </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-pink-100")}>
+          <div className="text-2xl font-black text-pink-600">{formatMoney(totals.effective)}</div>
+          <div className="text-xs font-bold uppercase">Effective Total</div>
+        </div>
+      </div>
+
+      {/* Summary by Source */}
+      <div className={cn("p-4 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Summary by Source</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 border-b-2 border-black">
+                <th className="p-2 text-left">Source</th>
+                <th className="p-2 text-right">Count</th>
+                <th className="p-2 text-right">Estimated</th>
+                <th className="p-2 text-right">Quoted</th>
+                <th className="p-2 text-right">Paid</th>
+                <th className="p-2 text-right">Effective</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(sourceGroups).map(([source, data]) => (
+                <tr key={source} className="border-b border-gray-200">
+                  <td className="p-2 font-bold">{source}</td>
+                  <td className="p-2 text-right">{data.count}</td>
+                  <td className="p-2 text-right">{formatMoney(data.estimated)}</td>
+                  <td className="p-2 text-right">{formatMoney(data.quoted)}</td>
+                  <td className="p-2 text-right text-green-600 font-bold">{formatMoney(data.paid)}</td>
+                  <td className="p-2 text-right text-pink-600 font-bold">{formatMoney(data.effective)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-black text-white font-bold">
+                <td className="p-2">TOTAL</td>
+                <td className="p-2 text-right">{costItems.length}</td>
+                <td className="p-2 text-right">{formatMoney(totals.estimated)}</td>
+                <td className="p-2 text-right">{formatMoney(totals.quoted)}</td>
+                <td className="p-2 text-right">{formatMoney(totals.paid)}</td>
+                <td className="p-2 text-right">{formatMoney(totals.effective)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* Detailed Cost Table */}
+      <div className={cn("overflow-x-auto", THEME.punk.card)}>
+        <h3 className="font-black uppercase p-4 border-b-4 border-black">Detailed Costs</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-black text-white">
+              <th className="p-3 text-left">Date</th>
+              <th className="p-3 text-left">Name</th>
+              <th className="p-3 text-left">Source</th>
+              <th className="p-3 text-right">Estimated</th>
+              <th className="p-3 text-right">Quoted</th>
+              <th className="p-3 text-right">Paid</th>
+              <th className="p-3 text-right">Effective</th>
+            </tr>
+          </thead>
+          <tbody>
+            {costItems.length === 0 ? (
+              <tr><td colSpan="7" className="p-10 text-center opacity-50">No cost items found.</td></tr>
+            ) : costItems.map(item => (
+              <tr key={item.id} className="border-b border-gray-200 hover:bg-yellow-50">
+                <td className="p-3">{item.date || '-'}</td>
+                <td className="p-3 font-bold">{item.name}</td>
+                <td className="p-3">
+                  <span className={cn(
+                    "px-2 py-1 text-xs font-bold",
+                    item.source.includes('Song') ? "bg-blue-100" :
+                    item.source.includes('Release') ? "bg-green-100" :
+                    item.source.includes('Video') ? "bg-orange-100" :
+                    item.source.includes('Global') ? "bg-yellow-100" :
+                    item.source.includes('Event') ? "bg-pink-100" :
+                    "bg-gray-100"
+                  )}>
+                    {item.source}
+                  </span>
+                </td>
+                <td className="p-3 text-right">{formatMoney(item.estimatedCost)}</td>
+                <td className="p-3 text-right">{formatMoney(item.quotedCost)}</td>
+                <td className="p-3 text-right text-green-600 font-bold">{formatMoney(item.paidCost)}</td>
+                <td className="p-3 text-right text-pink-600 font-bold">{formatMoney(item.effectiveCost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// Progress View - Per music-tracker-implementation-plan.md Section 5
+// Display progress using 0/0.5/1 model with filters for Era, Stage, Tags, Item Type, Release/Song/Version
+export const ProgressView = () => {
+  const { data } = useStore();
+  const [filterEra, setFilterEra] = useState('all');
+  const [filterStage, setFilterStage] = useState('all');
+  const [filterTag, setFilterTag] = useState('all');
+  const [filterItemType, setFilterItemType] = useState('all');
+  const [filterRelease, setFilterRelease] = useState('all');
+  const [filterSong, setFilterSong] = useState('all');
+  
+  // Collect all items with progress
+  const progressItems = useMemo(() => {
+    const items = [];
+    
+    // Songs
+    (data.songs || []).forEach(song => {
+      if (filterSong !== 'all' && song.id !== filterSong) return;
+      if (filterEra !== 'all' && !(song.eraIds || []).includes(filterEra)) return;
+      if (filterStage !== 'all' && !(song.stageIds || []).includes(filterStage)) return;
+      if (filterTag !== 'all' && !(song.tagIds || []).includes(filterTag)) return;
+      if (filterRelease !== 'all' && song.coreReleaseId !== filterRelease) return;
+      if (filterItemType !== 'all' && filterItemType !== 'song') return;
+      
+      const allTasks = [
+        ...(song.deadlines || []),
+        ...(song.customTasks || []),
+        ...(song.versions || []).flatMap(v => [...(v.tasks || []), ...(v.customTasks || [])])
+      ];
+      const progress = calculateTaskProgress(allTasks);
+      
+      items.push({
+        id: `song-${song.id}`,
+        name: song.title,
+        type: 'Song',
+        releaseDate: song.releaseDate,
+        totalTasks: progress.totalTasks,
+        pointsEarned: progress.pointsEarned,
+        progress: progress.progress,
+        eraIds: song.eraIds,
+        stageIds: song.stageIds,
+        tagIds: song.tagIds
+      });
+      
+      // Individual versions
+      (song.versions || []).filter(v => v.id !== 'core').forEach(v => {
+        if (filterItemType !== 'all' && filterItemType !== 'version') return;
+        const versionTasks = [...(v.tasks || []), ...(v.customTasks || [])];
+        const vProgress = calculateTaskProgress(versionTasks);
+        
+        items.push({
+          id: `version-${song.id}-${v.id}`,
+          name: `${v.name} (${song.title})`,
+          type: 'Version',
+          releaseDate: v.releaseDate || song.releaseDate,
+          totalTasks: vProgress.totalTasks,
+          pointsEarned: vProgress.pointsEarned,
+          progress: vProgress.progress,
+          eraIds: v.eraIds || song.eraIds,
+          stageIds: v.stageIds || song.stageIds,
+          tagIds: v.tagIds || song.tagIds
+        });
+      });
+      
+      // Videos
+      (song.videos || []).forEach(video => {
+        if (filterItemType !== 'all' && filterItemType !== 'video') return;
+        const videoTasks = [...(video.tasks || []), ...(video.customTasks || [])];
+        const vProgress = calculateTaskProgress(videoTasks);
+        
+        items.push({
+          id: `video-${song.id}-${video.id}`,
+          name: `${video.title} (${song.title})`,
+          type: 'Video',
+          releaseDate: video.releaseDate || song.releaseDate,
+          totalTasks: vProgress.totalTasks,
+          pointsEarned: vProgress.pointsEarned,
+          progress: vProgress.progress,
+          eraIds: video.eraIds || song.eraIds,
+          stageIds: video.stageIds || song.stageIds,
+          tagIds: video.tagIds || song.tagIds
+        });
+      });
+    });
+    
+    // Releases
+    (data.releases || []).forEach(release => {
+      if (filterRelease !== 'all' && release.id !== filterRelease) return;
+      if (filterItemType !== 'all' && filterItemType !== 'release') return;
+      
+      const releaseTasks = [...(release.tasks || []), ...(release.customTasks || [])];
+      const progress = calculateTaskProgress(releaseTasks);
+      
+      items.push({
+        id: `release-${release.id}`,
+        name: release.name,
+        type: 'Release',
+        releaseDate: release.releaseDate,
+        totalTasks: progress.totalTasks,
+        pointsEarned: progress.pointsEarned,
+        progress: progress.progress,
+        eraIds: release.eraIds,
+        stageIds: release.stageIds,
+        tagIds: release.tagIds
+      });
+    });
+    
+    // Events
+    (data.events || []).forEach(event => {
+      if (filterItemType !== 'all' && filterItemType !== 'event') return;
+      
+      const eventTasks = [...(event.tasks || []), ...(event.customTasks || [])];
+      const progress = calculateTaskProgress(eventTasks);
+      
+      items.push({
+        id: `event-${event.id}`,
+        name: event.title,
+        type: 'Event',
+        releaseDate: event.date,
+        totalTasks: progress.totalTasks,
+        pointsEarned: progress.pointsEarned,
+        progress: progress.progress,
+        eraIds: event.eraIds,
+        stageIds: event.stageIds,
+        tagIds: event.tagIds
+      });
+    });
+    
+    return items.sort((a, b) => (a.releaseDate || '').localeCompare(b.releaseDate || ''));
+  }, [data, filterEra, filterStage, filterTag, filterItemType, filterRelease, filterSong]);
+  
+  // Calculate overall progress
+  const overallProgress = useMemo(() => {
+    const totalTasks = progressItems.reduce((sum, item) => sum + item.totalTasks, 0);
+    const totalPoints = progressItems.reduce((sum, item) => sum + item.pointsEarned, 0);
+    return totalTasks > 0 ? Math.round((totalPoints / totalTasks) * 100) : 0;
+  }, [progressItems]);
+  
+  // Group by type for summary
+  const typeGroups = useMemo(() => {
+    const groups = {};
+    progressItems.forEach(item => {
+      if (!groups[item.type]) {
+        groups[item.type] = { count: 0, totalTasks: 0, pointsEarned: 0 };
+      }
+      groups[item.type].count++;
+      groups[item.type].totalTasks += item.totalTasks;
+      groups[item.type].pointsEarned += item.pointsEarned;
+    });
+    return groups;
+  }, [progressItems]);
+
+  const getProgressColor = (progress) => {
+    if (progress >= 100) return 'bg-green-500';
+    if (progress >= 75) return 'bg-blue-500';
+    if (progress >= 50) return 'bg-yellow-500';
+    if (progress >= 25) return 'bg-orange-500';
+    return 'bg-red-500';
+  };
+
+  return (
+    <div className="p-6 pb-24">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={THEME.punk.textStyle}>Progress</h2>
+        <div className="text-right">
+          <div className="text-3xl font-black text-pink-600">{overallProgress}%</div>
+          <div className="text-xs font-bold uppercase opacity-60">Overall Progress</div>
+        </div>
+      </div>
+
+      {/* Filter Panel */}
+      <div className={cn("p-4 mb-6 bg-gray-50", THEME.punk.card)}>
+        <div className="grid md:grid-cols-6 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Era</label>
+            <select value={filterEra} onChange={e => setFilterEra(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Eras</option>
+              {(data.eras || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+            <select value={filterStage} onChange={e => setFilterStage(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Stages</option>
+              {(data.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Tag</label>
+            <select value={filterTag} onChange={e => setFilterTag(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Tags</option>
+              {(data.tags || []).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Item Type</label>
+            <select value={filterItemType} onChange={e => setFilterItemType(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Types</option>
+              <option value="song">Songs</option>
+              <option value="version">Versions</option>
+              <option value="video">Videos</option>
+              <option value="release">Releases</option>
+              <option value="event">Events</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Release</label>
+            <select value={filterRelease} onChange={e => setFilterRelease(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Releases</option>
+              {(data.releases || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Song</label>
+            <select value={filterSong} onChange={e => setFilterSong(e.target.value)} className={cn("w-full", THEME.punk.input)}>
+              <option value="all">All Songs</option>
+              {(data.songs || []).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary by Type */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        {Object.entries(typeGroups).map(([type, data]) => {
+          const typeProgress = data.totalTasks > 0 ? Math.round((data.pointsEarned / data.totalTasks) * 100) : 0;
+          return (
+            <div key={type} className={cn("p-4 text-center", THEME.punk.card)}>
+              <div className="text-2xl font-black">{typeProgress}%</div>
+              <div className="text-xs font-bold uppercase">{type}s ({data.count})</div>
+              <div className="w-full h-2 bg-gray-200 mt-2">
+                <div className={cn("h-full", getProgressColor(typeProgress))} style={{ width: `${typeProgress}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress Table */}
+      <div className={cn("overflow-x-auto", THEME.punk.card)}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-black text-white">
+              <th className="p-3 text-left">Name</th>
+              <th className="p-3 text-left">Type</th>
+              <th className="p-3 text-left">Date</th>
+              <th className="p-3 text-center">Tasks</th>
+              <th className="p-3 text-center">Points</th>
+              <th className="p-3 text-left">Progress</th>
+            </tr>
+          </thead>
+          <tbody>
+            {progressItems.length === 0 ? (
+              <tr><td colSpan="6" className="p-10 text-center opacity-50">No items found.</td></tr>
+            ) : progressItems.map(item => (
+              <tr key={item.id} className="border-b border-gray-200 hover:bg-yellow-50">
+                <td className="p-3 font-bold">{item.name}</td>
+                <td className="p-3">
+                  <span className={cn(
+                    "px-2 py-1 text-xs font-bold",
+                    item.type === 'Song' ? "bg-blue-100" :
+                    item.type === 'Version' ? "bg-indigo-100" :
+                    item.type === 'Video' ? "bg-orange-100" :
+                    item.type === 'Release' ? "bg-green-100" :
+                    "bg-pink-100"
+                  )}>
+                    {item.type}
+                  </span>
+                </td>
+                <td className="p-3">{item.releaseDate || '-'}</td>
+                <td className="p-3 text-center">{item.totalTasks}</td>
+                <td className="p-3 text-center">{item.pointsEarned.toFixed(1)}</td>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-4 bg-gray-200">
+                      <div className={cn("h-full", getProgressColor(item.progress))} style={{ width: `${item.progress}%` }} />
+                    </div>
+                    <span className="font-bold text-xs w-12 text-right">{item.progress}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
