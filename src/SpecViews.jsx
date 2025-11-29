@@ -873,6 +873,7 @@ export const SongDetailView = ({ song, onBack }) => {
 };
 
 // Global Tasks View (Spec 2.3) - Phase 4: Enhanced with archived/done filtering
+// Per APP ARCHITECTURE.txt Section 1.2: Task Categories as Items
 export const GlobalTasksView = () => {
   const { data, actions } = useStore();
   const [sortBy, setSortBy] = useState('date');
@@ -882,11 +883,25 @@ export const GlobalTasksView = () => {
   const [filterArchived, setFilterArchived] = useState('active'); // 'all', 'active', 'archived', 'done'
   const [searchText, setSearchText] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [newTask, setNewTask] = useState({ taskName: '', category: 'Other', date: '', description: '', assignedTo: '', status: 'Not Started', estimatedCost: 0, notes: '' });
   const [newAssignments, setNewAssignments] = useState({});
+  const [newCategory, setNewCategory] = useState({ name: '', color: '#000000', description: '' });
 
   const teamMembers = data.teamMembers || [];
+  
+  // Get all categories - combine legacy GLOBAL_TASK_CATEGORIES with new Task Category Items
+  const allCategories = useMemo(() => {
+    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
+    const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
+    // Merge: prefer Item categories over legacy if same name
+    const merged = [];
+    const nameSet = new Set();
+    itemCategories.forEach(c => { merged.push(c); nameSet.add(c.name); });
+    legacyCategories.forEach(c => { if (!nameSet.has(c.name)) merged.push(c); });
+    return merged;
+  }, [data.taskCategories]);
 
   const taskBudget = (task = {}) => {
     if (task.paidCost !== undefined) return task.paidCost || 0;
@@ -919,7 +934,10 @@ export const GlobalTasksView = () => {
     }
     // 'all' shows everything
     
-    if (filterCategory !== 'all') filtered = filtered.filter(t => t.category === filterCategory);
+    if (filterCategory !== 'all') {
+      // Match by category name (dropdown uses category names as values)
+      filtered = filtered.filter(t => t.category === filterCategory);
+    }
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
     if (searchText) {
       const search = searchText.toLowerCase();
@@ -951,19 +969,86 @@ export const GlobalTasksView = () => {
     if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     else { setSortBy(field); setSortDir('asc'); }
   };
+  
+  // Category management handlers
+  const handleAddCategory = async () => {
+    if (!newCategory.name) return;
+    await actions.addTaskCategory(newCategory);
+    setNewCategory({ name: '', color: '#000000', description: '' });
+  };
 
   return (
     <div className="p-6 pb-24">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Global Tasks</h2>
-        <button onClick={() => setShowAddForm(!showAddForm)} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>{showAddForm ? 'Cancel' : '+ Add Task'}</button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowCategoryManager(!showCategoryManager)} className={cn("px-4 py-2", THEME.punk.btn, showCategoryManager ? "bg-purple-500 text-white" : "bg-white")}>
+            <Icon name="Folder" size={16} /> Categories
+          </button>
+          <button onClick={() => setShowAddForm(!showAddForm)} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>{showAddForm ? 'Cancel' : '+ Add Task'}</button>
+        </div>
       </div>
+
+      {/* Task Category Manager - Per APP ARCHITECTURE.txt Section 1.2 */}
+      {showCategoryManager && (
+        <div className={cn("p-6 mb-6", THEME.punk.card, "bg-purple-50")}>
+          <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Categories</h3>
+          <div className="grid md:grid-cols-3 gap-4 mb-4">
+            <input 
+              value={newCategory.name} 
+              onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} 
+              placeholder="Category Name" 
+              className={cn("w-full", THEME.punk.input)} 
+            />
+            <input 
+              type="color" 
+              value={newCategory.color} 
+              onChange={e => setNewCategory({ ...newCategory, color: e.target.value })} 
+              className="w-full h-12 border-4 border-black" 
+            />
+            <button onClick={handleAddCategory} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
+              + Add Category
+            </button>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {allCategories.map(cat => (
+              <div 
+                key={cat.id} 
+                className={cn("p-4 flex items-center justify-between", THEME.punk.card, cat.isLegacy ? "bg-gray-100" : "bg-white")}
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="w-6 h-6 border-2 border-black" 
+                    style={{ backgroundColor: cat.color || '#000' }} 
+                  />
+                  <div>
+                    <div className="font-bold">{cat.name}</div>
+                    <div className="text-xs opacity-60">
+                      {cat.isLegacy ? 'Default Category' : 'Custom Category'}
+                      {' • '}
+                      {(data.globalTasks || []).filter(t => t.category === cat.name || t.categoryId === cat.id).length} tasks
+                    </div>
+                  </div>
+                </div>
+                {!cat.isLegacy && (
+                  <button 
+                    onClick={() => { if (confirm('Delete this category?')) actions.deleteTaskCategory(cat.id); }} 
+                    className="p-2 text-red-500 hover:bg-red-50"
+                  >
+                    <Icon name="Trash2" size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-6">
         <input type="text" value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Search tasks..." className={cn("px-3 py-2 flex-1 min-w-[200px]", THEME.punk.input)} />
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
           <option value="all">All Categories</option>
-          {GLOBAL_TASK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
           <option value="all">All Status</option>
@@ -983,7 +1068,9 @@ export const GlobalTasksView = () => {
           <h3 className="font-black uppercase mb-4">New Task</h3>
           <div className="grid md:grid-cols-2 gap-4">
             <input value={newTask.taskName} onChange={e => setNewTask({ ...newTask, taskName: e.target.value })} placeholder="Task Name" className={cn("w-full", THEME.punk.input)} />
-            <select value={newTask.category} onChange={e => setNewTask({ ...newTask, category: e.target.value })} className={cn("w-full", THEME.punk.input)}>{GLOBAL_TASK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={newTask.category} onChange={e => setNewTask({ ...newTask, category: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+              {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
             <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
             <input value={newTask.assignedTo} onChange={e => setNewTask({ ...newTask, assignedTo: e.target.value })} placeholder="Assigned To" className={cn("w-full", THEME.punk.input)} />
             <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask({ ...newTask, estimatedCost: parseFloat(e.target.value) || 0 })} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
@@ -1000,7 +1087,9 @@ export const GlobalTasksView = () => {
             <h3 className="font-black uppercase mb-4">Edit Task</h3>
             <div className="grid gap-4">
               <input value={editingTask.taskName} onChange={e => setEditingTask({ ...editingTask, taskName: e.target.value })} placeholder="Task Name" className={cn("w-full", THEME.punk.input)} />
-              <select value={editingTask.category} onChange={e => setEditingTask({ ...editingTask, category: e.target.value })} className={cn("w-full", THEME.punk.input)}>{GLOBAL_TASK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+              <select value={editingTask.category} onChange={e => setEditingTask({ ...editingTask, category: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
               <input type="date" value={editingTask.date} onChange={e => setEditingTask({ ...editingTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
               <input value={editingTask.assignedTo} onChange={e => setEditingTask({ ...editingTask, assignedTo: e.target.value })} placeholder="Assigned To" className={cn("w-full", THEME.punk.input)} />
               <input type="number" value={editingTask.estimatedCost} onChange={e => setEditingTask({ ...editingTask, estimatedCost: parseFloat(e.target.value) || 0 })} className={cn("w-full", THEME.punk.input)} />
@@ -3172,6 +3261,29 @@ export const FinancialsView = () => {
       }
     });
     
+    // Per APP ARCHITECTURE.txt Section 1.2: Expenses as Item type
+    (data.expenses || []).forEach(expense => {
+      if (expense.isArchived) return;
+      if (filterItemType !== 'all' && filterItemType !== 'expense') return;
+      const expenseCost = getCostValue(expense);
+      if (expenseCost > 0 || (costMode === 'effective' && getEffectiveCost(expense) > 0)) {
+        items.push({
+          id: `expense-${expense.id}`,
+          name: expense.name,
+          source: 'Expense',
+          sourceId: expense.id,
+          itemType: 'expense',
+          estimatedCost: expense.estimatedCost || 0,
+          quotedCost: expense.quotedCost || 0,
+          paidCost: expense.paidCost || 0,
+          effectiveCost: getEffectiveCost(expense),
+          date: expense.date,
+          eraIds: expense.eraIds,
+          stageIds: expense.stageIds
+        });
+      }
+    });
+    
     return items.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   }, [data, filterStage, filterEra, filterRelease, filterSong, filterItemType, costMode, getCostValue]);
   
@@ -3256,6 +3368,7 @@ export const FinancialsView = () => {
               <option value="release">Releases</option>
               <option value="global">Global Tasks</option>
               <option value="event">Events</option>
+              <option value="expense">Expenses</option>
               <option value="task">Tasks</option>
             </select>
           </div>
@@ -3353,6 +3466,7 @@ export const FinancialsView = () => {
                     item.source.includes('Video') ? "bg-orange-100" :
                     item.source.includes('Global') ? "bg-yellow-100" :
                     item.source.includes('Event') ? "bg-pink-100" :
+                    item.source.includes('Expense') ? "bg-purple-100" :
                     "bg-gray-100"
                   )}>
                     {item.source}

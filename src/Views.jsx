@@ -985,6 +985,7 @@ export const TeamView = () => {
 export const MiscView = () => {
     const { data, actions } = useStore();
     const [expenseDraft, setExpenseDraft] = useState({ description: '', amount: '', category: 'General' });
+    const [showArchived, setShowArchived] = useState(false);
 
     const costedItems = useMemo(() => {
         const rows = [];
@@ -1020,44 +1021,89 @@ export const MiscView = () => {
             (evt.customTasks || []).forEach(task => pushItem(`${task.title} — ${evt.title}`, 'Event Task', task.date, getEffectiveCost(task), task.notes));
         });
 
+        // Per APP ARCHITECTURE.txt Section 1.2: Show Expense Items
+        (data.expenses || []).filter(e => !e.isArchived || showArchived).forEach(e => pushItem(e.name, 'Expense', e.date, getEffectiveCost(e), e.description));
+
         (data.misc || []).forEach(m => pushItem(m.description, 'Misc', m.date, m.amount, 'Legacy expense'));
 
         return rows.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    }, [data]);
+    }, [data, showArchived]);
 
-    const addExpenseTask = () => {
+    // Per APP ARCHITECTURE.txt Section 1.2: Use new Expense Item type
+    const addExpenseItem = () => {
         const amount = parseFloat(expenseDraft.amount);
         if (!expenseDraft.description || isNaN(amount)) return;
-        actions.add('tasks', {
-            title: expenseDraft.description,
+        actions.addExpense({
+            name: expenseDraft.description,
             paidCost: amount,
-            status: 'Done',
-            isHiddenExpense: true,
             category: expenseDraft.category,
-            dueDate: new Date().toISOString().split('T')[0],
-            notes: 'Expense-only task'
+            date: new Date().toISOString().split('T')[0],
+            status: 'Complete'
         });
         setExpenseDraft({ description: '', amount: '', category: 'General' });
     };
 
+    // Expense Items list
+    const expenseItems = useMemo(() => {
+        return (data.expenses || []).filter(e => !e.isArchived || showArchived);
+    }, [data.expenses, showArchived]);
+
     return (
         <div className="p-6 pb-24">
-            <div className="flex justify-between mb-6 items-center">
+            <div className="flex flex-wrap justify-between mb-6 items-center gap-4">
                 <h2 className={THEME.punk.textStyle}>Expenses</h2>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 items-center">
+                    <label className="flex items-center gap-2 text-xs font-bold">
+                        <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="w-4 h-4" />
+                        Show Archived
+                    </label>
                     <input value={expenseDraft.description} onChange={e => setExpenseDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("px-3 py-2 text-sm", THEME.punk.input)} />
                     <input type="number" value={expenseDraft.amount} onChange={e => setExpenseDraft(prev => ({ ...prev, amount: e.target.value }))} placeholder="$" className={cn("px-3 py-2 text-sm w-28", THEME.punk.input)} />
                     <input value={expenseDraft.category} onChange={e => setExpenseDraft(prev => ({ ...prev, category: e.target.value }))} placeholder="Category" className={cn("px-3 py-2 text-sm w-32", THEME.punk.input)} />
-                    <button onClick={addExpenseTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Expense Task</button>
+                    <button onClick={addExpenseItem} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Expense</button>
                 </div>
             </div>
+            
+            {/* Expense Items Section - Per APP ARCHITECTURE.txt Section 1.2 */}
+            {expenseItems.length > 0 && (
+                <div className={cn("mb-6 p-4", THEME.punk.card)}>
+                    <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Expense Items</h3>
+                    <div className="space-y-2">
+                        {expenseItems.map(expense => (
+                            <div key={expense.id} className={cn("p-3 flex justify-between items-center", expense.isArchived ? "opacity-50" : "", "bg-white border-2 border-black")}>
+                                <div className="flex-1">
+                                    <div className="font-bold">{expense.name}</div>
+                                    <div className="text-xs opacity-60">
+                                        {expense.date} | {expense.category} | {expense.status}
+                                    </div>
+                                    {expense.description && <div className="text-sm mt-1">{expense.description}</div>}
+                                </div>
+                                <div className="text-right mr-4">
+                                    <div className="font-black text-lg">{formatMoney(getEffectiveCost(expense))}</div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {!expense.isArchived ? (
+                                        <button onClick={() => actions.archiveExpense(expense.id)} className="text-orange-500 font-bold text-xs uppercase p-2 hover:bg-orange-50"><Icon name="Archive" size={16} /></button>
+                                    ) : (
+                                        <button onClick={() => actions.updateExpense(expense.id, { isArchived: false })} className="text-green-500 font-bold text-xs uppercase p-2 hover:bg-green-50">Restore</button>
+                                    )}
+                                    <button onClick={() => { if (confirm('Delete this expense?')) actions.deleteExpense(expense.id); }} className="text-red-500 font-bold text-xs uppercase p-2 hover:bg-red-50"><Icon name="Trash2" size={16} /></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            
+            {/* All Costed Items Summary */}
             <div className={cn("mb-4 p-3", THEME.punk.card)}>
-                <div className="grid grid-cols-4 text-[10px] font-black uppercase mb-2 border-b-4 border-black pb-2">
+                <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">All Costed Items</h3>
+                <div className="grid grid-cols-4 text-[10px] font-black uppercase mb-2 border-b-2 border-black pb-2">
                     <span>Item</span><span>Source</span><span>Date</span><span className="text-right">Cost</span>
                 </div>
                 <div className="divide-y divide-gray-200">
                     {costedItems.length === 0 ? (
-                        <div className="p-4 text-center opacity-50">No costed tasks recorded.</div>
+                        <div className="p-4 text-center opacity-50">No costed items recorded.</div>
                     ) : costedItems.map(item => (
                         <div key={item.id} className="grid grid-cols-4 py-2 text-sm gap-2">
                             <div>

@@ -667,7 +667,10 @@ export const StoreProvider = ({ children }) => {
     // Phase 2: Standalone videos
     standaloneVideos: [],
     templates: [],
-    auditLog: []
+    auditLog: [],
+    // Per APP ARCHITECTURE.txt Section 1.2: Expense and Task Category Item types
+    expenses: [],
+    taskCategories: []
   });
   const [user, setUser] = useState(null);
   const [db, setDb] = useState(null);
@@ -705,7 +708,9 @@ export const StoreProvider = ({ children }) => {
       const collections = [
         'album_items', 'album_tasks_v2',
         'album_tasks', 'album_photos', 'album_vendors', 'album_teamMembers', 'album_misc_expenses',
-        'album_events', 'album_stages', 'album_eras', 'album_tags', 'album_songs', 'album_globalTasks', 'album_releases'
+        'album_events', 'album_stages', 'album_eras', 'album_tags', 'album_songs', 'album_globalTasks', 'album_releases',
+        // Per APP ARCHITECTURE.txt Section 1.2: Expense and Task Category Item types
+        'album_expenses', 'album_taskCategories'
       ];
       const unsubs = collections.map(col => {
         const q = query(collection(db, 'artifacts', appId, 'users', user.uid, col));
@@ -720,7 +725,11 @@ export const StoreProvider = ({ children }) => {
              const taskDocs = list.filter(d => d.id !== 'settings');
              setData(prev => ({ ...prev, tasks: taskDocs, settings: settingsDoc || prev.settings }));
           } else {
-             const key = col.replace('album_', '').replace('_expenses', '');
+             // Handle collection name mapping
+             let key = col.replace('album_', '');
+             // Special case for misc_expenses (legacy)
+             if (key === 'misc_expenses') key = 'misc';
+             // Map to correct state keys
              const mappedKey = key === 'task' ? 'tasks' : key === 'teamMembers' ? 'teamMembers' : key;
              setData(prev => ({ ...prev, [mappedKey]: list }));
           }
@@ -814,10 +823,11 @@ export const StoreProvider = ({ children }) => {
     });
     const miscTotal = (data.misc || []).reduce((s, i) => s + (i.amount || 0), 0);
     
-    // Calculate totals from new entities (songs, globalTasks, releases)
+    // Calculate totals from new entities (songs, globalTasks, releases, expenses)
     let songsTotal = 0;
     let globalTasksTotal = 0;
     let releasesTotal = 0;
+    let expensesTotal = 0;
     
     (data.songs || []).forEach(song => {
       songsTotal += costValue(song);
@@ -828,8 +838,10 @@ export const StoreProvider = ({ children }) => {
 
     (data.globalTasks || []).forEach(t => { globalTasksTotal += costValue(t); });
     (data.releases || []).forEach(r => { releasesTotal += costValue(r); });
+    // Per APP ARCHITECTURE.txt Section 1.2: Expenses as Item type
+    (data.expenses || []).forEach(e => { expensesTotal += costValue(e); });
     
-    const newEntitiesTotal = songsTotal + globalTasksTotal + releasesTotal;
+    const newEntitiesTotal = songsTotal + globalTasksTotal + releasesTotal + expensesTotal;
     
     return { 
       min: min + miscTotal, 
@@ -838,9 +850,10 @@ export const StoreProvider = ({ children }) => {
       songsTotal,
       globalTasksTotal,
       releasesTotal,
+      expensesTotal,
       grandTotal: min + miscTotal + newEntitiesTotal
     };
-  }, [data.tasks, data.misc, data.songs, data.globalTasks, data.releases]);
+  }, [data.tasks, data.misc, data.songs, data.globalTasks, data.releases, data.expenses]);
 
   const actions = {
      logAudit: (action, entityType, entityId, metadata = {}) => {
@@ -2493,6 +2506,169 @@ export const StoreProvider = ({ children }) => {
            }));
          }
        }
+     },
+
+     // ============================================================
+     // EXPENSE ITEM ACTIONS - Per APP ARCHITECTURE.txt Section 1.2
+     // Expenses are first-class Items with unified Item properties
+     // ============================================================
+     
+     addExpense: async (expense) => {
+       const newExpense = {
+         id: crypto.randomUUID(),
+         // Unified Item fields per Section 6
+         // Use name if provided, otherwise default to 'New Expense'
+         name: expense.name || 'New Expense',
+         // Description is separate from name
+         description: expense.description || '',
+         date: expense.date || new Date().toISOString().split('T')[0],
+         // Cost layers with precedence: paidCost > quotedCost > estimatedCost
+         estimatedCost: expense.estimatedCost || 0,
+         quotedCost: expense.quotedCost || 0,
+         paidCost: expense.paidCost || expense.amount || 0,
+         partiallyPaid: expense.partiallyPaid || 0,
+         // Metadata
+         category: expense.category || 'General',
+         vendorId: expense.vendorId || '',
+         teamMemberIds: expense.teamMemberIds || [],
+         eraIds: expense.eraIds || [],
+         stageIds: expense.stageIds || [],
+         tagIds: expense.tagIds || [],
+         // Status using unified STATUS_OPTIONS
+         status: expense.status || 'Complete',
+         // Parent relationship (optional - can link to Song, Release, Event, etc.)
+         parentType: expense.parentType || null,
+         parentId: expense.parentId || null,
+         notes: expense.notes || '',
+         isArchived: false
+       };
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_expenses'), { ...newExpense, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({ ...p, expenses: [...(p.expenses || []), newExpense] }));
+       }
+       return newExpense;
+     },
+
+     updateExpense: async (expenseId, updates) => {
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_expenses', expenseId), updates);
+       } else {
+         setData(p => ({
+           ...p,
+           expenses: (p.expenses || []).map(e => e.id === expenseId ? { ...e, ...updates } : e)
+         }));
+       }
+     },
+
+     deleteExpense: async (expenseId) => {
+       actions.logAudit('delete', 'expense', expenseId);
+       if (mode === 'cloud') {
+         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_expenses', expenseId));
+       } else {
+         setData(p => ({
+           ...p,
+           expenses: (p.expenses || []).filter(e => e.id !== expenseId)
+         }));
+       }
+     },
+
+     archiveExpense: async (expenseId) => {
+       const payload = { isArchived: true, archivedAt: new Date().toISOString() };
+       actions.logAudit('archive', 'expense', expenseId);
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_expenses', expenseId), payload);
+       } else {
+         setData(p => ({
+           ...p,
+           expenses: (p.expenses || []).map(e => e.id === expenseId ? { ...e, ...payload } : e)
+         }));
+       }
+     },
+
+     // ============================================================
+     // TASK CATEGORY ITEM ACTIONS - Per APP ARCHITECTURE.txt Section 1.2
+     // Task Categories are first-class Items that group Global Tasks
+     // ============================================================
+     
+     addTaskCategory: async (category) => {
+       const newCategory = {
+         id: crypto.randomUUID(),
+         // Unified Item fields per Section 6
+         name: category.name || 'New Category',
+         description: category.description || '',
+         // Categories don't need dates typically, but support them for sorting
+         date: category.date || '',
+         // Cost layers (aggregated from tasks, but can have own costs)
+         estimatedCost: category.estimatedCost || 0,
+         quotedCost: category.quotedCost || 0,
+         paidCost: category.paidCost || 0,
+         // Metadata
+         color: category.color || '#000000',
+         icon: category.icon || 'Folder',
+         order: category.order || 0,
+         // Metadata arrays
+         eraIds: category.eraIds || [],
+         stageIds: category.stageIds || [],
+         tagIds: category.tagIds || [],
+         teamMemberIds: category.teamMemberIds || [],
+         // Status
+         status: category.status || 'Not Started',
+         isArchived: false,
+         // Migration: Keep legacy name for backwards compatibility with existing Global Tasks
+         legacyCategoryName: category.legacyCategoryName || category.name || ''
+       };
+       if (mode === 'cloud') {
+         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_taskCategories'), { ...newCategory, createdAt: serverTimestamp() });
+       } else {
+         setData(p => ({ ...p, taskCategories: [...(p.taskCategories || []), newCategory] }));
+       }
+       return newCategory;
+     },
+
+     updateTaskCategory: async (categoryId, updates) => {
+       if (mode === 'cloud') {
+         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_taskCategories', categoryId), updates);
+       } else {
+         setData(p => ({
+           ...p,
+           taskCategories: (p.taskCategories || []).map(c => c.id === categoryId ? { ...c, ...updates } : c)
+         }));
+       }
+     },
+
+     deleteTaskCategory: async (categoryId) => {
+       actions.logAudit('delete', 'taskCategory', categoryId);
+       if (mode === 'cloud') {
+         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_taskCategories', categoryId));
+       } else {
+         setData(p => ({
+           ...p,
+           taskCategories: (p.taskCategories || []).filter(c => c.id !== categoryId)
+         }));
+       }
+     },
+
+     // Get all global tasks for a specific category
+     getGlobalTasksByCategory: (categoryId) => {
+       const category = data.taskCategories?.find(c => c.id === categoryId);
+       if (!category) return [];
+       // Match by category ID or by legacy category name
+       return (data.globalTasks || []).filter(t => 
+         t.categoryId === categoryId || 
+         t.category === category.name || 
+         t.category === category.legacyCategoryName
+       );
+     },
+
+     // Link a global task to a category
+     linkTaskToCategory: async (taskId, categoryId) => {
+       const category = data.taskCategories?.find(c => c.id === categoryId);
+       if (!category) return;
+       await actions.updateGlobalTask(taskId, { 
+         categoryId: categoryId,
+         category: category.name 
+       });
      }
   };
 
