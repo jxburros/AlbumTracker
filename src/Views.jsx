@@ -1310,7 +1310,7 @@ export const ActiveView = ({ onEdit }) => {
 };
 
 export const SettingsView = () => {
-    const { data, actions, mode } = useStore();
+    const { data, actions, mode, mods } = useStore();
     const settings = data.settings || {};
     const themeMode = settings.themeMode || 'light';
     const accent = settings.themeColor || 'pink';
@@ -1320,6 +1320,8 @@ export const SettingsView = () => {
     const [importText, setImportText] = useState('');
     const [migrationNotes, setMigrationNotes] = useState(settings.migrationNotes || '');
     const [migrationRanAt, setMigrationRanAt] = useState(settings.migrationRanAt || '');
+    const [modImportText, setModImportText] = useState('');
+    const [modStatus, setModStatus] = useState('');
 
     useEffect(() => {
       setTemplateDrafts(settings.templates || []);
@@ -1364,6 +1366,44 @@ export const SettingsView = () => {
       a.download = 'album-tracker-templates.json';
       a.click();
       URL.revokeObjectURL(url);
+    };
+
+    const modExample = JSON.stringify({
+      id: 'release-ops-mod',
+      name: 'Release Ops Booster',
+      version: '0.1.0',
+      author: 'Community',
+      description: 'Adds a few release-ready quick actions.',
+      actions: [
+        { id: 'prep-release', type: 'createTask', label: 'Prep Release Metadata', template: { description: 'Fill out ISRC/UPC + credits', status: 'In-Progress' } },
+        { id: 'add-checklist', type: 'addTemplate', label: 'Release Checklist Template', template: { name: 'Release Checklist', body: '- ISRCs\n- Credits\n- DSP metadata' } },
+        { id: 'open-style-guide', type: 'openLink', label: 'Open Style Guide', url: 'https://example.com/style-guide' }
+      ]
+    }, null, 2);
+
+    const handleImportMod = () => {
+      try {
+        const parsed = JSON.parse(modImportText);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        list.forEach(mod => actions.registerMod(mod));
+        setModStatus(`Imported ${list.length} mod${list.length === 1 ? '' : 's'}.`);
+        setModImportText('');
+      } catch (e) {
+        alert('Unable to import mods. Please provide valid JSON.');
+      }
+    };
+
+    const handleRunModAction = async (modId, actionId) => {
+      const result = await actions.runModAction(modId, actionId);
+      if (result) setModStatus('Ran mod action successfully.');
+    };
+
+    const handleToggleMod = (modId, enabled) => {
+      actions.toggleMod(modId, enabled);
+    };
+
+    const handleRemoveMod = (modId) => {
+      actions.removeMod(modId);
     };
 
     const migrationPreview = {
@@ -1540,12 +1580,85 @@ export const SettingsView = () => {
                     ))}
                     {templateDrafts.length === 0 && <div className={cn("p-3 text-xs", THEME.punk.card)}>No templates yet. Add one to start building repeatable tasks.</div>}
                   </div>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button onClick={exportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>Export Templates</button>
+                    <button onClick={handleImportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-blue-600 text-white")}>Import Templates</button>
+                  </div>
+                  <textarea value={importText} onChange={e => setImportText(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Paste template JSON to import" />
+                </div>
+              </div>
+
+                {/* Mods */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-black text-xs uppercase">Mods</h3>
+                    {modStatus && <span className="text-[10px] font-bold text-green-700">{modStatus}</span>}
+                  </div>
+                  <p className="text-xs opacity-70">Drop in community or personal mods to add quick actions, templates, or helper links without touching the core app.</p>
+                  <div className="space-y-3">
+                    {(mods || []).map(mod => (
+                      <div key={mod.id} className={cn("p-3 space-y-2", THEME.punk.card)}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold">{mod.name} <span className="text-[10px] opacity-60">v{mod.version}</span></div>
+                            <div className="text-[11px] opacity-70">By {mod.author}</div>
+                            <div className="text-xs opacity-80 mt-1">{mod.description}</div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2 text-xs">
+                            <label className="flex items-center gap-2 font-bold">
+                              <input type="checkbox" checked={mod.enabled !== false} onChange={e => handleToggleMod(mod.id, e.target.checked)} />
+                              Enabled
+                            </label>
+                            <button onClick={() => handleRemoveMod(mod.id)} className="text-red-600 font-bold uppercase">Remove</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {(mod.actions || []).map(action => (
+                            <div key={action.id} className="flex items-center justify-between text-sm">
+                              <div>
+                                <div className="font-bold">{action.label}</div>
+                                <div className="text-[11px] opacity-60">{action.type}</div>
+                              </div>
+                              <button onClick={() => handleRunModAction(mod.id, action.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>Run</button>
+                            </div>
+                          ))}
+                          {(mod.actions || []).length === 0 && <div className="text-xs opacity-60">No actions defined.</div>}
+                        </div>
+                      </div>
+                    ))}
+                    {(mods || []).length === 0 && (
+                      <div className={cn("p-3 text-xs", THEME.punk.card)}>
+                        No mods installed yet. Paste a JSON mod to get started.
+                      </div>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <button onClick={exportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>Export Templates</button>
-                      <button onClick={handleImportTemplates} className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn, "bg-blue-600 text-white")}>Import Templates</button>
+                    <div className="flex gap-2 items-center">
+                      <div className="text-[10px] font-black uppercase opacity-60">Import or Author</div>
+                      <button onClick={() => setModImportText(modExample)} className={cn("px-3 py-1 text-[10px]", THEME.punk.btn)}>Load Example</button>
                     </div>
-                    <textarea value={importText} onChange={e => setImportText(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={3} placeholder="Paste template JSON to import" />
+                    <textarea value={modImportText} onChange={e => setModImportText(e.target.value)} className={cn("w-full", THEME.punk.input)} rows={6} placeholder="Paste mod JSON here" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={handleImportMod} className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-blue-600 text-white")}>Import Mod</button>
+                      <button
+                        onClick={() => {
+                          const payload = mods.length > 0 ? mods : [{ id: 'example-mod', name: 'Example', version: '0.1.0', actions: [] }];
+                          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'album-tracker-mods.json';
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-green-700 text-white")}
+                      >
+                        Export Mods
+                      </button>
+                    </div>
+                    <div className="text-[11px] opacity-70">Supported actions: createTask, createGlobalTask, addTemplate, addStage, addTag, openLink.</div>
                   </div>
                 </div>
 
