@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { ItemCard, ItemRow, ItemTimelineEntry, DetailPane } from './ItemComponents';
+import { DetailPane } from './ItemComponents';
 
 // Song List View (Spec 2.1)
 export const SongListView = ({ onSelectSong }) => {
@@ -1592,7 +1592,7 @@ export const CombinedTimelineView = () => {
     filtered.sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1);
 
     return filtered;
-  }, [data.songs, data.globalTasks, data.releases, data.events, filterSource, filterSong, filterStatus, dateFrom, dateTo]);
+  }, [data.songs, data.globalTasks, data.releases, data.events, data.standaloneVideos, filterSource, filterSong, filterStatus, dateFrom, dateTo]);
 
   const getSourceColor = (sourceType) => {
     switch (sourceType) {

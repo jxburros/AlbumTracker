@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -57,82 +57,181 @@ export const SONG_CATEGORIES = ['Album', 'Bonus', 'Christmas EP', 'EP', 'Other']
 // Video types - DEPRECATED: Use video type checkboxes on video entities instead
 export const VIDEO_TYPES = ['None', 'Lyric', 'Enhanced', 'Enhanced + Loop', 'Full'];
 
-// Unified Item/Task scaffolding for forward-compatible persistence
+// Unified Item schema - per APP ARCHITECTURE.txt Section 6
+// All Items (Song, Version, Video, Release, Event, Standalone Task Category, Global Task Item) share this base
+// Unified Item schema - per APP ARCHITECTURE.txt Section 6
+// All Items (Song, Version, Video, Release, Event, Standalone Task Category, Global Task Item) share this base
+// Legacy aliases are maintained for backward compatibility with existing UI code
 export const createUnifiedItem = (overrides = {}) => ({
+  // Core properties per Section 6: Item (base)
   id: overrides.id || crypto.randomUUID(),
-  type: overrides.type || 'generic',
-  name: overrides.name || '',
-  primaryDate: overrides.primaryDate || '',
-  tags: overrides.tags || [],
-  tagGroups: overrides.tagGroups || [],
-  people: overrides.people || [],
-  cost: {
-    estimated: overrides.cost?.estimated || 0,
-    quoted: overrides.cost?.quoted || 0,
-    paid: overrides.cost?.paid || 0
-  },
-  progress: {
-    percentComplete: overrides.progress?.percentComplete || 0,
-    status: overrides.progress?.status || 'Not Started',
-    stage: overrides.progress?.stage || ''
-  },
+  type: overrides.type || 'generic', // 'song', 'version', 'video', 'release', 'event', 'category', 'globalTask'
+  name: overrides.name || overrides.title || '', // name/title
+  description: overrides.description || overrides.notes || '',
+  // Primary date - unified field name, with legacy alias fallbacks for input
+  primary_date: overrides.primary_date || overrides.primaryDate || overrides.releaseDate || overrides.date || '',
+  // Metadata arrays per Section 6 - underscore_case as primary
+  era_ids: overrides.era_ids || overrides.eraIds || [],
+  tag_ids: overrides.tag_ids || overrides.tagIds || [],
+  stage_ids: overrides.stage_ids || overrides.stageIds || [],
+  team_member_ids: overrides.team_member_ids || overrides.teamMemberIds || [],
+  // Cost fields - using underscore_case as primary per unified schema
+  estimated_cost: overrides.estimated_cost ?? overrides.estimatedCost ?? 0,
+  quoted_cost: overrides.quoted_cost ?? overrides.quotedCost ?? 0,
+  amount_paid: overrides.amount_paid ?? overrides.paidCost ?? overrides.amountPaid ?? 0,
+  // Legacy camelCase aliases - required for backward compatibility with existing UI components
+  // (Views.jsx, SpecViews.jsx, ItemComponents.jsx all use camelCase field names)
+  primaryDate: overrides.primaryDate || overrides.primary_date || overrides.releaseDate || overrides.date || '',
+  eraIds: overrides.eraIds || overrides.era_ids || [],
+  tagIds: overrides.tagIds || overrides.tag_ids || [],
+  stageIds: overrides.stageIds || overrides.stage_ids || [],
+  teamMemberIds: overrides.teamMemberIds || overrides.team_member_ids || [],
+  estimatedCost: overrides.estimatedCost ?? overrides.estimated_cost ?? 0,
+  quotedCost: overrides.quotedCost ?? overrides.quoted_cost ?? 0,
+  paidCost: overrides.paidCost ?? overrides.amount_paid ?? overrides.amountPaid ?? 0,
+  // Extended metadata
   metadata: overrides.metadata || {},
   ...overrides
 });
 
-export const createUnifiedTaskType = (overrides = {}) => ({
-  id: overrides.id || crypto.randomUUID(),
-  type: overrides.type || 'Custom',
-  name: overrides.name || overrides.title || '',
-  primaryDate: overrides.primaryDate || overrides.date || '',
-  status: overrides.status || 'Not Started',
-  tags: overrides.tags || [],
-  people: overrides.people || overrides.assignedMembers || [],
-  parentItemId: overrides.parentItemId || overrides.parentId || null,
-  parentType: overrides.parentType || null,
-  cost: {
-    estimated: overrides.cost?.estimated ?? overrides.estimatedCost ?? 0,
-    quoted: overrides.cost?.quoted ?? overrides.quotedCost ?? 0,
-    paid: overrides.cost?.paid ?? overrides.paidCost ?? 0
-  },
-  progress: {
-    percentComplete: overrides.progress?.percentComplete || 0,
-    stage: overrides.progress?.stage || '',
-    status: overrides.progress?.status || overrides.status || 'Not Started'
-  },
-  metadata: overrides.metadata || {},
-  ...overrides
-});
+// Normalize any existing Item to the unified format for consistent UI display
+// This allows existing data to be displayed using unified components
+export const normalizeToUnifiedItem = (item = {}, itemType = 'generic') => {
+  // Preserve original ID or generate new one
+  const id = item.id || crypto.randomUUID();
+  
+  // Handle assignedMembers which could be an array of objects or IDs
+  const extractMemberIds = (members) => {
+    if (!members || !Array.isArray(members)) return [];
+    return members.map(m => typeof m === 'object' ? (m.memberId || m.id) : m).filter(Boolean);
+  };
+  
+  return {
+    ...createUnifiedItem({ type: itemType }),
+    id,
+    type: itemType,
+    name: item.name || item.title || item.taskName || '',
+    description: item.description || item.notes || '',
+    primary_date: item.primary_date || item.primaryDate || item.releaseDate || item.date || '',
+    era_ids: item.era_ids || item.eraIds || [],
+    tag_ids: item.tag_ids || item.tagIds || [],
+    stage_ids: item.stage_ids || item.stageIds || [],
+    team_member_ids: item.team_member_ids || item.teamMemberIds || extractMemberIds(item.assignedMembers),
+    estimatedCost: item.estimatedCost || item.estimated_cost || 0,
+    quotedCost: item.quotedCost || item.quoted_cost || 0,
+    paidCost: item.paidCost || item.amount_paid || item.amountPaid || 0,
+    // Legacy aliases
+    primaryDate: item.primaryDate || item.primary_date || item.releaseDate || item.date || '',
+    eraIds: item.eraIds || item.era_ids || [],
+    tagIds: item.tagIds || item.tag_ids || [],
+    stageIds: item.stageIds || item.stage_ids || [],
+    teamMemberIds: item.teamMemberIds || item.team_member_ids || extractMemberIds(item.assignedMembers),
+    // Preserve original item data
+    _original: item
+  };
+};
 
-// Unified Task schema factory - Phase 0 standardization
+// Normalize any existing Task to the unified format for consistent UI display
+export const normalizeToUnifiedTask = (task = {}, parentType = null) => {
+  // Preserve original ID or generate new one
+  const id = task.id || crypto.randomUUID();
+  
+  // Handle assignedMembers which could be an array of objects or IDs
+  const extractMemberIds = (members) => {
+    if (!members || !Array.isArray(members)) return [];
+    return members.map(m => typeof m === 'object' ? (m.memberId || m.id) : m).filter(Boolean);
+  };
+  
+  // Preserve assignedMembers in original format for UI components
+  const assignedMembers = task.assignedMembers || [];
+  
+  return {
+    ...createUnifiedTask({ parentType }),
+    id,
+    parent_item_id: task.parent_item_id || task.parentItemId || task.parentId || null,
+    name: task.name || task.title || task.type || task.taskName || '',
+    status: task.status || 'Not Started',
+    due_date: task.due_date || task.dueDate || task.date || '',
+    team_member_ids: task.team_member_ids || task.teamMemberIds || extractMemberIds(assignedMembers),
+    estimated_cost: task.estimated_cost ?? task.estimatedCost ?? 0,
+    quoted_cost: task.quoted_cost ?? task.quotedCost ?? 0,
+    amount_paid: task.amount_paid ?? task.paidCost ?? task.amountPaid ?? 0,
+    partially_paid: task.partially_paid ?? task.partiallyPaid ?? false,
+    era_ids: task.era_ids || task.eraIds || [],
+    tag_ids: task.tag_ids || task.tagIds || [],
+    stage_ids: task.stage_ids || task.stageIds || [],
+    notes: task.notes || task.description || '',
+    type: task.type || 'Custom',
+    category: task.category || 'Other',
+    parentType: parentType || task.parentType || null,
+    isOverridden: task.isOverridden || false,
+    isArchived: task.isArchived || false,
+    // Legacy aliases - parent_item_id is source of truth for parent reference
+    parentId: task.parent_item_id || task.parentItemId || task.parentId || null,
+    parentItemId: task.parent_item_id || task.parentItemId || task.parentId || null,
+    title: task.title || task.name || task.type || task.taskName || '',
+    description: task.description || task.notes || '',
+    date: task.due_date || task.dueDate || task.date || '',
+    dueDate: task.due_date || task.dueDate || task.date || '',
+    estimatedCost: task.estimatedCost ?? task.estimated_cost ?? 0,
+    quotedCost: task.quotedCost ?? task.quoted_cost ?? 0,
+    paidCost: task.paidCost ?? task.amount_paid ?? task.amountPaid ?? 0,
+    // Preserve original assignedMembers format for UI components
+    assignedMembers: assignedMembers,
+    eraIds: task.eraIds || task.era_ids || [],
+    tagIds: task.tagIds || task.tag_ids || [],
+    stageIds: task.stageIds || task.stage_ids || [],
+    // Preserve original task data
+    _original: task
+  };
+};
+
+// Unified Task schema factory - per APP ARCHITECTURE.txt Section 6
+// All Tasks share this common structure regardless of parent type
 export const createUnifiedTask = (overrides = {}) => ({
-  id: crypto.randomUUID(),
+  // Core properties per Section 6: Task
+  id: overrides.id || crypto.randomUUID(),
+  parent_item_id: overrides.parent_item_id || overrides.parentItemId || overrides.parentId || null,
+  name: overrides.name || overrides.title || overrides.type || '',
+  status: overrides.status || 'Not Started',
+  due_date: overrides.due_date || overrides.dueDate || overrides.date || '',
+  team_member_ids: overrides.team_member_ids || overrides.teamMemberIds || overrides.assignedMembers || [],
+  // Cost fields per Section 6 and 2.2
+  estimated_cost: overrides.estimated_cost ?? overrides.estimatedCost ?? 0,
+  quoted_cost: overrides.quoted_cost ?? overrides.quotedCost ?? 0,
+  amount_paid: overrides.amount_paid ?? overrides.paidCost ?? overrides.amountPaid ?? 0,
+  partially_paid: overrides.partially_paid ?? overrides.partiallyPaid ?? false,
+  // Metadata per Section 6
+  era_ids: overrides.era_ids || overrides.eraIds || [],
+  tag_ids: overrides.tag_ids || overrides.tagIds || [],
+  stage_ids: overrides.stage_ids || overrides.stageIds || [],
+  notes: overrides.notes || overrides.description || '',
+  // Additional properties for UI and categorization
   type: overrides.type || 'Custom',
   category: overrides.category || 'Other',
-  title: overrides.title || '',
-  description: overrides.description || '',
-  date: overrides.date || '',
-  dueDate: overrides.dueDate || '',
-  status: overrides.status || 'Not Started',
-  // Cost layers with precedence: paidCost > quotedCost > estimatedCost
-  estimatedCost: overrides.estimatedCost || 0,
-  quotedCost: overrides.quotedCost || 0,
-  paidCost: overrides.paidCost || 0,
-  notes: overrides.notes || '',
-  assignedMembers: overrides.assignedMembers || [],
+  parentType: overrides.parentType || null,
   isOverridden: overrides.isOverridden || false,
   isArchived: overrides.isArchived || false,
-  eraIds: overrides.eraIds || [],
-  stageIds: overrides.stageIds || [],
-  tagIds: overrides.tagIds || [],
-  // Link to parent entity (song, version, video, release, event)
-  parentType: overrides.parentType || null,
-  parentId: overrides.parentId || null,
+  // Legacy aliases for backwards compatibility with existing UI
+  // parent_item_id is the source of truth for parent reference
+  parentId: overrides.parent_item_id || overrides.parentItemId || overrides.parentId || null,
+  parentItemId: overrides.parent_item_id || overrides.parentItemId || overrides.parentId || null,
+  title: overrides.title || overrides.name || overrides.type || '',
+  description: overrides.description || overrides.notes || '',
+  date: overrides.due_date || overrides.dueDate || overrides.date || '',
+  dueDate: overrides.due_date || overrides.dueDate || overrides.date || '',
+  estimatedCost: overrides.estimatedCost ?? overrides.estimated_cost ?? 0,
+  quotedCost: overrides.quotedCost ?? overrides.quoted_cost ?? 0,
+  paidCost: overrides.paidCost ?? overrides.amount_paid ?? overrides.amountPaid ?? 0,
+  assignedMembers: overrides.assignedMembers || overrides.team_member_ids || overrides.teamMemberIds || [],
+  eraIds: overrides.eraIds || overrides.era_ids || [],
+  tagIds: overrides.tagIds || overrides.tag_ids || [],
+  stageIds: overrides.stageIds || overrides.stage_ids || [],
   ...overrides
 });
 
-// Resolve a task's due date while supporting legacy `date` fields
-export const getTaskDueDate = (task = {}) => task.dueDate || task.date || '';
+// Resolve a task's due date - supports both new unified schema (due_date) and legacy fields
+export const getTaskDueDate = (task = {}) => task.due_date || task.dueDate || task.date || '';
 
 // Resolve the primary date for any item based on overrides, direct dates, and attached releases
 export const getPrimaryDate = (item = {}, releases = [], extraReleaseIds = []) => {
@@ -164,12 +263,14 @@ export const getPrimaryDate = (item = {}, releases = [], extraReleaseIds = []) =
 };
 
 // Compute effective cost with precedence: paid > quoted > estimated
+// Supports both new unified schema (amount_paid, quoted_cost, estimated_cost) and legacy fields
 export const resolveCostPrecedence = (entity = {}) => {
+  // Support both new schema and legacy field names
   const actual = entity.actualCost || 0;
-  const paid = entity.paidCost || 0;
+  const paid = entity.amount_paid || entity.paidCost || entity.amountPaid || 0;
   const partial = entity.partially_paid || entity.partiallyPaidAmount || entity.partialPaidCost || 0;
-  const quoted = entity.quotedCost || 0;
-  const estimated = entity.estimatedCost || 0;
+  const quoted = entity.quoted_cost || entity.quotedCost || 0;
+  const estimated = entity.estimated_cost || entity.estimatedCost || 0;
 
   if (actual > 0) return { value: actual, source: 'actual' };
   if (paid > 0) return { value: paid, source: 'paid' };
@@ -570,8 +671,6 @@ export const StoreProvider = ({ children }) => {
   });
   const [user, setUser] = useState(null);
   const [db, setDb] = useState(null);
-  const [hasMigratedUnified, setHasMigratedUnified] = useState(false);
-  const unifiedSyncedRef = useRef(false);
   const appId = "album-tracker-v2";
 
   useEffect(() => {
