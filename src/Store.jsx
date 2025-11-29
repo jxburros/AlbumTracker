@@ -558,7 +558,7 @@ export const StoreProvider = ({ children }) => {
     stages: [],
     eras: [],
     tags: [],
-    settings: {},
+    settings: { mods: [] },
     // New entities from spec
     songs: [],
     globalTasks: [],
@@ -816,6 +816,116 @@ export const StoreProvider = ({ children }) => {
      },
      connectCloud: (config) => { localStorage.setItem('at_firebase_config', JSON.stringify(config)); window.location.reload(); },
      disconnect: () => { localStorage.removeItem('at_firebase_config'); window.location.reload(); },
+
+     // Mod handling
+     registerMod: async (modConfig) => {
+       const existingMods = data.settings?.mods || [];
+       const normalizedActions = (modConfig.actions || []).map(action => ({
+         id: action.id || crypto.randomUUID(),
+         label: action.label || action.name || 'Action',
+         type: action.type || 'createTask',
+         target: action.target || 'tasks',
+         template: action.template || action.payload || {},
+         url: action.url || '',
+         description: action.description || action.help || ''
+       }));
+
+       const normalizedMod = {
+         id: modConfig.id || crypto.randomUUID(),
+         name: modConfig.name || 'Custom Mod',
+         version: modConfig.version || '0.1.0',
+         description: modConfig.description || '',
+         author: modConfig.author || 'Unknown',
+         enabled: modConfig.enabled !== false,
+         actions: normalizedActions,
+         links: modConfig.links || []
+       };
+
+       const updatedMods = [...existingMods.filter(m => m.id !== normalizedMod.id), normalizedMod];
+       await actions.saveSettings({ mods: updatedMods });
+       return normalizedMod;
+     },
+
+     toggleMod: async (modId, enabled) => {
+       const mods = data.settings?.mods || [];
+       const updated = mods.map(mod => mod.id === modId ? { ...mod, enabled } : mod);
+       await actions.saveSettings({ mods: updated });
+       return updated.find(m => m.id === modId);
+     },
+
+     removeMod: async (modId) => {
+       const mods = data.settings?.mods || [];
+       const updated = mods.filter(mod => mod.id !== modId);
+       await actions.saveSettings({ mods: updated });
+       return updated;
+     },
+
+     runModAction: async (modId, actionId) => {
+       const mods = data.settings?.mods || [];
+       const mod = mods.find(m => m.id === modId);
+       if (!mod || mod.enabled === false) return null;
+       const action = (mod.actions || []).find(a => a.id === actionId);
+       if (!action) return null;
+
+       const baseTitle = action.title || action.label || `${mod.name} Action`;
+
+       switch (action.type) {
+         case 'createTask': {
+           const newTask = createUnifiedTask({
+             title: baseTitle,
+             description: action.template?.description || '',
+             status: action.template?.status || 'Not Started',
+             dueDate: action.template?.dueDate || action.template?.date || '',
+             estimatedCost: action.template?.estimatedCost || 0,
+             quotedCost: action.template?.quotedCost || 0,
+             paidCost: action.template?.paidCost || 0,
+             notes: action.template?.notes || '',
+             metadata: action.template?.metadata || {},
+             parentType: action.template?.parentType || null,
+             parentId: action.template?.parentId || null
+           });
+           await actions.add('tasks', newTask);
+           return newTask;
+         }
+         case 'createGlobalTask': {
+           const globalTask = createUnifiedTaskType({
+             name: baseTitle,
+             status: action.template?.status || 'Not Started',
+             primaryDate: action.template?.primaryDate || action.template?.date || '',
+             tags: action.template?.tags || [],
+             people: action.template?.people || [],
+             cost: action.template?.cost || {},
+             progress: action.template?.progress || {}
+           });
+           await actions.add('globalTasks', globalTask);
+           return globalTask;
+         }
+         case 'addTemplate': {
+           const templates = data.settings?.templates || [];
+           const newTemplate = {
+             id: crypto.randomUUID(),
+             name: action.template?.name || baseTitle,
+             era: action.template?.era || data.settings?.defaultEra || 'Modern',
+             body: action.template?.body || ''
+           };
+           await actions.saveSettings({ templates: [...templates, newTemplate] });
+           return newTemplate;
+         }
+         case 'openLink': {
+           if (action.url) window.open(action.url, '_blank', 'noopener,noreferrer');
+           return action.url || null;
+         }
+         case 'addStage': {
+           return actions.addStage({ name: action.name || baseTitle });
+         }
+         case 'addTag': {
+           return actions.addTag({ name: action.name || baseTitle, color: action.color || '#000000' });
+         }
+         default:
+           console.warn('Unknown mod action type', action.type);
+           return null;
+       }
+     },
 
      // Phase 5: Enhanced event actions with custom tasks
      addEventCustomTask: async (eventId, task) => {
@@ -2283,8 +2393,10 @@ export const StoreProvider = ({ children }) => {
      }
   };
 
+  const mods = data.settings?.mods || [];
+
   return (
-    <StoreContext.Provider value={{ data, actions, mode, stats }}>
+    <StoreContext.Provider value={{ data, actions, mode, stats, mods }}>
       {children}
     </StoreContext.Provider>
   );
