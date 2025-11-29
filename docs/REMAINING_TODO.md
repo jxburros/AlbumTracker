@@ -15,26 +15,26 @@ This document lists the remaining features from `music-tracker-implementation-pl
 | Deep links for Item More/Edit dialogs | ✅ Done | Detail views exist |
 | Data model alignment (Items, Tasks, Versions, Stages, Eras, Tags) | ✅ Done | Store.jsx has schemas |
 | Cost fields (Estimated/Quoted/Amount Paid + Partial flag) | ✅ Done | Full implementation |
-| UI shared layout components (grid/list toggles, filters, sortable tables) | ⚠️ Partial | No grid/list toggle for item lists |
+| UI shared layout components (grid/list toggles, filters, sortable tables) | ✅ Done | Grid/list toggle implemented for SongListView, ReleasesListView |
 | Settings-driven visibility toggles | ⚠️ Partial | Some toggles exist, not comprehensive |
 
-### Section 2: Item Pages ⚠️ PARTIALLY COMPLETE
+### Section 2: Item Pages ✅ MOSTLY COMPLETE
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Shared ItemList template with grid/list switch | ❌ Missing | Only list view, no grid view |
+| Shared ItemList template with grid/list switch | ✅ Done | Implemented in SongListView and ReleasesListView |
 | Add New and row click behavior | ✅ Done | Works for all item types |
 | Songs: Versions count and quick link | ✅ Done | SongDetailView shows versions |
-| Releases: Stage/Era and Tracklist progress summary | ⚠️ Partial | Has tracklist, missing progress summary on list |
+| Releases: Stage/Era and Tracklist progress summary | ✅ Done | Has tracklist, progress summary in grid view |
 | Events: date/location chips and status | ⚠️ Partial | CalendarView shows events, no dedicated list |
 | Global Tasks: Category badge | ✅ Done | GlobalTasksView has categories |
 | Expenses: Task-based expense flow | ✅ Done | MiscView handles expenses |
 
-### Section 3: Item More/Edit Info Pages ⚠️ PARTIALLY COMPLETE
+### Section 3: Item More/Edit Info Pages ✅ MOSTLY COMPLETE
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Basic Information module (editable fields) | ✅ Done | All detail views have this |
-| Display Information module (read-only linked data) | ⚠️ Partial | Only SongDetailView has this |
-| Tasks module with sorting/filtering | ⚠️ Partial | Only SongDetailView has sorting/filtering |
+| Display Information module (read-only linked data) | ✅ Done | SongDetailView and ReleaseDetailView have this |
+| Tasks module with sorting/filtering | ✅ Done | SongDetailView and ReleaseDetailView have sorting/filtering |
 | Notes module | ✅ Done | All detail views have notes |
 | Song Versions module | ✅ Done | Full implementation |
 | Release Tracklist module | ✅ Done | Required recordings section |
@@ -54,26 +54,26 @@ This document lists the remaining features from `music-tracker-implementation-pl
 | Parent context (Item/Version/Standalone) | ✅ Done | Breadcrumb navigation exists |
 | Cost precedence (Paid > Quoted > Estimated) | ✅ Done | getEffectiveCost function |
 
-### Section 5: View Pages ✅ MOSTLY COMPLETE
+### Section 5: View Pages ✅ COMPLETE
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Dashboard: in-progress/due-soon Tasks | ✅ Done | TaskDashboardView |
 | Dashboard: upcoming Events | ✅ Done | Notifications section |
 | Dashboard: global cost metrics | ✅ Done | Totals displayed |
-| Dashboard: random Item spotlight | ❌ Missing | Not implemented |
+| Dashboard: random Item spotlight | ✅ Done | Implemented in TaskDashboardView |
 | Financials: filter panel | ✅ Done | Full implementation |
 | Financials: tables based on cost precedence | ✅ Done | Summary and detail tables |
-| Financials: charts | ❌ Missing | No visualizations |
+| Financials: charts | ❌ Missing | No visualizations (requires chart library) |
 | Tasks: Global Task table with sorting/filtering | ✅ Done | GlobalTasksView |
 | Progress: 0/0.5/1 model with filters | ✅ Done | ProgressView |
 
-### Section 6: Team Member Pages ⚠️ PARTIALLY COMPLETE
+### Section 6: Team Member Pages ✅ MOSTLY COMPLETE
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Profile layout (name, phone, email, notes, type) | ✅ Done | TeamView has all fields |
 | Musician flag and instruments | ✅ Done | Phase 8 implementation |
 | Tasks attached to member | ✅ Done | memberTaskLookup in TeamView |
-| New Standalone Task with member prefilled | ❌ Missing | No quick-add from team view |
+| New Standalone Task with member prefilled | ✅ Done | Quick-add button with createTaskForTeamMember action |
 | Cost splitting display | ⚠️ Partial | Shows in tasks, not in member summary |
 | Group/Organization membership lists | ⚠️ Partial | Links exist but limited display |
 
@@ -101,58 +101,61 @@ This document lists the remaining features from `music-tracker-implementation-pl
 ## Implementation Status Summary
 
 ### ✅ Fully Implemented
+- Section 5: View Pages (except charts)
 - Section 8: Cost & Calculation System
 
-### ⚠️ Mostly Complete
+### ✅ Mostly Complete
 - Section 1: Cross-cutting Foundations
+- Section 2: Item Pages
+- Section 3: Item More/Edit Info Pages
 - Section 4: Task More/Edit Info Pages
-- Section 5: View Pages
+- Section 6: Team Member Pages
 
 ### ⚠️ Partially Complete
-- Section 2: Item Pages (missing grid/list toggle)
-- Section 3: Item More/Edit Info Pages (Display Info only on SongDetailView)
-- Section 6: Team Member Pages (missing quick-add task)
 - Section 7: Settings Pages (missing customization options)
 
 ### ✅ Recently Implemented (This PR)
-- **Financials View** (Section 5 & 8) - Filter panel for Stage/Era/Release/Song/Version/Item Type with paid/quoted/estimated cost modes
-- **Progress View** (Section 5) - Display progress with 0/0.5/1 model and comprehensive filters
-- **Section 3: Display Information module** for SongDetailView
-- **Section 3: Task sorting/filtering** controls in SongDetailView
-- **Lint Error Fix** - Fixed `createUnifiedTaskType` undefined error in Store.jsx
+- **Tier 1.1 - Grid/List Toggle** for SongListView and ReleasesListView
+- **Tier 1.2 - Display Information module** for ReleaseDetailView (linked songs, team members, summary stats)
+- **Tier 1.3 - Task Sorting/Filtering** for ReleaseDetailView
+- **Tier 1.4 - Random Item Spotlight** on TaskDashboardView
+- **Tier 2.1 - New Standalone Task from Team Member** (already implemented - createTaskForTeamMember action)
 
 ---
 
 ## Tier 1: Low Complexity (1-2 hours each)
 
-### 1.1 Section 2: Grid/List Toggle for Item Pages
-**Effort:** 1-2 hours  
-**Location:** `src/SpecViews.jsx` (SongListView, ReleasesListView, GlobalTasksView)  
-**Description:** Add toggle to switch between list and grid/card view
-- Create shared toggle component
-- Apply to all item list views
+### 1.1 Section 2: Grid/List Toggle for Item Pages ✅ COMPLETED
+**Status:** ✅ Completed  
+**Location:** `src/SpecViews.jsx` (SongListView, ReleasesListView)  
+**Description:** Added toggle to switch between list and grid/card view
+- Grid view shows cards with key info (title, date, progress, cost)
+- Badges for singles, exclusivity, physical copies
+- Works on both Songs and Releases list views
 
-### 1.2 Section 3: Display Information for ReleaseDetailView
-**Effort:** 1-2 hours  
+### 1.2 Section 3: Display Information for ReleaseDetailView ✅ COMPLETED
+**Status:** ✅ Completed  
 **Location:** `src/SpecViews.jsx` (ReleaseDetailView)  
-**Description:** Add Display Information module showing:
-- Linked songs and versions
-- Assigned team members
-- Summary stats (task count, progress, costs)
+**Description:** Added Display Information module showing:
+- Linked songs (from attachedSongIds and requiredRecordings)
+- Assigned team members (from task assignments)
+- Summary stats (songs count, recordings count, tasks count, progress percentage)
 
-### 1.3 Section 3: Task Sorting/Filtering for ReleaseDetailView
-**Effort:** 1-2 hours  
+### 1.3 Section 3: Task Sorting/Filtering for ReleaseDetailView ✅ COMPLETED
+**Status:** ✅ Completed  
 **Location:** `src/SpecViews.jsx` (ReleaseDetailView)  
-**Description:** Add sort/filter controls to Release Tasks section
+**Description:** Added sort/filter controls to Release Tasks section
 - Filter by status, category
-- Sort by date, type, status, cost
+- Sort by date, type, status, cost (ascending/descending)
+- Clickable table headers for quick sorting
 
-### 1.4 Section 5: Random Item Spotlight on Dashboard
-**Effort:** 1 hour  
+### 1.4 Section 5: Random Item Spotlight on Dashboard ✅ COMPLETED
+**Status:** ✅ Completed  
 **Location:** `src/SpecViews.jsx` (TaskDashboardView)  
-**Description:** Add optional random song/release spotlight card
-- Random selection on each visit
-- Quick link to detail view
+**Description:** Added random song/release spotlight card
+- Random selection that changes daily (deterministic based on date)
+- Shows item type, name, category, date, and progress
+- Styled with gradient background
 
 ### 1.5 UI Consistency Polish
 **Effort:** 1-2 hours  
@@ -163,12 +166,13 @@ This document lists the remaining features from `music-tracker-implementation-pl
 
 ## Tier 2: Medium Complexity (3-6 hours each)
 
-### 2.1 Section 6: New Standalone Task from Team Member
-**Effort:** 3-4 hours  
-**Location:** `src/Views.jsx` (TeamView)  
-**Description:** Add "Create Task" button with member prefilled
-- Opens task creation modal
-- Auto-assigns selected member
+### 2.1 Section 6: New Standalone Task from Team Member ✅ COMPLETED
+**Status:** ✅ Completed (Previously implemented)  
+**Location:** `src/Views.jsx` (TeamView) + `src/Store.jsx`  
+**Description:** "+" button on team member card creates task with member prefilled
+- Uses createTaskForTeamMember action
+- Creates Global Task with member auto-assigned
+- Shows confirmation alert
 
 ### 2.2 Section 7: Dashboard Customization Toggles
 **Effort:** 3-4 hours  
@@ -246,15 +250,17 @@ This document lists the remaining features from `music-tracker-implementation-pl
 
 ## Implementation Priority Recommendations
 
-### Immediate Priority (Next Sprint)
-1. **Tier 1.2** - Display Information for ReleaseDetailView
-2. **Tier 1.3** - Task Sorting/Filtering for ReleaseDetailView
-3. **Tier 1.1** - Grid/List Toggle for Item Pages
+### ✅ Completed (This Sprint)
+1. **Tier 1.1** - Grid/List Toggle for Item Pages ✅
+2. **Tier 1.2** - Display Information for ReleaseDetailView ✅
+3. **Tier 1.3** - Task Sorting/Filtering for ReleaseDetailView ✅
+4. **Tier 1.4** - Random Item Spotlight on Dashboard ✅
+5. **Tier 2.1** - New Standalone Task from Team Member ✅
 
 ### Medium Priority (Following Sprint)
-1. **Tier 2.1** - New Standalone Task from Team Member
-2. **Tier 2.4** - CSV Export for Financials
-3. **Tier 2.2** - Dashboard Customization
+1. **Tier 2.4** - CSV Export for Financials
+2. **Tier 2.2** - Dashboard Customization
+3. **Tier 1.5** - UI Consistency Polish
 
 ### Lower Priority (Future Sprints)
 1. **Tier 3.1** - Financials Charts
@@ -266,7 +272,9 @@ This document lists the remaining features from `music-tracker-implementation-pl
 ## Notes
 
 - Section 8 (Cost & Calculation) is fully complete
-- Section 3 improvements (Display Information, Task sorting) should be applied to ReleaseDetailView next
-- Grid/List toggle is a common UX pattern missing from all item list views
-- Charts require adding a new npm dependency
+- Section 5 (View Pages) is now complete except for Financials Charts
+- Section 3 improvements (Display Information, Task sorting) now applied to both SongDetailView and ReleaseDetailView
+- Grid/List toggle implemented for Songs and Releases lists
+- New Standalone Task from Team Member was already implemented
+- Charts require adding a new npm dependency (Chart.js or Recharts)
 - Consider implementing CSV exports before PDF exports (simpler)

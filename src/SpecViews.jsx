@@ -4,13 +4,14 @@ import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
 
-// Song List View (Spec 2.1)
+// Song List View (Spec 2.1) - Section 2: Enhanced with Grid/List Toggle
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
   const [sortBy, setSortBy] = useState('releaseDate');
   const [sortDir, setSortDir] = useState('asc');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterSingles, setFilterSingles] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid' - Tier 1.1: Grid/List Toggle
 
   const toggleSort = (field) => {
     if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -55,6 +56,23 @@ export const SongListView = ({ onSelectSong }) => {
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Songs</h2>
         <div className="flex flex-wrap gap-2">
+          {/* Tier 1.1: Grid/List View Toggle */}
+          <div className="flex border-4 border-black">
+            <button 
+              onClick={() => setViewMode('list')} 
+              className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")}
+              title="List View"
+            >
+              <Icon name="List" size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('grid')} 
+              className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")}
+              title="Grid View"
+            >
+              <Icon name="Grid" size={16} />
+            </button>
+          </div>
           <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Categories</option>
             {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -66,40 +84,84 @@ export const SongListView = ({ onSelectSong }) => {
           <button onClick={handleAddSong} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Song</button>
         </div>
       </div>
-      <div className={cn("overflow-x-auto", THEME.punk.card)}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-black text-white">
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
-              <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
-              <th className="p-3 text-center">Single?</th>
-              <th className="p-3 text-left">Exclusive</th>
-              <th className="p-3 text-center">Stems?</th>
-              <th className="p-3 text-right">Progress</th>
-              <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
-            </tr>
-          </thead>
-          <tbody>
-            {songs.length === 0 ? (
-              <tr><td colSpan="7" className="p-10 text-center opacity-50">No songs yet. Click Add Song to create one.</td></tr>
-            ) : (
-              songs.map(song => (
-                <tr key={song.id} onClick={() => onSelectSong && onSelectSong(song)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                  <td className="p-3 font-bold">{song.title}</td>
-                  <td className="p-3">{song.category}</td>
-                  <td className="p-3">{song.releaseDate || '-'}</td>
-                  <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
-                  <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
-                  <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
-                  <td className="p-3 text-right">{songProgress(song)}%</td>
-                  <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      
+      {/* Tier 1.1: Grid View */}
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {songs.length === 0 ? (
+            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No songs yet. Click Add Song to create one.</div>
+          ) : (
+            songs.map(song => (
+              <div 
+                key={song.id} 
+                onClick={() => onSelectSong && onSelectSong(song)} 
+                className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
+              >
+                <div className="font-bold text-lg mb-2">{song.title}</div>
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Category:</span>
+                    <span className="font-bold">{song.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Release:</span>
+                    <span className="font-bold">{song.releaseDate || 'TBD'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Progress:</span>
+                    <span className="font-bold">{songProgress(song)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Est. Cost:</span>
+                    <span className="font-bold">{formatMoney(song.estimatedCost || 0)}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {song.isSingle && <span className="px-2 py-1 bg-pink-200 text-pink-800 text-[10px] font-bold border border-pink-500">SINGLE</span>}
+                  {song.exclusiveType && song.exclusiveType !== 'None' && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">{song.exclusiveType}</span>}
+                  {song.stemsNeeded && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">STEMS</span>}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        /* List View (Original) */
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
+                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
+                <th className="p-3 text-center">Single?</th>
+                <th className="p-3 text-left">Exclusive</th>
+                <th className="p-3 text-center">Stems?</th>
+                <th className="p-3 text-right">Progress</th>
+                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
+              </tr>
+            </thead>
+            <tbody>
+              {songs.length === 0 ? (
+                <tr><td colSpan="8" className="p-10 text-center opacity-50">No songs yet. Click Add Song to create one.</td></tr>
+              ) : (
+                songs.map(song => (
+                  <tr key={song.id} onClick={() => onSelectSong && onSelectSong(song)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
+                    <td className="p-3 font-bold">{song.title}</td>
+                    <td className="p-3">{song.category}</td>
+                    <td className="p-3">{song.releaseDate || '-'}</td>
+                    <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
+                    <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
+                    <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
+                    <td className="p-3 text-right">{songProgress(song)}%</td>
+                    <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
@@ -1021,9 +1083,10 @@ export const GlobalTasksView = () => {
   );
 };
 
-// Releases List View (Spec 2.4)
+// Releases List View (Spec 2.4) - Section 2: Enhanced with Grid/List Toggle
 export const ReleasesListView = ({ onSelectRelease }) => {
   const { data, actions } = useStore();
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid' - Tier 1.1: Grid/List Toggle
 
   const handleAddRelease = async () => {
     const newRelease = await actions.addRelease({ name: 'New Release', type: 'Album', releaseDate: '', estimatedCost: 0, notes: '' });
@@ -1031,44 +1094,118 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   };
 
   const releases = data.releases || [];
+  
+  // Calculate progress for each release
+  const releaseProgress = (release) => {
+    const tasks = [...(release.tasks || []), ...(release.customTasks || [])];
+    return calculateTaskProgress(tasks).progress;
+  };
 
   return (
     <div className="p-6 pb-24">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Releases</h2>
-        <button onClick={handleAddRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Release</button>
+        <div className="flex gap-2">
+          {/* Tier 1.1: Grid/List View Toggle */}
+          <div className="flex border-4 border-black">
+            <button 
+              onClick={() => setViewMode('list')} 
+              className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")}
+              title="List View"
+            >
+              <Icon name="List" size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('grid')} 
+              className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")}
+              title="Grid View"
+            >
+              <Icon name="Grid" size={16} />
+            </button>
+          </div>
+          <button onClick={handleAddRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Release</button>
+        </div>
       </div>
-      <div className={cn("overflow-x-auto", THEME.punk.card)}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-black text-white">
-              <th className="p-3 text-left">Name</th>
-              <th className="p-3 text-left">Type</th>
-              <th className="p-3 text-left">Release Date</th>
-              <th className="p-3 text-center">Physical</th>
-              <th className="p-3 text-right">Estimated Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {releases.length === 0 ? (
-              <tr><td colSpan="4" className="p-10 text-center opacity-50">No releases yet. Click Add Release to create one.</td></tr>
-            ) : releases.map(release => (
-              <tr key={release.id} onClick={() => onSelectRelease && onSelectRelease(release)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                <td className="p-3 font-bold">{release.name}</td>
-                <td className="p-3">{release.type}</td>
-                <td className="p-3">{release.releaseDate || '-'}</td>
-                <td className="p-3 text-center">{release.hasPhysicalCopies ? 'Yes' : 'No'}</td>
-                <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
+      
+      {/* Tier 1.1: Grid View */}
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {releases.length === 0 ? (
+            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No releases yet. Click Add Release to create one.</div>
+          ) : (
+            releases.map(release => (
+              <div 
+                key={release.id} 
+                onClick={() => onSelectRelease && onSelectRelease(release)} 
+                className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
+              >
+                <div className="font-bold text-lg mb-2">{release.name}</div>
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Type:</span>
+                    <span className="font-bold">{release.type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Release Date:</span>
+                    <span className="font-bold">{release.releaseDate || 'TBD'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Progress:</span>
+                    <span className="font-bold">{releaseProgress(release)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Est. Cost:</span>
+                    <span className="font-bold">{formatMoney(release.estimatedCost || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-60">Songs:</span>
+                    <span className="font-bold">{(release.attachedSongIds || []).length}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {release.hasPhysicalCopies && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">PHYSICAL</span>}
+                  {release.exclusiveType && release.exclusiveType !== 'None' && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">{release.exclusiveType}</span>}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        /* List View (Original) */
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                <th className="p-3 text-left">Name</th>
+                <th className="p-3 text-left">Type</th>
+                <th className="p-3 text-left">Release Date</th>
+                <th className="p-3 text-center">Physical</th>
+                <th className="p-3 text-right">Progress</th>
+                <th className="p-3 text-right">Estimated Cost</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {releases.length === 0 ? (
+                <tr><td colSpan="6" className="p-10 text-center opacity-50">No releases yet. Click Add Release to create one.</td></tr>
+              ) : releases.map(release => (
+                <tr key={release.id} onClick={() => onSelectRelease && onSelectRelease(release)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
+                  <td className="p-3 font-bold">{release.name}</td>
+                  <td className="p-3">{release.type}</td>
+                  <td className="p-3">{release.releaseDate || '-'}</td>
+                  <td className="p-3 text-center">{release.hasPhysicalCopies ? 'Yes' : 'No'}</td>
+                  <td className="p-3 text-right">{releaseProgress(release)}%</td>
+                  <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
 
-// Release Detail View (Spec 2.5)
+// Release Detail View (Spec 2.5) - Section 3: Enhanced with Display Information and Task Sorting/Filtering
 export const ReleaseDetailView = ({ release, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...release });
@@ -1078,8 +1215,13 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   // Phase 3: Custom tasks state
   const [showAddCustomTask, setShowAddCustomTask] = useState(false);
   const [newCustomTask, setNewCustomTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+  // Tier 1.3: Task sorting/filtering state
+  const [taskSortBy, setTaskSortBy] = useState('date');
+  const [taskSortDir, setTaskSortDir] = useState('asc');
+  const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+  const [taskFilterCategory, setTaskFilterCategory] = useState('all');
 
-  const teamMembers = data.teamMembers || [];
+  const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
   const taskBudget = (task = {}) => {
     if (task.paidCost !== undefined) return task.paidCost || 0;
@@ -1133,6 +1275,56 @@ export const ReleaseDetailView = ({ release, onBack }) => {
     const song = data.songs.find(s => s.id === songId);
     return song ? song.title : '(Unknown Song)';
   };
+  
+  // Tier 1.2: Get linked songs for Display Information
+  const linkedSongs = useMemo(() => {
+    const songIds = new Set(currentRelease.attachedSongIds || []);
+    // Also include songs from required recordings
+    (currentRelease.requiredRecordings || []).forEach(req => {
+      if (req.songId) songIds.add(req.songId);
+    });
+    return (data.songs || []).filter(s => songIds.has(s.id));
+  }, [currentRelease, data.songs]);
+  
+  // Get assigned team members for Display Information
+  const assignedTeamMembers = useMemo(() => {
+    const memberIds = new Set();
+    const allTasks = [...(currentRelease.tasks || []), ...(currentRelease.customTasks || [])];
+    allTasks.forEach(task => {
+      (task.assignedMembers || []).forEach(m => memberIds.add(m.memberId));
+    });
+    return teamMembers.filter(m => memberIds.has(m.id));
+  }, [currentRelease, teamMembers]);
+  
+  // Calculate progress and summary stats
+  const allReleaseTasks = useMemo(() => [...(currentRelease.tasks || []), ...(currentRelease.customTasks || [])], [currentRelease]);
+  const { progress: releaseProgressValue } = calculateTaskProgress(allReleaseTasks);
+  
+  // Get unique task categories for filter dropdown
+  const taskCategories = useMemo(() => {
+    const categories = new Set();
+    (currentRelease.tasks || []).forEach(t => t.category && categories.add(t.category));
+    return Array.from(categories);
+  }, [currentRelease.tasks]);
+  
+  // Tier 1.3: Filtered and sorted release tasks
+  const filteredReleaseTasks = useMemo(() => {
+    let tasks = [...(currentRelease.tasks || [])];
+    if (taskFilterStatus !== 'all') {
+      tasks = tasks.filter(t => t.status === taskFilterStatus);
+    }
+    if (taskFilterCategory !== 'all') {
+      tasks = tasks.filter(t => t.category === taskFilterCategory);
+    }
+    tasks.sort((a, b) => {
+      const valA = a[taskSortBy] || '';
+      const valB = b[taskSortBy] || '';
+      return taskSortDir === 'asc' 
+        ? (valA < valB ? -1 : valA > valB ? 1 : 0)
+        : (valA > valB ? -1 : valA < valB ? 1 : 0);
+    });
+    return tasks;
+  }, [currentRelease.tasks, taskFilterStatus, taskFilterCategory, taskSortBy, taskSortDir]);
 
   return (
     <div className="p-6 pb-24">
@@ -1217,6 +1409,61 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </DetailPane>
 
+      {/* Tier 1.2: Display Information Module - Read-only linked data */}
+      <div className={cn("p-6 mb-6", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        <div className="grid md:grid-cols-3 gap-4">
+          {/* Linked Songs */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Linked Songs</label>
+            <div className="space-y-1">
+              {linkedSongs.length === 0 ? (
+                <span className="text-xs opacity-50">No songs linked</span>
+              ) : linkedSongs.map(s => (
+                <div key={s.id} className="px-2 py-1 bg-blue-100 border-2 border-black text-xs font-bold">
+                  {s.title} ({s.releaseDate || 'TBD'})
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Assigned Team Members */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
+            <div className="space-y-1">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Summary Stats */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Songs:</span>
+                <span className="font-bold">{linkedSongs.length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Recordings:</span>
+                <span className="font-bold">{(currentRelease.requiredRecordings || []).length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
+                <span>Tasks:</span>
+                <span className="font-bold">{allReleaseTasks.length}</span>
+              </div>
+              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black">
+                <span>Progress:</span>
+                <span className="font-bold">{releaseProgressValue}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Required Recordings</h3>
@@ -1265,29 +1512,50 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
-      {/* Release Tasks Section */}
+      {/* Release Tasks Section - Tier 1.3: Enhanced with Sorting/Filtering */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+        <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
           <h3 className="font-black uppercase">Release Tasks</h3>
-          <button onClick={() => actions.recalculateReleaseTasksAction(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Tier 1.3: Task Filters */}
+            <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Status</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={taskFilterCategory} onChange={e => setTaskFilterCategory(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Categories</option>
+              {taskCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {/* Tier 1.3: Task Sorting */}
+            <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="date">Sort by Date</option>
+              <option value="type">Sort by Type</option>
+              <option value="status">Sort by Status</option>
+              <option value="estimatedCost">Sort by Cost</option>
+            </select>
+            <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
+              {taskSortDir === 'asc' ? '↑' : '↓'}
+            </button>
+            <button onClick={() => actions.recalculateReleaseTasksAction(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-100 border-b-2 border-black">
-                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Type {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left">Category</th>
-                <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-right">Est. Cost</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('status'); setTaskSortDir(taskSortBy === 'status' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Status {taskSortBy === 'status' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-right cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('estimatedCost'); setTaskSortDir(taskSortBy === 'estimatedCost' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Est. Cost {taskSortBy === 'estimatedCost' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left">Assignments</th>
                 <th className="p-2 text-left">Notes</th>
               </tr>
             </thead>
             <tbody>
-              {(currentRelease.tasks || []).length === 0 ? (
+              {filteredReleaseTasks.length === 0 ? (
                 <tr><td colSpan="7" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
-              ) : (currentRelease.tasks || []).map(task => (
+              ) : filteredReleaseTasks.map(task => (
                 <tr key={task.id} className="border-b border-gray-200">
                   <td className="p-2 font-bold">{task.type}{task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}</td>
                   <td className="p-2"><span className="px-2 py-1 text-xs bg-gray-200">{task.category}</span></td>
@@ -2493,6 +2761,52 @@ export const TaskDashboardView = () => {
           </div>
         </div>
       )}
+
+      {/* Tier 1.4: Random Item Spotlight */}
+      {(() => {
+        // Collect all items for random spotlight
+        const spotlightItems = [];
+        (data.songs || []).forEach(song => spotlightItems.push({ type: 'Song', name: song.title, date: song.releaseDate, progress: calculateTaskProgress([...(song.deadlines || []), ...(song.customTasks || [])]).progress, category: song.category }));
+        (data.releases || []).forEach(release => spotlightItems.push({ type: 'Release', name: release.name, date: release.releaseDate, progress: calculateTaskProgress([...(release.tasks || []), ...(release.customTasks || [])]).progress, category: release.type }));
+        
+        if (spotlightItems.length === 0) return null;
+        
+        // Use a hash of the full date string for more uniform daily random selection
+        const dateStr = new Date().toISOString().split('T')[0]; // e.g., "2025-11-29"
+        let hash = 0;
+        for (let i = 0; i < dateStr.length; i++) {
+          const char = dateStr.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32-bit integer
+        }
+        const randomItem = spotlightItems[Math.abs(hash) % spotlightItems.length];
+        
+        return (
+          <div className={cn("p-4 mb-6", THEME.punk.card, "bg-gradient-to-r from-pink-100 to-purple-100")}>
+            <h3 className="font-black uppercase mb-3 border-b-2 border-black pb-2">✨ Item Spotlight</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "px-2 py-1 text-xs font-bold",
+                    randomItem.type === 'Song' ? 'bg-blue-200 text-blue-800' : 'bg-green-200 text-green-800'
+                  )}>
+                    {randomItem.type}
+                  </span>
+                  <span className="font-bold text-lg">{randomItem.name}</span>
+                </div>
+                <div className="text-xs mt-1 opacity-70">
+                  {randomItem.category} • {randomItem.date || 'No date set'}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-black text-purple-600">{randomItem.progress}%</div>
+                <div className="text-xs font-bold uppercase opacity-60">Progress</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {view === 'overview' ? (
         /* Overview by Category */

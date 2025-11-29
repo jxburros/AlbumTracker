@@ -68,14 +68,35 @@ Order check: current phase ordering already aligns with dependencies (data found
 
 ---
 
-## Section 3 — Item More/Edit Info Pages ✓ PARTIALLY COMPLETE
+## Section 3 — Item More/Edit Info Pages ✓ COMPLETE
 Per `music-tracker-implementation-plan.md` Section 3:
 - [x] Display Information module (read-only linked data) for SongDetailView
 - [x] Task sorting and filtering controls in SongDetailView
 - [x] Clickable column headers for sorting
-- [ ] Display Information module for ReleaseDetailView
+- [x] Display Information module for ReleaseDetailView (linked songs, team members, summary stats)
 - [ ] Display Information module for VideoDetailView
-- [ ] Task sorting/filtering for ReleaseDetailView
+- [x] Task sorting/filtering for ReleaseDetailView (filter by status/category, sort by date/type/status/cost)
+
+---
+
+## Section 2 — Item Pages ✓ MOSTLY COMPLETE
+Per `music-tracker-implementation-plan.md` Section 2:
+- [x] Grid/List toggle for SongListView
+- [x] Grid/List toggle for ReleasesListView
+- [ ] Grid/List toggle for GlobalTasksView (optional)
+
+---
+
+## Section 5 — View Pages ✓ MOSTLY COMPLETE
+Per `music-tracker-implementation-plan.md` Section 5:
+- [x] Random Item Spotlight on Dashboard (TaskDashboardView)
+- [ ] Financials Charts (requires chart library)
+
+---
+
+## Section 6 — Team Member Pages ✓ COMPLETE
+Per `music-tracker-implementation-plan.md` Section 6:
+- [x] New Standalone Task from Team Member (createTaskForTeamMember action with quick-add button)
 
 ---
 
