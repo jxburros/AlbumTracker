@@ -2771,9 +2771,15 @@ export const TaskDashboardView = () => {
         
         if (spotlightItems.length === 0) return null;
         
-        // Use a simple seed based on today's date for consistent daily random
-        const todayNum = new Date().getDate() + new Date().getMonth() * 31;
-        const randomItem = spotlightItems[todayNum % spotlightItems.length];
+        // Use a hash of the full date string for more uniform daily random selection
+        const dateStr = new Date().toISOString().split('T')[0]; // e.g., "2025-11-29"
+        let hash = 0;
+        for (let i = 0; i < dateStr.length; i++) {
+          const char = dateStr.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32-bit integer
+        }
+        const randomItem = spotlightItems[Math.abs(hash) % spotlightItems.length];
         
         return (
           <div className={cn("p-4 mb-6", THEME.punk.card, "bg-gradient-to-r from-pink-100 to-purple-100")}>
