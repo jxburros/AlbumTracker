@@ -3812,7 +3812,7 @@ export const EventsListView = ({ onSelectEvent }) => {
   }, [data.events, sortBy, sortDir, filterType]);
 
   const handleAddEvent = async () => {
-    const newEvent = await actions.addEvent({ title: 'New Event', date: '', type: 'Standalone Event' }, false);
+    const newEvent = await actions.addEvent({ title: 'New Event', date: new Date().toISOString().split('T')[0], type: 'Standalone Event' }, false);
     if (onSelectEvent) onSelectEvent(newEvent);
   };
 
