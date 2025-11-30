@@ -3,6 +3,7 @@ name: ui_ux_reviewer
 description: Specialized UI/UX review agent for the Album Tracker application. Expert at evaluating user interfaces, identifying usability issues, ensuring consistency, and recommending improvements aligned with the brutalist/punk design system.
 tools:
   - read
+  - edit
   - search
 ---
 
