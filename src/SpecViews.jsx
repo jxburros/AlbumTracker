@@ -53,8 +53,8 @@ export const SongListView = ({ onSelectSong }) => {
 
   return (
     <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Songs</h2>
+        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+          <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>Songs</h2>
         <div className="flex flex-wrap gap-2">
           {/* Tier 1.1: Grid/List View Toggle */}
           <div className="flex border-4 border-black">

@@ -3,7 +3,7 @@ import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
 import { SongListView, SongDetailView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, FinancialsView, ProgressView, EventsListView, EventDetailView, ExpensesListView, ExpenseDetailView, VideosListView, VideoDetailView, GlobalTasksListView, GlobalTaskDetailView } from './SpecViews';
-import { THEME, cn } from './utils';
+import { COLOR_VALUES, THEME, cn } from './utils';
 
 function AppInner() {
   const [tab, setTab] = useState('songs');
@@ -18,6 +18,7 @@ function AppInner() {
   const { data } = useStore();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
+  const accent = COLOR_VALUES[settings.themeColor || 'pink'] || COLOR_VALUES.pink;
 
   // Phase 10: Apply dark class to html element for Tailwind dark mode
   useEffect(() => {
@@ -66,8 +67,13 @@ function AppInner() {
 
   return (
     <div
+      style={{
+        '--accent': accent.base,
+        '--accent-strong': accent.strong,
+        '--accent-soft': accent.soft,
+      }}
       className={cn(
-        "flex h-screen overflow-hidden",
+        "flex h-screen overflow-hidden punk-shell",
         THEME.punk.font,
         isDark ? "bg-slate-900 text-slate-50" : "bg-slate-50 text-slate-900"
       )}
@@ -81,8 +87,8 @@ function AppInner() {
 
       <main
         className={cn(
-          "flex-1 flex flex-col min-w-0 relative ml-0 md:ml-64 transition-all duration-200",
-          isDark ? "bg-slate-900" : "bg-slate-50"
+          "flex-1 flex flex-col min-w-0 relative ml-0 md:ml-64 transition-all duration-200 punk-canvas",
+          isDark ? "text-slate-50" : "text-slate-900"
         )}
       >
         {/* Mobile Menu Button */}
