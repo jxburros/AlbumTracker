@@ -297,6 +297,7 @@ export const VIDEO_TYPE_OPTIONS = [
 // Core Version tasks: Demo, Record, Mix, Master, Release
 // Version tasks: Record, Mix, Master, Release, plus Record (Instrument) for each instrument
 // Stems tasks (when stemsNeeded): Receive Stems, Release Stems
+// Issue #5: Removed Artwork and Radio/Playlist Push - those belong ONLY to Releases, not Songs
 export const SONG_TASK_TYPES = [
   // Core Production Tasks per Section 3.1
   { type: 'Demo', category: 'Production', daysBeforeRelease: 100, appliesTo: 'all' },
@@ -306,10 +307,8 @@ export const SONG_TASK_TYPES = [
   { type: 'Instrument Recording', category: 'Recording', daysBeforeRelease: 55, appliesTo: 'all' },
   { type: 'Mix', category: 'Post-Production', daysBeforeRelease: 42, appliesTo: 'all' },
   { type: 'Master', category: 'Post-Production', daysBeforeRelease: 21, appliesTo: 'all' },
-  // Single-specific tasks
-  { type: 'Artwork', category: 'Marketing', daysBeforeRelease: 28, appliesTo: 'single' },
+  // Single-specific tasks - DSP Upload only, Artwork and Radio Push belong to Releases
   { type: 'DSP Upload', category: 'Distribution', daysBeforeRelease: 14, appliesTo: 'single' },
-  { type: 'Radio/Playlist Push', category: 'Marketing', daysBeforeRelease: 7, appliesTo: 'single' },
   // Release task
   { type: 'Release', category: 'Distribution', daysBeforeRelease: 0, appliesTo: 'all' }
 ];
@@ -1742,6 +1741,51 @@ export const StoreProvider = ({ children }) => {
       }
       return newTask;
     },
+     
+     // Issue #4: Add a song deadline/task
+     addSongDeadline: async (songId, task) => {
+       const newTask = createUnifiedTask({
+         ...task,
+         id: crypto.randomUUID(),
+         parentType: 'song',
+         parentId: songId
+       });
+       if (mode === 'cloud') {
+         const song = data.songs.find(s => s.id === songId);
+         if (song) {
+           const updatedDeadlines = [...(song.deadlines || []), newTask];
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { deadlines: updatedDeadlines });
+         }
+       } else {
+         setData(p => ({
+           ...p,
+           songs: (p.songs || []).map(s => s.id === songId ? {
+             ...s,
+             deadlines: [...(s.deadlines || []), newTask]
+           } : s)
+         }));
+       }
+       return newTask;
+     },
+
+     // Issue #4: Delete a song deadline/task
+     deleteSongDeadline: async (songId, deadlineId) => {
+       if (mode === 'cloud') {
+         const song = data.songs.find(s => s.id === songId);
+         if (song) {
+           const updatedDeadlines = (song.deadlines || []).filter(d => d.id !== deadlineId);
+           await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { deadlines: updatedDeadlines });
+         }
+       } else {
+         setData(p => ({
+           ...p,
+           songs: (p.songs || []).map(s => s.id === songId ? {
+             ...s,
+             deadlines: (s.deadlines || []).filter(d => d.id !== deadlineId)
+           } : s)
+         }));
+       }
+     },
      
      // Update a song deadline
      updateSongDeadline: async (songId, deadlineId, updates) => {

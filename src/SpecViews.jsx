@@ -171,7 +171,8 @@ export const SongDetailView = ({ song, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...song });
   const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '' });
+  // Issue #8: Custom tasks can be attached to a specific Version or the Song (default)
+  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '', versionId: '' });
   const [newVersionMusicians, setNewVersionMusicians] = useState({});
   const [newAssignments, setNewAssignments] = useState({});
   // Section 3: Task sorting/filtering state
@@ -253,9 +254,16 @@ export const SongDetailView = ({ song, onBack }) => {
     await actions.updateSongDeadline(song.id, deadlineId, { [field]: value });
   };
 
+  // Issue #8: Custom tasks can be attached to a specific Version or the Song
   const handleAddCustomTask = async () => {
-    await actions.addSongCustomTask(song.id, { ...newTask, isAutoTask: false });
-    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '' });
+    if (newTask.versionId && newTask.versionId !== '') {
+      // Attach to specific version
+      await actions.addVersionCustomTask(song.id, newTask.versionId, { ...newTask, isAutoTask: false });
+    } else {
+      // Attach to song (default)
+      await actions.addSongCustomTask(song.id, { ...newTask, isAutoTask: false });
+    }
+    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '', versionId: '' });
     setShowAddTask(false);
   };
 
@@ -441,14 +449,36 @@ export const SongDetailView = ({ song, onBack }) => {
   };
 
   // Handle adding copy version (duplicates Core Version attributes)
+  // Issue #6: Copy Version must duplicate all data from Core Version including:
+  // Instruments, Musicians, Video selections, Exclusivity info, Flags, Tags, Era, Stage, Notes
   const handleAddCopyVersion = async () => {
     const coreVersion = currentSong.versions?.find(v => v.id === 'core');
     const newVersion = await actions.addSongVersion(song.id, {
       name: `${currentSong.title} (Copy)`,
       releaseDate: currentSong.releaseDate,
+      // Copy instruments (both legacy and new format)
       instruments: [...(coreVersion?.instruments || currentSong.instruments || [])],
+      instrumentData: [...(coreVersion?.instrumentData || currentSong.instrumentData || [])],
+      // Copy musicians
       musicians: [...(coreVersion?.musicians || [])],
-      videoTypes: { ...(coreVersion?.videoTypes || {}) },
+      // Copy video type selections
+      videoTypes: { ...(coreVersion?.videoTypes || currentSong.videoTypes || {}) },
+      // Copy exclusivity info
+      hasExclusivity: coreVersion?.hasExclusivity || currentSong.hasExclusivity || false,
+      exclusiveType: coreVersion?.exclusiveType || currentSong.exclusiveType || 'None',
+      exclusiveStartDate: coreVersion?.exclusiveStartDate || currentSong.exclusiveStartDate || '',
+      exclusiveEndDate: coreVersion?.exclusiveEndDate || currentSong.exclusiveEndDate || '',
+      exclusiveNotes: coreVersion?.exclusiveNotes || currentSong.exclusiveNotes || '',
+      // Copy flags
+      stemsNeeded: coreVersion?.stemsNeeded || currentSong.stemsNeeded || false,
+      isSingle: coreVersion?.isSingle || currentSong.isSingle || false,
+      // Copy metadata (Era, Stage, Tags)
+      eraIds: [...(coreVersion?.eraIds || currentSong.eraIds || [])],
+      stageIds: [...(coreVersion?.stageIds || currentSong.stageIds || [])],
+      tagIds: [...(coreVersion?.tagIds || currentSong.tagIds || [])],
+      tags: [...(coreVersion?.tags || currentSong.tags || [])],
+      // Copy notes
+      notes: coreVersion?.notes || currentSong.notes || '',
       basedOnCore: true
     });
     if (newVersion) {
@@ -689,13 +719,16 @@ export const SongDetailView = ({ song, onBack }) => {
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
               <div className="flex gap-2 items-center">
+                {/* Issue #3: Release Date is only editable when:
+                    1. Song has no Releases attached (coreReleaseIds.length === 0), OR
+                    2. User has explicitly selected Override Release Date (releaseDateOverride) */}
                 <input 
                   type="date" 
                   value={form.releaseDateOverride ? form.releaseDate : (earliestReleaseDate || form.releaseDate || '')} 
                   onChange={e => handleFieldChange('releaseDate', e.target.value)} 
                   onBlur={handleSave} 
-                  disabled={!form.releaseDateOverride && earliestReleaseDate}
-                  className={cn("flex-1", THEME.punk.input, !form.releaseDateOverride && earliestReleaseDate && "opacity-60")} 
+                  disabled={!form.releaseDateOverride && coreReleaseIds.length > 0}
+                  className={cn("flex-1", THEME.punk.input, !form.releaseDateOverride && coreReleaseIds.length > 0 && "opacity-60")} 
                 />
                 <label className="flex items-center gap-1 text-xs font-bold whitespace-nowrap">
                   <input 
@@ -818,28 +851,62 @@ export const SongDetailView = ({ song, onBack }) => {
                   onChange={e => setNewInstrumentName(e.target.value)} 
                   placeholder="e.g., Guitar, Synth, Drums" 
                   className={cn("w-full", THEME.punk.input)} 
-                  onKeyDown={e => {
+                  onKeyDown={async e => {
                     if (e.key === 'Enter' && newInstrumentName.trim()) {
-                      const newInstrumentData = { name: newInstrumentName.trim(), musicians: [] };
+                      const instrumentName = newInstrumentName.trim();
+                      const newInstrumentData = { name: instrumentName, musicians: [] };
                       const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
                       handleFieldChange('instrumentData', updatedInstruments);
                       // Also update legacy instruments array for compatibility
                       handleFieldChange('instruments', updatedInstruments.map(i => i.name));
                       setNewInstrumentName('');
                       setTimeout(handleSave, 0);
+                      // Issue #4: Auto-create "Record (Instrument Name)" task
+                      const existingTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrumentName})`);
+                      if (!existingTask) {
+                        await actions.addSongDeadline?.(song.id, {
+                          type: `Record (${instrumentName})`,
+                          category: 'Recording',
+                          status: 'Not Started',
+                          date: currentSong.releaseDate ? (() => {
+                            const d = new Date(currentSong.releaseDate);
+                            d.setDate(d.getDate() - 55);
+                            return d.toISOString().split('T')[0];
+                          })() : '',
+                          isAutoTask: true,
+                          generatedFromInstrument: instrumentName
+                        });
+                      }
                     }
                   }}
                 />
               </div>
               <button 
-                onClick={() => {
+                onClick={async () => {
                   if (!newInstrumentName.trim()) return;
-                  const newInstrumentData = { name: newInstrumentName.trim(), musicians: [] };
+                  const instrumentName = newInstrumentName.trim();
+                  const newInstrumentData = { name: instrumentName, musicians: [] };
                   const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
                   handleFieldChange('instrumentData', updatedInstruments);
                   handleFieldChange('instruments', updatedInstruments.map(i => i.name));
                   setNewInstrumentName('');
                   setTimeout(handleSave, 0);
+                  // Issue #4: Auto-create "Record (Instrument Name)" task
+                  const existingTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrumentName})`);
+                  if (!existingTask) {
+                    await actions.addSongDeadline?.(song.id, {
+                      type: `Record (${instrumentName})`,
+                      category: 'Recording',
+                      status: 'Not Started',
+                      date: currentSong.releaseDate ? (() => {
+                        const d = new Date(currentSong.releaseDate);
+                        d.setDate(d.getDate() - 55);
+                        return d.toISOString().split('T')[0];
+                      })() : '',
+                      isAutoTask: true,
+                      generatedFromInstrument: instrumentName
+                    });
+                  }
                 }}
                 className={cn("px-4 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}
               >
@@ -1417,7 +1484,17 @@ export const SongDetailView = ({ song, onBack }) => {
               <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
               <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
               <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <div className="flex gap-2">
+              {/* Issue #8: Version attachment dropdown for custom tasks */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Attach to</label>
+                <select value={newTask.versionId || ''} onChange={e => setNewTask({ ...newTask, versionId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
+                  <option value="">Song (Core)</option>
+                  {(currentSong.versions || []).filter(v => v.id !== 'core').map(v => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2 items-end">
                 <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
                 <button onClick={() => setShowAddTask(false)} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
               </div>
@@ -1437,13 +1514,12 @@ export const SongDetailView = ({ song, onBack }) => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              {/* Issue #12, #13: Simplified columns - removed Category, removed duplicate date */}
+              {/* Issue #10, #12, #13: Simplified columns - removed Category, duplicate date, and Assigned column */}
               <tr className="bg-gray-100 border-b-2 border-black">
                 <th className="p-2 text-left">Version</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Task {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Due Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('status'); setTaskSortDir(taskSortBy === 'status' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Status {taskSortBy === 'status' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-left">Assigned</th>
               </tr>
             </thead>
             <tbody>
@@ -1471,7 +1547,7 @@ export const SongDetailView = ({ song, onBack }) => {
                 });
                 
                 if (allTasks.length === 0) {
-                  return <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate, or add a custom task.</td></tr>;
+                  return <tr><td colSpan="4" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate, or add a custom task.</td></tr>;
                 }
                 
                 return allTasks.map(task => {
@@ -1539,16 +1615,7 @@ export const SongDetailView = ({ song, onBack }) => {
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td className="p-2 text-xs">
-                        <div className="flex flex-wrap gap-1">
-                          {(task.assignedMembers || []).slice(0, 2).map(m => {
-                            const member = teamMembers.find(tm => tm.id === m.memberId);
-                            return <span key={m.memberId + (m.cost || '')} className="px-1 py-0.5 bg-purple-100 border border-black font-bold text-[10px]">{member?.name?.split(' ')[0] || '?'}</span>;
-                          })}
-                          {(task.assignedMembers || []).length > 2 && <span className="text-[10px]">+{(task.assignedMembers || []).length - 2}</span>}
-                          {(!task.assignedMembers || task.assignedMembers.length === 0) && <span className="text-[10px] opacity-50">-</span>}
-                        </div>
-                      </td>
+                      {/* Issue #10: Removed Assigned column - assignments are shown in Task Edit modal */}
                     </tr>
                   );
                 });
@@ -1573,7 +1640,7 @@ export const SongDetailView = ({ song, onBack }) => {
             </div>
 
             <div className="space-y-4">
-              {/* Issue #11: AutoTask indicator with locked fields */}
+              {/* Issue #9, #11: AutoTask indicator with locked fields and override warning */}
               {(() => {
                 // Use helper function for consistent auto-task detection
                 const isAutoTask = isTaskAutoGenerated(editingTask, editingTaskContext?.type);
@@ -1592,12 +1659,28 @@ export const SongDetailView = ({ song, onBack }) => {
                             <input 
                               type="checkbox" 
                               checked={editingTask.isOverridden || false}
-                              onChange={e => setEditingTask(prev => ({ ...prev, isOverridden: e.target.checked }))}
+                              onChange={e => {
+                                if (e.target.checked && !editingTask.isOverridden) {
+                                  // Issue #9: Show warning when enabling override
+                                  if (!confirm('Warning: If you override these fields, this Task will no longer be treated as an AutoTask and will not auto-update when dates change. Continue?')) {
+                                    return;
+                                  }
+                                  // Convert to non-AutoTask
+                                  setEditingTask(prev => ({ ...prev, isOverridden: true, isAutoTask: false }));
+                                } else {
+                                  setEditingTask(prev => ({ ...prev, isOverridden: e.target.checked }));
+                                }
+                              }}
                               className="w-4 h-4"
                             />
                             <span className="font-bold">Override</span>
                           </label>
                         </div>
+                        {editingTask.isOverridden && (
+                          <div className="mt-2 p-2 bg-yellow-100 border border-yellow-400 text-yellow-800 font-bold">
+                            ⚠️ This task is now overridden and will not auto-update.
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -1739,6 +1822,32 @@ export const SongDetailView = ({ song, onBack }) => {
                 >
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+              </div>
+
+              {/* Issue #7: Era and Stage for Song Tasks */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
+                  <select
+                    value={(editingTask.eraIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Era</option>
+                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+                  <select
+                    value={(editingTask.stageIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Stage</option>
+                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+                  </select>
+                </div>
               </div>
 
               {/* Tags */}
