@@ -1112,7 +1112,8 @@ export const StoreProvider = ({ children }) => {
      },
 
      // Per APP ARCHITECTURE.txt Section 5.4: Event properties
-     // Events have: Name, Era/Stage, Team Members, Tasks, Notes, Location, Time/Date, Entry Cost, Estimated cost & amount paid, Progress
+     // Events have: Name, Era/Stage, Team Members, Tasks, Notes, Location, Time/Date, Entry Cost, Progress
+     // Phase 2: Events derive cost from Tasks only - no event-level cost fields
      addEvent: async (event, includePreparation = true) => {
        const defaultEraIds = event.eraIds || (data.settings?.defaultEraId ? [data.settings.defaultEraId] : []);
        // Generate auto-tasks per Section 3.5
@@ -1131,13 +1132,8 @@ export const StoreProvider = ({ children }) => {
          notes: event.notes || '',
          // Section 5.4: Entry Cost (counts as a hidden Completed Paid Task)
          entryCost: event.entryCost || 0,
-         // Cost layers with precedence: paidCost > quotedCost > estimatedCost
-         estimatedCost: event.estimatedCost || 0,
-         quotedCost: event.quotedCost || 0,
-         paidCost: event.paidCost || 0,
-         // Exclusivity
-         exclusiveType: event.exclusiveType || '',
-         platforms: event.platforms || [],
+         // Phase 2.1: Attendees - simple list of names (no functional logic)
+         attendees: event.attendees || [],
          // Metadata
          eraIds: defaultEraIds,
          stageIds: event.stageIds || [],
@@ -2814,8 +2810,6 @@ export const StoreProvider = ({ children }) => {
          // Unified Item fields per Section 6
          // Use name if provided, otherwise default to 'New Expense'
          name: expense.name || 'New Expense',
-         // Description is separate from name
-         description: expense.description || '',
          date: expense.date || new Date().toISOString().split('T')[0],
          // Cost layers with precedence: paidCost > quotedCost > estimatedCost
          estimatedCost: expense.estimatedCost || 0,
@@ -2824,8 +2818,14 @@ export const StoreProvider = ({ children }) => {
          partiallyPaid: expense.partiallyPaid || 0,
          // Metadata
          category: expense.category || 'General',
-         vendorId: expense.vendorId || '',
-         teamMemberIds: expense.teamMemberIds || [],
+         // Phase 4.2: Vendor field - EITHER short text OR attach team members
+         vendorMode: expense.vendorMode || 'text', // 'text' or 'teamMember'
+         vendorText: expense.vendorText || '', // Short text input for vendor name
+         vendorId: expense.vendorId || '', // Legacy - kept for backwards compatibility
+         teamMemberIds: expense.teamMemberIds || [], // Team members as vendor/payees
+         // Phase 4.4: Receipt Location field
+         receiptLocation: expense.receiptLocation || '', // URL, path, or note for receipt
+         // Metadata arrays
          eraIds: expense.eraIds || [],
          stageIds: expense.stageIds || [],
          tagIds: expense.tagIds || [],
