@@ -5301,7 +5301,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
             {statusWarning && (
               <div className="text-xs text-red-600 font-bold mt-1">⚠️ {statusWarning}</div>
             )}
-            <div className="text-[10px] text-gray-500 mt-1">Note: Setting to Complete requires Paid Amount &gt; 0</div>
+            <div className="text-[10px] text-gray-500 mt-1">Note: Setting to Complete requires Paid Amount greater than 0</div>
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
@@ -6247,7 +6247,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
             <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Assigned To (Legacy)</label>
+            <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text - use Team Members below for full tracking)</span></label>
             <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="md:col-span-2">
