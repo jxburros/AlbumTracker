@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, GLOBAL_TASK_CATEGORIES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
@@ -210,6 +210,8 @@ export const SongDetailView = ({ song, onBack }) => {
     return true;
   };
 
+  // Assignment function for tasks (used in version task editing)
+  // eslint-disable-next-line no-unused-vars
   const addAssignment = (taskKey, taskObj, updater) => {
     const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
     const budget = taskBudget(taskObj);
@@ -221,8 +223,13 @@ export const SongDetailView = ({ song, onBack }) => {
     setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0, instrument: '' } }));
   };
 
-  const handleSave = async () => { await actions.updateSong(song.id, form); };
-  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+  const handleSave = useCallback(async () => { 
+    await actions.updateSong(song.id, form); 
+  }, [actions, song.id, form]);
+  
+  const handleFieldChange = useCallback((field, value) => { 
+    setForm(prev => ({ ...prev, [field]: value })); 
+  }, []);
 
   // Toggle version expansion
   const toggleVersionExpand = (versionId) => {
@@ -252,6 +259,8 @@ export const SongDetailView = ({ song, onBack }) => {
     setShowAddTask(false);
   };
 
+  // Handler for deleting custom tasks (used in task management UI)
+  // eslint-disable-next-line no-unused-vars
   const handleDeleteCustomTask = async (taskId) => {
     if (confirm('Delete this task?')) { await actions.deleteSongCustomTask(song.id, taskId); }
   };
@@ -543,7 +552,8 @@ export const SongDetailView = ({ song, onBack }) => {
     return teamMembers.filter(m => memberIds.has(m.id));
   }, [currentSong, allSongTasks, teamMembers]);
 
-  // Get unique task categories for filter dropdown
+  // Get unique task categories for filter dropdown (reserved for future use)
+  // eslint-disable-next-line no-unused-vars
   const taskCategories = useMemo(() => {
     const categories = new Set();
     songTasks.forEach(t => t.category && categories.add(t.category));
@@ -2490,7 +2500,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           {/* Phase 3.3: If type is 'Other', show details field */}
           {form.type === 'Other' && (
             <div className="md:col-span-2">
-              <label className="block text-xs font-bold uppercase mb-1">Type Details (for 'Other')</label>
+              <label className="block text-xs font-bold uppercase mb-1">Type Details (for &apos;Other&apos;)</label>
               <input value={form.typeDetails || ''} onChange={e => handleFieldChange('typeDetails', e.target.value)} onBlur={handleSave} placeholder="Describe the release type" className={cn("w-full", THEME.punk.input)} />
             </div>
           )}
@@ -5860,12 +5870,50 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
             </div>
           </div>
           
-          {/* Vendor */}
-          {currentExpense.vendorId && (
-            <div className="md:col-span-4">
-              <label className="block text-xs font-bold uppercase mb-2">Vendor</label>
+          {/* Phase 4.2: Vendor - show text or team members based on mode */}
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-2">Vendor/Payee</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
+              {currentExpense.vendorMode === 'teamMember' && (currentExpense.teamMemberIds || []).length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {(currentExpense.teamMemberIds || []).map(id => {
+                    const member = (data.teamMembers || []).find(m => m.id === id);
+                    return member ? <span key={id} className="px-2 py-1 bg-blue-100 border border-blue-300 text-xs">{member.name}</span> : null;
+                  })}
+                </div>
+              ) : currentExpense.vendorText ? (
+                currentExpense.vendorText
+              ) : currentExpense.vendorId ? (
+                (data.vendors || []).find(v => v.id === currentExpense.vendorId)?.name || 'Unknown Vendor'
+              ) : (
+                <span className="opacity-50">Not specified</span>
+              )}
+            </div>
+          </div>
+          
+          {/* Phase 4.4: Receipt Location */}
+          {currentExpense.receiptLocation && (
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold uppercase mb-2">Receipt Location</label>
               <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-                {(data.vendors || []).find(v => v.id === currentExpense.vendorId)?.name || 'Unknown Vendor'}
+                {currentExpense.receiptLocation}
+              </div>
+            </div>
+          )}
+          
+          {/* Phase 4.5: Team Members */}
+          {(currentExpense.teamMemberIds || []).length > 0 && currentExpense.vendorMode !== 'teamMember' && (
+            <div className="md:col-span-4">
+              <label className="block text-xs font-bold uppercase mb-2">Team Members</label>
+              <div className="flex flex-wrap gap-2">
+                {(currentExpense.teamMemberIds || []).map(id => {
+                  const member = (data.teamMembers || []).find(m => m.id === id);
+                  return member ? (
+                    <span key={id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                      {member.name} {member.isMusician && '🎵'}
+                    </span>
+                  ) : null;
+                })}
               </div>
             </div>
           )}
@@ -5914,17 +5962,110 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Paid Amount</label>
             <input type="number" value={form.paidCost || 0} onChange={e => { handleFieldChange('paidCost', parseFloat(e.target.value) || 0); setStatusWarning(''); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Phase 4.4: Receipt Location */}
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Vendor</label>
-            <select value={form.vendorId || ''} onChange={e => { handleFieldChange('vendorId', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
-              <option value="">No Vendor</option>
-              {(data.vendors || []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            <label className="block text-xs font-bold uppercase mb-1">Receipt Location</label>
+            <input value={form.receiptLocation || ''} onChange={e => handleFieldChange('receiptLocation', e.target.value)} onBlur={handleSave} placeholder="URL, file path, or note" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          
+          {/* Phase 4.2: Vendor Mode Toggle */}
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Vendor/Payee</label>
+            <div className="flex gap-2 mb-2">
+              <button 
+                onClick={() => { handleFieldChange('vendorMode', 'text'); setTimeout(handleSave, 0); }}
+                className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode !== 'teamMember' ? "bg-black text-white" : "bg-white")}
+              >
+                Text Input
+              </button>
+              <button 
+                onClick={() => { handleFieldChange('vendorMode', 'teamMember'); setTimeout(handleSave, 0); }}
+                className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode === 'teamMember' ? "bg-black text-white" : "bg-white")}
+              >
+                Team Members
+              </button>
+            </div>
+            {form.vendorMode === 'teamMember' ? (
+              <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
+                {(data.teamMembers || []).map(member => (
+                  <label key={member.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={(form.teamMemberIds || []).includes(member.id)} 
+                      onChange={e => {
+                        const newIds = e.target.checked 
+                          ? [...(form.teamMemberIds || []), member.id]
+                          : (form.teamMemberIds || []).filter(id => id !== member.id);
+                        handleFieldChange('teamMemberIds', newIds);
+                        setTimeout(handleSave, 0);
+                      }}
+                      className="w-3 h-3" 
+                    />
+                    {member.name}
+                  </label>
+                ))}
+                {(data.teamMembers || []).length === 0 && <span className="text-xs opacity-50">No team members available</span>}
+              </div>
+            ) : (
+              <input 
+                value={form.vendorText || ''} 
+                onChange={e => handleFieldChange('vendorText', e.target.value)} 
+                onBlur={handleSave} 
+                placeholder="Vendor name or company" 
+                className={cn("w-full", THEME.punk.input)} 
+              />
+            )}
+          </div>
+          
+          {/* Phase 4.3: Stage/Era/Tags */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Era</label>
+            <select 
+              multiple 
+              value={form.eraIds || []} 
+              onChange={e => handleFieldChange('eraIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
+              onBlur={handleSave} 
+              className={cn("w-full h-20", THEME.punk.input)}
+            >
+              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+            <select 
+              multiple 
+              value={form.stageIds || []} 
+              onChange={e => handleFieldChange('stageIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
+              onBlur={handleSave} 
+              className={cn("w-full h-20", THEME.punk.input)}
+            >
+              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
             </select>
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Description</label>
-            <textarea value={form.description || ''} onChange={e => handleFieldChange('description', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Expense details..." />
+            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
+            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
+              {(data.tags || []).map(tag => (
+                <label key={tag.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={(form.tagIds || []).includes(tag.id)} 
+                    onChange={e => {
+                      const newTagIds = e.target.checked 
+                        ? [...(form.tagIds || []), tag.id]
+                        : (form.tagIds || []).filter(id => id !== tag.id);
+                      handleFieldChange('tagIds', newTagIds);
+                      setTimeout(handleSave, 0);
+                    }}
+                    className="w-3 h-3" 
+                  />
+                  <span style={{ color: tag.color }}>{tag.name}</span>
+                </label>
+              ))}
+              {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
+            </div>
           </div>
+          
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
@@ -7029,6 +7170,7 @@ export const VideoDetailView = ({ video, onBack }) => {
 };
 
 // Global Tasks List View - Following unified Item/Page architecture (same template as Songs/Releases)
+// Phase 5: Enhanced with Category management
 export const GlobalTasksListView = ({ onSelectTask }) => {
   const { data, actions } = useStore();
   const [sortBy, setSortBy] = useState('date');
@@ -7037,6 +7179,9 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterArchived, setFilterArchived] = useState('active');
   const [viewMode, setViewMode] = useState('list');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  // Phase 5.1: Manage categories modal
+  const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
 
   const toggleSort = (field) => {
     if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -7047,14 +7192,17 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
   );
 
+  // Phase 5.1: Categories as Items - user-created only, no prefilled
   const allCategories = useMemo(() => {
-    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
+    // Only show user-created categories (taskCategories collection)
+    // Legacy categories are only shown if no custom categories exist (for backward compat)
     const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
-    const merged = [];
-    const nameSet = new Set();
-    itemCategories.forEach(c => { merged.push(c); nameSet.add(c.name); });
-    legacyCategories.forEach(c => { if (!nameSet.has(c.name)) merged.push(c); });
-    return merged;
+    if (itemCategories.length > 0) {
+      return itemCategories;
+    }
+    // Fallback to legacy if no custom categories created yet
+    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
+    return legacyCategories;
   }, [data.taskCategories]);
 
   const tasks = useMemo(() => {
@@ -7120,9 +7268,86 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
             <option value="done">Done</option>
             <option value="archived">Archived</option>
           </select>
+          {/* Phase 5.1 & 5.3: Manage Categories button */}
+          <button onClick={() => setShowManageCategoriesModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
+            <Icon name="Folder" size={16} className="inline mr-1" /> Categories
+          </button>
           <button onClick={handleAddTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Task</button>
         </div>
       </div>
+
+      {/* Phase 5.1: Manage Categories Modal */}
+      {showManageCategoriesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className={cn("bg-white p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto", THEME.punk.card)}>
+            <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+              <h3 className="font-black uppercase">Manage Categories</h3>
+              <button onClick={() => setShowManageCategoriesModal(false)} className="text-2xl font-bold">×</button>
+            </div>
+            
+            {/* Phase 5.3: Add Category Form */}
+            <div className="mb-4 p-3 bg-gray-50 border-2 border-black">
+              <div className="flex gap-2">
+                <input 
+                  value={newCategoryName} 
+                  onChange={e => setNewCategoryName(e.target.value)} 
+                  placeholder="New category name" 
+                  className={cn("flex-1", THEME.punk.input)} 
+                />
+                <button 
+                  onClick={async () => {
+                    if (newCategoryName.trim()) {
+                      await actions.addTaskCategory({ name: newCategoryName.trim() });
+                      setNewCategoryName('');
+                    }
+                  }}
+                  className={cn("px-4 py-2", THEME.punk.btn, "bg-green-600 text-white")}
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+            
+            {/* Phase 5.1: List of Category Items */}
+            <div className="space-y-2">
+              {(data.taskCategories || []).length === 0 ? (
+                <div className="p-4 text-center text-sm opacity-50">
+                  No categories created yet. Add a category above to organize your tasks.
+                </div>
+              ) : (
+                (data.taskCategories || []).map(category => {
+                  const taskCount = (data.globalTasks || []).filter(t => 
+                    t.categoryId === category.id || t.category === category.name
+                  ).length;
+                  return (
+                    <div key={category.id} className="flex items-center justify-between p-3 border-2 border-black bg-white">
+                      <div>
+                        <span className="font-bold">{category.name}</span>
+                        <span className="ml-2 text-xs opacity-60">({taskCount} tasks)</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (confirm(`Delete category "${category.name}"? Tasks will remain but become uncategorized.`)) {
+                            actions.deleteTaskCategory(category.id);
+                          }
+                        }}
+                        className="text-red-500 p-1 hover:bg-red-50"
+                        title="Delete"
+                      >
+                        <Icon name="Trash2" size={14} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            
+            <div className="mt-4 pt-4 border-t-2 border-gray-200 text-xs text-gray-500">
+              <p>💡 Categories help organize your global tasks. Tasks without a category belong to an invisible default.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -7188,21 +7413,26 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   );
 };
 
-// Global Task Detail View - Following unified Item/Page architecture with SongDetailView pattern
+// Global Task Detail View - Phase 5.2: Uses Task More/Edit Info Page, NOT an Item Edit/More Info Page
+// This focuses on task-specific editing rather than full item management
 export const GlobalTaskDetailView = ({ task, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...task });
   const [newAssignments, setNewAssignments] = useState({ memberId: '', cost: 0 });
+  // Phase 5.3: State for adding new category inline
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
+  // Phase 5.1: Categories as Items - show only user-created categories (or legacy fallback)
   const allCategories = useMemo(() => {
-    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
     const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
-    const merged = [];
-    const nameSet = new Set();
-    itemCategories.forEach(c => { merged.push(c); nameSet.add(c.name); });
-    legacyCategories.forEach(c => { if (!nameSet.has(c.name)) merged.push(c); });
-    return merged;
+    if (itemCategories.length > 0) {
+      return itemCategories;
+    }
+    // Fallback to legacy if no custom categories exist
+    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
+    return legacyCategories;
   }, [data.taskCategories]);
 
   const handleSave = async () => { await actions.updateGlobalTask(task.id, form); };
@@ -7215,6 +7445,20 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
   const handleArchive = async () => {
     await actions.archiveGlobalTask(task.id);
     onBack();
+  };
+
+  // Phase 5.3: Add new category and assign this task to it
+  const handleAddCategoryAndAssign = async () => {
+    if (newCategoryName.trim()) {
+      const newCategory = await actions.addTaskCategory({ name: newCategoryName.trim() });
+      if (newCategory) {
+        handleFieldChange('category', newCategory.name);
+        handleFieldChange('categoryId', newCategory.id);
+        setTimeout(handleSave, 0);
+      }
+      setNewCategoryName('');
+      setShowAddCategory(false);
+    }
   };
 
   const addAssignment = () => {
@@ -7262,9 +7506,9 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         </div>
       )}
 
-      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      {/* Phase 5.2: SECTION A - Task Display Information (read-only summary) */}
       <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Summary</h3>
         
         {/* Task Name - prominent at top */}
         <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentTask.taskName || 'Untitled Task'}</div>
@@ -7339,7 +7583,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         </div>
       </div>
 
-      {/* SECTION B: Basic Information (editable) */}
+      {/* Phase 5.2: SECTION B - Task Information (editable) - Task-focused editing */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -7347,14 +7591,56 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
             <input value={form.taskName || ''} onChange={e => handleFieldChange('taskName', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Phase 5.1 & 5.3: Category with Add Category option */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Category</label>
-            <select value={form.category || 'Other'} onChange={e => { handleFieldChange('category', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
-              {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <div className="flex gap-2">
+              <select 
+                value={form.category || ''} 
+                onChange={e => { 
+                  handleFieldChange('category', e.target.value); 
+                  // Find matching category ID
+                  const cat = allCategories.find(c => c.name === e.target.value);
+                  if (cat && !cat.isLegacy) {
+                    handleFieldChange('categoryId', cat.id);
+                  }
+                  setTimeout(handleSave, 0); 
+                }} 
+                className={cn("flex-1", THEME.punk.input)}
+              >
+                <option value="">No Category</option>
+                {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+              {/* Phase 5.3: Add Category button */}
+              <button 
+                onClick={() => setShowAddCategory(!showAddCategory)}
+                className={cn("px-3 py-2 text-xs", THEME.punk.btn, showAddCategory ? "bg-gray-500 text-white" : "bg-purple-600 text-white")}
+                title="Add New Category"
+              >
+                {showAddCategory ? '×' : '+'}
+              </button>
+            </div>
+            {/* Phase 5.3: Inline Add Category form */}
+            {showAddCategory && (
+              <div className="flex gap-2 mt-2">
+                <input 
+                  value={newCategoryName} 
+                  onChange={e => setNewCategoryName(e.target.value)} 
+                  placeholder="New category name"
+                  className={cn("flex-1 text-xs", THEME.punk.input)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddCategoryAndAssign()}
+                />
+                <button 
+                  onClick={handleAddCategoryAndAssign}
+                  className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+                >
+                  Add & Assign
+                </button>
+              </div>
+            )}
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Date</label>
+            <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
             <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
@@ -7376,16 +7662,12 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
             <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text - use Team Members below for full tracking)</span></label>
+            <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text)</span></label>
             <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Description</label>
-            <textarea value={form.description || ''} onChange={e => handleFieldChange('description', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Task description..." />
-          </div>
-          <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
-            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Task notes and details..." />
           </div>
         </div>
       </div>
