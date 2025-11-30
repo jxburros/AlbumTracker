@@ -3,6 +3,7 @@ name: architecture_advisor
 description: Specialized architecture and design advisor for the Album Tracker application. Expert at system design, architectural decisions, data modeling, scalability, and maintaining coherent application structure.
 tools:
   - read
+  - edit
   - search
 ---
 
