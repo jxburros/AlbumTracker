@@ -178,14 +178,16 @@ export const SongDetailView = ({ song, onBack }) => {
   const [taskSortBy, setTaskSortBy] = useState('date');
   const [taskSortDir, setTaskSortDir] = useState('asc');
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
-  const [taskFilterCategory, setTaskFilterCategory] = useState('all');
   // Version expand/collapse state
   const [expandedVersions, setExpandedVersions] = useState({});
   // Selected task for editing modal - Song Task More/Edit Info Page
   const [editingTask, setEditingTask] = useState(null);
   const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'song'|'version'|'custom', versionId?: string }
-  // Instrument musician assignment state
-  const [instrumentMusicians, setInstrumentMusicians] = useState({});
+  // Instrument state - supports multiple instruments with multiple musicians each
+  const [newInstrumentName, setNewInstrumentName] = useState('');
+  const [newInstrumentMusician, setNewInstrumentMusician] = useState({});
+  const [editingInstrumentIndex, setEditingInstrumentIndex] = useState(null);
+  const [editingInstrumentName, setEditingInstrumentName] = useState('');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
@@ -287,7 +289,50 @@ export const SongDetailView = ({ song, onBack }) => {
   // Total cost is sum of all task costs (per specification B.2 - Cost is calculated, not editable)
   const totalCost = tasksCost + customTasksCost + versionsCost;
 
-  // Handle video type checkbox toggle - creates/deletes Video Item per spec B.4
+  // Handle video type checkbox toggle for Song Information section - creates/deletes Video Item per spec B.4
+  // This works at the Song level for the Core Version, creating the core version if needed
+  const handleSongVideoTypeToggle = useCallback(async (typeKey, checked) => {
+    // Video type labels per spec B.4
+    const videoTypeLabels = {
+      music: 'Music Video',
+      lyric: 'Lyric Video',
+      enhancedLyric: 'Enhanced Lyric Video',
+      loop: 'Loop Video',
+      visualizer: 'Visualizer',
+      live: 'Live Video',
+      custom: 'Custom Video'
+    };
+    
+    // Update song-level videoTypes
+    const newVideoTypes = { ...(form.videoTypes || {}), [typeKey]: checked };
+    handleFieldChange('videoTypes', newVideoTypes);
+    setTimeout(handleSave, 0);
+    
+    // If video type checked, auto-create Video Item for the Song
+    if (checked) {
+      const existingVideo = (currentSong.videos || []).find(v => 
+        (!v.versionId || v.versionId === 'core') && v.types?.[typeKey]
+      );
+      if (!existingVideo) {
+        await actions.addSongVideo(song.id, {
+          title: `${currentSong.title} - ${videoTypeLabels[typeKey] || typeKey}`,
+          versionId: 'core',
+          types: { [typeKey]: true },
+          releaseDate: currentSong.releaseDate || ''
+        });
+      }
+    } else {
+      // If unchecked, prompt user to delete the Video Item per spec
+      const existingVideo = (currentSong.videos || []).find(v => 
+        (!v.versionId || v.versionId === 'core') && v.types?.[typeKey]
+      );
+      if (existingVideo && confirm(`Delete the ${videoTypeLabels[typeKey] || typeKey}? This will remove the associated Video Item.`)) {
+        await actions.deleteSongVideo(song.id, existingVideo.id);
+      }
+    }
+  }, [form.videoTypes, currentSong, song.id, actions, handleFieldChange, handleSave]);
+
+  // Handle video type checkbox toggle for Versions - creates/deletes Video Item per spec B.4
   const handleVideoTypeToggle = useCallback(async (versionId, typeKey, checked) => {
     const version = currentSong.versions?.find(v => v.id === versionId);
     if (!version) return;
@@ -340,7 +385,24 @@ export const SongDetailView = ({ song, onBack }) => {
   const handleSaveTaskEdit = async () => {
     if (!editingTask || !editingTaskContext) return;
     
-    if (editingTaskContext.type === 'song') {
+    if (editingTaskContext.type === 'new-custom') {
+      // Issue #7, #9: Creating a new custom task using unified task system
+      await actions.addSongCustomTask(song.id, {
+        title: editingTask.type || editingTask.title || 'New Task',
+        type: editingTask.type || editingTask.title || 'Custom',
+        date: editingTask.date || editingTask.dueDate || '',
+        dueDate: editingTask.date || editingTask.dueDate || '',
+        status: editingTask.status || 'Not Started',
+        estimatedCost: editingTask.estimatedCost || 0,
+        quotedCost: editingTask.quotedCost || 0,
+        paidCost: editingTask.paidCost || 0,
+        notes: editingTask.notes || editingTask.description || '',
+        description: editingTask.description || editingTask.notes || '',
+        assignedMembers: editingTask.assignedMembers || [],
+        tags: editingTask.tags || [],
+        isAutoTask: false
+      });
+    } else if (editingTaskContext.type === 'song') {
       await actions.updateSongDeadline(song.id, editingTask.id, editingTask);
     } else if (editingTaskContext.type === 'version') {
       await actions.updateVersionTask(song.id, editingTaskContext.versionId, editingTask.id, editingTask);
@@ -389,9 +451,7 @@ export const SongDetailView = ({ song, onBack }) => {
     if (taskFilterStatus !== 'all') {
       tasks = tasks.filter(t => t.status === taskFilterStatus);
     }
-    if (taskFilterCategory !== 'all') {
-      tasks = tasks.filter(t => t.category === taskFilterCategory);
-    }
+    // Issue #12: Removed category filter
     tasks.sort((a, b) => {
       const valA = a[taskSortBy] || '';
       const valB = b[taskSortBy] || '';
@@ -400,7 +460,7 @@ export const SongDetailView = ({ song, onBack }) => {
         : (valA > valB ? -1 : valA < valB ? 1 : 0);
     });
     return tasks;
-  }, [songTasks, taskFilterStatus, taskFilterCategory, taskSortBy, taskSortDir]);
+  }, [songTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   // Get core release IDs (supports both new array and legacy single)
   const coreReleaseIds = useMemo(() => {
@@ -655,7 +715,7 @@ export const SongDetailView = ({ song, onBack }) => {
           )}
         </div>
         
-        {/* B.4 Videos: Core Version Video Options */}
+        {/* B.4 Videos: Core Version Video Options - Issue #1 Fix: Video checkboxes now work at Song level */}
         <div className="mb-6 pb-4 border-b-2 border-gray-200">
           <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Videos (Core Version)</h4>
           <div className="p-3 bg-gray-50 border-2 border-black">
@@ -668,20 +728,17 @@ export const SongDetailView = ({ song, onBack }) => {
                 { key: 'visualizer', label: 'Visualizer' },
                 { key: 'live', label: 'Live Video' },
                 { key: 'custom', label: 'Custom Video' }
-              ].map(type => {
-                const coreVersion = (currentSong.versions || []).find(v => v.id === 'core');
-                return (
-                  <label key={type.key} className="flex items-center gap-2 cursor-pointer font-bold">
-                    <input 
-                      type="checkbox" 
-                      checked={coreVersion?.videoTypes?.[type.key] || false} 
-                      onChange={e => handleVideoTypeToggle('core', type.key, e.target.checked)} 
-                      className="w-4 h-4"
-                    />
-                    {type.label}
-                  </label>
-                );
-              })}
+              ].map(type => (
+                <label key={type.key} className="flex items-center gap-2 cursor-pointer font-bold">
+                  <input 
+                    type="checkbox" 
+                    checked={form.videoTypes?.[type.key] || false} 
+                    onChange={e => handleSongVideoTypeToggle(type.key, e.target.checked)} 
+                    className="w-4 h-4"
+                  />
+                  {type.label}
+                </label>
+              ))}
             </div>
             <div className="text-[10px] text-gray-500 mt-2">Checking creates a Video Item; unchecking prompts to delete it</div>
           </div>
@@ -719,65 +776,220 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
         </div>
         
-        {/* B.6 Instruments - Per spec: For each Instrument, show Instrument Name and Musician Assignment */}
+        {/* B.6 Instruments - Issues #2, #4, #5, #6: Multiple instruments with multiple musicians, editable, with AutoTask linkage */}
         <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Instruments</h4>
+          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Instruments &amp; Musicians</h4>
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">
-                Add Instruments
-                <span className="text-[10px] font-normal ml-2 text-gray-500">(Adding creates &quot;Record (Instrument)&quot; tasks)</span>
-              </label>
-              <input 
-                value={(form.instruments || []).join(', ')} 
-                onChange={e => handleInstrumentsChange(e.target.value)} 
-                placeholder="guitar, synth, drums (comma-separated)" 
-                className={cn("w-full", THEME.punk.input)} 
-              />
+            {/* Add New Instrument */}
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-bold uppercase mb-1">
+                  Add Instrument
+                  <span className="text-[10px] font-normal ml-2 text-gray-500">(Creates &quot;Record (Instrument)&quot; task)</span>
+                </label>
+                <input 
+                  value={newInstrumentName} 
+                  onChange={e => setNewInstrumentName(e.target.value)} 
+                  placeholder="e.g., Guitar, Synth, Drums" 
+                  className={cn("w-full", THEME.punk.input)} 
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newInstrumentName.trim()) {
+                      const newInstrumentData = { name: newInstrumentName.trim(), musicians: [] };
+                      const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
+                      handleFieldChange('instrumentData', updatedInstruments);
+                      // Also update legacy instruments array for compatibility
+                      handleFieldChange('instruments', updatedInstruments.map(i => i.name));
+                      setNewInstrumentName('');
+                      setTimeout(handleSave, 0);
+                    }
+                  }}
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  if (!newInstrumentName.trim()) return;
+                  const newInstrumentData = { name: newInstrumentName.trim(), musicians: [] };
+                  const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
+                  handleFieldChange('instrumentData', updatedInstruments);
+                  handleFieldChange('instruments', updatedInstruments.map(i => i.name));
+                  setNewInstrumentName('');
+                  setTimeout(handleSave, 0);
+                }}
+                className={cn("px-4 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}
+              >
+                + Add
+              </button>
             </div>
             
-            {/* Per-Instrument Musician Assignments */}
-            {(form.instruments || []).length > 0 && (
+            {/* List of Instruments with Musicians */}
+            {((form.instrumentData || []).length > 0 || (form.instruments || []).length > 0) && (
               <div className="p-3 bg-gray-50 border-2 border-black">
-                <div className="text-xs font-bold uppercase mb-2">Musician Assignments</div>
-                <div className="space-y-2">
-                  {(form.instruments || []).map((instrument, idx) => (
-                    <div key={`${instrument}-${idx}`} className="flex items-center gap-2 p-2 bg-white border border-gray-300">
-                      <span className="font-bold text-sm min-w-[100px]">{instrument}</span>
-                      <select 
-                        value={instrumentMusicians[instrument] || ''} 
-                        onChange={e => {
-                          const memberId = e.target.value;
-                          setInstrumentMusicians(prev => ({ ...prev, [instrument]: memberId }));
-                          // Auto-assign musician to the Record task for this instrument
-                          if (memberId) {
-                            const recordTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrument})`);
-                            if (recordTask) {
-                              const existingAssignments = recordTask.assignedMembers || [];
-                              if (!existingAssignments.some(m => m.memberId === memberId)) {
-                                actions.updateSongDeadline(song.id, recordTask.id, {
-                                  assignedMembers: [...existingAssignments, { memberId, cost: 0, instrument }]
-                                });
+                <div className="text-xs font-bold uppercase mb-2">Instruments &amp; Assigned Musicians</div>
+                <div className="space-y-3">
+                  {/* Use instrumentData if available, otherwise migrate from legacy instruments array */}
+                  {(form.instrumentData || (form.instruments || []).map(name => ({ name, musicians: [] }))).map((instrument, idx) => (
+                    <div key={`${instrument.name}-${idx}`} className="p-3 bg-white border-2 border-gray-300">
+                      {/* Instrument Header - Editable */}
+                      <div className="flex items-center gap-2 mb-2">
+                        {editingInstrumentIndex === idx ? (
+                          <>
+                            <input 
+                              value={editingInstrumentName} 
+                              onChange={e => setEditingInstrumentName(e.target.value)}
+                              className={cn("flex-1 text-sm font-bold", THEME.punk.input)}
+                              autoFocus
+                            />
+                            <button 
+                              onClick={() => {
+                                if (!editingInstrumentName.trim()) return;
+                                const updatedInstruments = [...(form.instrumentData || (form.instruments || []).map(name => ({ name, musicians: [] })))];
+                                const oldName = updatedInstruments[idx].name;
+                                updatedInstruments[idx] = { ...updatedInstruments[idx], name: editingInstrumentName.trim() };
+                                handleFieldChange('instrumentData', updatedInstruments);
+                                handleFieldChange('instruments', updatedInstruments.map(i => i.name));
+                                setEditingInstrumentIndex(null);
+                                setEditingInstrumentName('');
+                                // Update the corresponding Record task name
+                                const recordTask = (currentSong.deadlines || []).find(t => t.type === `Record (${oldName})`);
+                                if (recordTask) {
+                                  actions.updateSongDeadline(song.id, recordTask.id, { type: `Record (${editingInstrumentName.trim()})` });
+                                }
+                                setTimeout(handleSave, 0);
+                              }}
+                              className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-green-500 text-white")}
+                            >
+                              Save
+                            </button>
+                            <button 
+                              onClick={() => { setEditingInstrumentIndex(null); setEditingInstrumentName(''); }}
+                              className={cn("px-2 py-1 text-xs", THEME.punk.btn)}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-sm flex-1">{instrument.name}</span>
+                            <button 
+                              onClick={() => { setEditingInstrumentIndex(idx); setEditingInstrumentName(instrument.name); }}
+                              className="p-1 text-gray-500 hover:bg-gray-100"
+                              title="Edit instrument name"
+                            >
+                              <Icon name="Edit" size={14} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const instrumentName = instrument.name;
+                                // Check for associated Record task
+                                const recordTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrumentName})`);
+                                if (recordTask) {
+                                  if (!confirm(`Removing this instrument will also delete the "Record (${instrumentName})" task. Continue?`)) {
+                                    return;
+                                  }
+                                  // Delete the associated task
+                                  actions.deleteSongDeadline?.(song.id, recordTask.id);
+                                }
+                                // Remove the instrument
+                                const updatedInstruments = (form.instrumentData || (form.instruments || []).map(name => ({ name, musicians: [] }))).filter((_, i) => i !== idx);
+                                handleFieldChange('instrumentData', updatedInstruments);
+                                handleFieldChange('instruments', updatedInstruments.map(i => i.name));
+                                setTimeout(handleSave, 0);
+                              }}
+                              className="p-1 text-red-500 hover:bg-red-100"
+                              title="Remove instrument"
+                            >
+                              <Icon name="Trash2" size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      
+                      {/* Assigned Musicians List */}
+                      <div className="ml-4 space-y-1">
+                        {(instrument.musicians || []).length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {(instrument.musicians || []).map((m, midx) => {
+                              const member = teamMembers.find(tm => tm.id === m.memberId);
+                              return (
+                                <span key={`${m.memberId}-${midx}`} className="px-2 py-1 bg-purple-100 border-2 border-purple-300 text-xs font-bold flex items-center gap-1">
+                                  {member?.name || 'Member'}
+                                  <button 
+                                    onClick={() => {
+                                      const updatedInstruments = [...(form.instrumentData || (form.instruments || []).map(name => ({ name, musicians: [] })))];
+                                      updatedInstruments[idx] = {
+                                        ...updatedInstruments[idx],
+                                        musicians: (updatedInstruments[idx].musicians || []).filter((_, mi) => mi !== midx)
+                                      };
+                                      handleFieldChange('instrumentData', updatedInstruments);
+                                      // Also update the Record task assignments
+                                      const recordTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrument.name})`);
+                                      if (recordTask) {
+                                        const updatedAssignments = (recordTask.assignedMembers || []).filter(am => am.memberId !== m.memberId);
+                                        actions.updateSongDeadline(song.id, recordTask.id, { assignedMembers: updatedAssignments });
+                                      }
+                                      setTimeout(handleSave, 0);
+                                    }}
+                                    className="text-red-500 ml-1"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        
+                        {/* Add Musician to Instrument */}
+                        <div className="flex gap-2 items-center">
+                          <select 
+                            value={newInstrumentMusician[idx] || ''} 
+                            onChange={e => setNewInstrumentMusician(prev => ({ ...prev, [idx]: e.target.value }))}
+                            className={cn("flex-1 text-xs", THEME.punk.input)}
+                          >
+                            <option value="">Add musician...</option>
+                            {teamMembers.filter(m => m.isMusician).map(m => (
+                              <option key={m.id} value={m.id}>{m.name}</option>
+                            ))}
+                          </select>
+                          <button 
+                            onClick={() => {
+                              const memberId = newInstrumentMusician[idx];
+                              if (!memberId) return;
+                              const updatedInstruments = [...(form.instrumentData || (form.instruments || []).map(name => ({ name, musicians: [] })))];
+                              // Check if musician already assigned
+                              if ((updatedInstruments[idx].musicians || []).some(m => m.memberId === memberId)) return;
+                              updatedInstruments[idx] = {
+                                ...updatedInstruments[idx],
+                                musicians: [...(updatedInstruments[idx].musicians || []), { memberId }]
+                              };
+                              handleFieldChange('instrumentData', updatedInstruments);
+                              // Auto-assign musician to the Record task for this instrument (Issue #6)
+                              const recordTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrument.name})`);
+                              if (recordTask) {
+                                const existingAssignments = recordTask.assignedMembers || [];
+                                if (!existingAssignments.some(m => m.memberId === memberId)) {
+                                  actions.updateSongDeadline(song.id, recordTask.id, {
+                                    assignedMembers: [...existingAssignments, { memberId, cost: 0, instrument: instrument.name }]
+                                  });
+                                }
                               }
-                            }
-                          }
-                        }}
-                        className={cn("flex-1 text-xs", THEME.punk.input)}
-                      >
-                        <option value="">Assign Musician...</option>
-                        {teamMembers.filter(m => m.isMusician).map(m => (
-                          <option key={m.id} value={m.id}>{m.name} {m.instruments?.includes(instrument) ? `(plays ${instrument})` : ''}</option>
-                        ))}
-                      </select>
-                      {instrumentMusicians[instrument] && (
-                        <span className="px-2 py-1 bg-purple-100 border border-purple-300 text-xs font-bold">
-                          {teamMembers.find(m => m.id === instrumentMusicians[instrument])?.name || 'Assigned'}
-                        </span>
-                      )}
+                              setNewInstrumentMusician(prev => ({ ...prev, [idx]: '' }));
+                              setTimeout(handleSave, 0);
+                            }}
+                            className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div className="text-[10px] text-gray-500 mt-2">Assigning a musician auto-attaches them to the Record task for that instrument</div>
+                <div className="text-[10px] text-gray-500 mt-2">
+                  • Adding an instrument creates a &quot;Record (Instrument)&quot; task<br/>
+                  • Assigning musicians auto-attaches them to the Record task<br/>
+                  • Removing an instrument prompts to delete the associated task
+                </div>
               </div>
             )}
           </div>
@@ -843,6 +1055,7 @@ export const SongDetailView = ({ song, onBack }) => {
       </div>
 
       {/* SECTION C: Versions Module - Collapsible list per spec */}
+      {/* Issue #3: Display-Only Core Version at top of Versions list */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
           <h3 className="font-black uppercase">Versions</h3>
@@ -854,14 +1067,70 @@ export const SongDetailView = ({ song, onBack }) => {
         </div>
         
         <div className="space-y-2">
-          {(currentSong.versions || []).map(v => {
+          {/* Issue #3: Always show Core Version at the top as display-only */}
+          <div className="border-2 border-black bg-yellow-50">
+            {/* Core Version Header */}
+            <div 
+              className="p-3 flex items-center justify-between cursor-pointer hover:bg-yellow-100"
+              onClick={() => toggleVersionExpand('core-display')}
+            >
+              <div className="flex items-center gap-3">
+                <Icon name={expandedVersions['core-display'] ? "ChevronDown" : "ChevronRight"} size={16} />
+                <span className="font-bold">Core Version</span>
+                <span className="px-2 py-1 bg-yellow-200 text-xs font-bold border border-black">DISPLAY ONLY</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="px-2 py-1 bg-gray-100 border border-black">{songTasks.length} tasks</span>
+                <span className="px-2 py-1 bg-green-100 border border-black">{songProgressValue}%</span>
+              </div>
+            </div>
+            
+            {/* Core Version Expanded Content - All values from Song Information */}
+            {expandedVersions['core-display'] && (
+              <div className="p-4 border-t-2 border-black">
+                <div className="p-3 bg-yellow-100 border-2 border-yellow-400 text-xs font-bold mb-3">
+                  ⓘ Core Version displays Song Information values. Edit the Song Information section above to update.
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1 opacity-60">Song Title</label>
+                    <div className="px-3 py-2 bg-gray-100 border-2 border-gray-300 text-sm">{form.title || 'Untitled'}</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1 opacity-60">Release Date</label>
+                    <div className="px-3 py-2 bg-gray-100 border-2 border-gray-300 text-sm">{earliestReleaseDate || form.releaseDate || 'Not Set'}</div>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-bold uppercase mb-1 opacity-60">Video Types</label>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(form.videoTypes || {}).filter(([, enabled]) => enabled).map(([key]) => (
+                      <span key={key} className="px-2 py-1 bg-gray-200 border border-gray-400 text-xs font-bold capitalize">{key}</span>
+                    ))}
+                    {(!form.videoTypes || Object.values(form.videoTypes).every(val => !val)) && <span className="text-xs opacity-50">None selected</span>}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-bold uppercase mb-1 opacity-60">Instruments</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(form.instrumentData || (form.instruments || []).map(name => ({ name }))).map((inst, idx) => (
+                      <span key={`${inst.name}-${idx}`} className="px-2 py-1 bg-gray-200 border border-gray-400 text-xs font-bold">{inst.name}</span>
+                    ))}
+                    {(form.instruments || []).length === 0 && (!form.instrumentData || form.instrumentData.length === 0) && <span className="text-xs opacity-50">None</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Other Versions (non-core) */}
+          {(currentSong.versions || []).filter(v => v.id !== 'core').map(v => {
             const versionTaskCount = (v.tasks || []).length + (v.customTasks || []).length;
             const versionProgress = calculateTaskProgress([...(v.tasks || []), ...(v.customTasks || [])]).progress;
             const isExpanded = expandedVersions[v.id];
-            const isCoreVersion = v.id === 'core';
             
             return (
-              <div key={v.id} className={cn("border-2 border-black", isCoreVersion ? 'bg-yellow-50' : 'bg-white')}>
+              <div key={v.id} className="border-2 border-black bg-white">
                 {/* Collapsed header - Version Name and task count */}
                 <div 
                   className="p-3 flex items-center justify-between cursor-pointer hover:bg-gray-50"
@@ -870,76 +1139,22 @@ export const SongDetailView = ({ song, onBack }) => {
                   <div className="flex items-center gap-3">
                     <Icon name={isExpanded ? "ChevronDown" : "ChevronRight"} size={16} />
                     <span className="font-bold">{v.name}</span>
-                    {isCoreVersion && <span className="px-2 py-1 bg-yellow-200 text-xs font-bold border border-black">CORE (Display Only)</span>}
                   </div>
                   <div className="flex items-center gap-3 text-xs">
                     <span className="px-2 py-1 bg-gray-100 border border-black">{versionTaskCount} tasks</span>
                     <span className="px-2 py-1 bg-green-100 border border-black">{versionProgress}%</span>
-                    {!isCoreVersion && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); if (confirm('Delete this version?')) actions.deleteSongVersion(song.id, v.id); }} 
-                        className="p-1 text-red-500 hover:bg-red-100"
-                      >
-                        <Icon name="Trash2" size={14} />
-                      </button>
-                    )}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); if (confirm('Delete this version?')) actions.deleteSongVersion(song.id, v.id); }} 
+                      className="p-1 text-red-500 hover:bg-red-100"
+                    >
+                      <Icon name="Trash2" size={14} />
+                    </button>
                   </div>
                 </div>
                 
-                {/* Expanded content */}
+                {/* Expanded content for non-core versions */}
                 {isExpanded && (
                   <div className="p-4 border-t-2 border-black">
-                    {/* Core Version is display-only per spec */}
-                    {isCoreVersion ? (
-                      <div className="space-y-3">
-                        <div className="p-3 bg-yellow-100 border-2 border-yellow-400 text-xs font-bold">
-                          ⓘ Core Version is display-only. Edit Song Information above to update.
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold uppercase mb-1 opacity-60">Version Name</label>
-                            <div className="px-3 py-2 bg-gray-100 border-2 border-gray-300 text-sm">{v.name}</div>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold uppercase mb-1 opacity-60">Release Date</label>
-                            <div className="px-3 py-2 bg-gray-100 border-2 border-gray-300 text-sm">{earliestReleaseDate || form.releaseDate || 'Not Set'}</div>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase mb-1 opacity-60">Video Types</label>
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(v.videoTypes || {}).filter(([, enabled]) => enabled).map(([key]) => (
-                              <span key={key} className="px-2 py-1 bg-gray-200 border border-gray-400 text-xs font-bold">{key}</span>
-                            ))}
-                            {Object.values(v.videoTypes || {}).every(val => !val) && <span className="text-xs opacity-50">None selected</span>}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase mb-1 opacity-60">Instruments</label>
-                          <div className="flex flex-wrap gap-2">
-                            {(form.instruments || []).map((inst, idx) => (
-                              <span key={`${inst}-${idx}`} className="px-2 py-1 bg-gray-200 border border-gray-400 text-xs font-bold">{inst}</span>
-                            ))}
-                            {(form.instruments || []).length === 0 && <span className="text-xs opacity-50">None</span>}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Non-Core Versions are editable */
-                      <>
-                    <div className="grid md:grid-cols-2 gap-4 mb-4">
-                      {/* Version Name */}
-                      <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Version Name</label>
-                        <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-                      </div>
-                      
-                      {/* Release Date */}
-                      <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
-                        <input type="date" value={v.releaseDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDate: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-                      </div>
-                    </div>
                     
                     {/* Is Single? flag per spec */}
                     <div className="mb-4">
@@ -1106,8 +1321,17 @@ export const SongDetailView = ({ song, onBack }) => {
                       <label className="block text-xs font-bold uppercase mb-1">Notes</label>
                       <textarea value={v.notes || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { notes: e.target.value })} className={cn("w-full h-16", THEME.punk.input)} placeholder="Mix differences, edits, era..." />
                     </div>
-                    </>
-                    )}
+                    {/* Version name and release date */}
+                    <div className="grid md:grid-cols-2 gap-4 mt-4">
+                      <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Version Name</label>
+                        <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("w-full", THEME.punk.input)} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
+                        <input type="date" value={v.releaseDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDate: e.target.value })} className={cn("w-full", THEME.punk.input)} />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1117,38 +1341,68 @@ export const SongDetailView = ({ song, onBack }) => {
       </div>
 
       {/* SECTION D: Tasks Module - All tasks from song and versions per spec */}
+      {/* Issues #7, #8, #9, #10, #11, #12, #13, #14: Unified task system with proper behavior */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
-          <h3 className="font-black uppercase">All Tasks</h3>
+          <h3 className="font-black uppercase">Tasks</h3>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* Task Filters */}
+            {/* Task Filters - Issue #12: Remove Category filter */}
             <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
               <option value="all">All Status</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select value={taskFilterCategory} onChange={e => setTaskFilterCategory(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-              <option value="all">All Categories</option>
-              {taskCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             {/* Task Sorting */}
             <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
               <option value="date">Sort by Date</option>
               <option value="type">Sort by Type</option>
               <option value="status">Sort by Status</option>
-              <option value="estimatedCost">Sort by Cost</option>
             </select>
             <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
               {taskSortDir === 'asc' ? '↑' : '↓'}
             </button>
-            <button onClick={handleRecalculateDeadlines} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
-            {/* Custom Task Button per spec Section D */}
-            <button onClick={() => setShowAddTask(true)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>+ Custom Task</button>
+            <button onClick={handleRecalculateDeadlines} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate</button>
+            {/* Issue #7: Custom Task Button - integrated into main task list */}
+            <button 
+              onClick={() => {
+                // Create a new custom task using the unified task system (Issue #9)
+                const newCustomTask = {
+                  title: 'New Task',
+                  date: '',
+                  description: '',
+                  estimatedCost: 0,
+                  status: 'Not Started',
+                  notes: '',
+                  isAutoTask: false
+                };
+                handleOpenTaskEdit(newCustomTask, { type: 'new-custom' });
+              }} 
+              className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+            >
+              + Add Task
+            </button>
           </div>
         </div>
+        
+        {/* Add Task Form - Issue #7: Shown when adding new custom task */}
+        {showAddTask && (
+          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
+              <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
+              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+              <div className="flex gap-2">
+                <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
+                <button onClick={() => setShowAddTask(false)} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
           <span className="px-2 py-1 bg-yellow-100 border-2 border-black">Core Song</span>
+          <span className="px-2 py-1 bg-green-100 border-2 border-black">Custom Task</span>
           {(currentSong.versions || []).filter(v => v.id !== 'core').map(v => (
             <span key={v.id} className="px-2 py-1 bg-blue-100 border-2 border-black">{v.name}</span>
           ))}
@@ -1157,232 +1411,198 @@ export const SongDetailView = ({ song, onBack }) => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {/* Issue #12, #13: Simplified columns - removed Category, removed duplicate date */}
               <tr className="bg-gray-100 border-b-2 border-black">
                 <th className="p-2 text-left">Version</th>
-                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Type {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-left">Category</th>
-                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Task {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Due Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('status'); setTaskSortDir(taskSortBy === 'status' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Status {taskSortBy === 'status' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-center">Due</th>
-                <th className="p-2 text-right cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('estimatedCost'); setTaskSortDir(taskSortBy === 'estimatedCost' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Est. Cost {taskSortBy === 'estimatedCost' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-left">Assignments</th>
-                <th className="p-2 text-center">Edit</th>
+                <th className="p-2 text-left">Assigned</th>
               </tr>
             </thead>
             <tbody>
-              {/* Core Song Tasks - now uses filtered/sorted tasks */}
-              {filteredSongTasks.length === 0 && (currentSong.versions || []).every(v => (v.tasks || []).length === 0) ? (
-                <tr><td colSpan="9" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
-              ) : (
-                <>
-                  {/* Core song tasks */}
-                  {filteredSongTasks.map(task => {
-                    const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
-                    const isDueSoon = task.date && !isOverdue && new Date(task.date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && task.status !== 'Complete' && task.status !== 'Done';
-                    return (
-                    <tr key={`core-${task.id}`} className={cn("border-b border-gray-200", isOverdue ? "bg-red-50" : "bg-yellow-50")}>
-                      <td className="p-2"><span className="px-2 py-1 text-xs font-bold bg-yellow-200 border border-black">Core</span></td>
+              {/* All tasks (song tasks + custom tasks + version tasks) - Issues #8, #9: Unified display */}
+              {(() => {
+                // Combine all tasks into one unified list
+                const allTasks = [
+                  // Core song tasks (auto-generated)
+                  ...filteredSongTasks.map(task => ({ ...task, _source: 'core', _isAuto: true })),
+                  // Custom tasks - now integrated into main list (Issue #8)
+                  ...songCustomTasks.map(task => ({ ...task, _source: 'custom', _isAuto: false })),
+                  // Version tasks
+                  ...(currentSong.versions || []).filter(v => v.id !== 'core').flatMap(v => 
+                    [...(v.tasks || []), ...(v.customTasks || [])].map(task => ({ ...task, _source: 'version', _versionId: v.id, _versionName: v.name, _isAuto: !task.title?.includes('Custom') }))
+                  )
+                ];
+                
+                // Sort tasks
+                allTasks.sort((a, b) => {
+                  const valA = a[taskSortBy] || '';
+                  const valB = b[taskSortBy] || '';
+                  return taskSortDir === 'asc' 
+                    ? (valA < valB ? -1 : valA > valB ? 1 : 0)
+                    : (valA > valB ? -1 : valA < valB ? 1 : 0);
+                });
+                
+                if (allTasks.length === 0) {
+                  return <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate, or add a custom task.</td></tr>;
+                }
+                
+                return allTasks.map(task => {
+                  const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
+                  const isDueSoon = task.date && !isOverdue && new Date(task.date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && task.status !== 'Complete' && task.status !== 'Done';
+                  const isAutoTask = task._isAuto;
+                  
+                  const getSourceLabel = () => {
+                    if (task._source === 'core') return { bg: 'bg-yellow-200', text: 'Core' };
+                    if (task._source === 'custom') return { bg: 'bg-green-200', text: 'Custom' };
+                    if (task._source === 'version') return { bg: 'bg-blue-200', text: task._versionName || 'Version' };
+                    return { bg: 'bg-gray-200', text: 'Unknown' };
+                  };
+                  const sourceLabel = getSourceLabel();
+                  
+                  return (
+                    // Issue #10: Entire row is clickable to open Task Edit/More Info Page
+                    <tr 
+                      key={`${task._source}-${task.id}`} 
+                      className={cn(
+                        "border-b border-gray-200 cursor-pointer hover:bg-gray-100",
+                        isOverdue ? "bg-red-50" : task._source === 'core' ? "bg-yellow-50" : task._source === 'custom' ? "bg-green-50" : "bg-blue-50"
+                      )}
+                      onClick={() => handleOpenTaskEdit(task, { 
+                        type: task._source === 'core' ? 'song' : task._source === 'custom' ? 'custom' : 'version', 
+                        versionId: task._versionId 
+                      })}
+                    >
                       <td className="p-2">
-                        <span className="font-bold">{task.type || task.title}</span>
-                        {task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}
-                        {task.isAutoTask !== false && <span className="text-xs text-blue-500 ml-1">(auto)</span>}
+                        <span className={cn("px-2 py-1 text-xs font-bold border border-black", sourceLabel.bg)}>
+                          {sourceLabel.text}
+                        </span>
                       </td>
-                      <td className="p-2"><span className="px-2 py-1 text-xs bg-gray-200">{task.category || '-'}</span></td>
                       <td className="p-2">
-                        <input type="date" value={task.date || ''} onChange={e => handleDeadlineChange(task.id, 'date', e.target.value)} className="border-2 border-black p-1 text-xs" />
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{task.type || task.title}</span>
+                          {isAutoTask && <span className="text-[10px] text-blue-500">(auto)</span>}
+                          {task.isOverridden && <span className="text-[10px] text-orange-500">(edited)</span>}
+                        </div>
                       </td>
                       <td className="p-2">
-                        <select value={task.status || 'Not Started'} onChange={e => handleDeadlineChange(task.id, 'status', e.target.value)} className="border-2 border-black p-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-xs", isOverdue && "text-red-600 font-bold", isDueSoon && "text-yellow-600 font-bold")}>
+                            {task.date || '-'}
+                          </span>
+                          {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
+                          {isDueSoon && <span className="px-1 py-0.5 bg-yellow-200 border border-yellow-500 text-yellow-800 text-[10px] font-bold">SOON</span>}
+                        </div>
+                      </td>
+                      <td className="p-2" onClick={e => e.stopPropagation()}>
+                        {/* Issue #14: Status is the ONLY inline-editable field */}
+                        <select 
+                          value={task.status || 'Not Started'} 
+                          onChange={e => {
+                            if (task._source === 'core') {
+                              handleDeadlineChange(task.id, 'status', e.target.value);
+                            } else if (task._source === 'custom') {
+                              actions.updateSongCustomTask(song.id, task.id, { status: e.target.value });
+                            } else if (task._source === 'version') {
+                              actions.updateVersionTask(song.id, task._versionId, task.id, { status: e.target.value });
+                            }
+                          }} 
+                          className="border-2 border-black p-1 text-xs"
+                        >
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
-                      </td>
-                      <td className="p-2 text-center">
-                        {isOverdue && <span className="px-2 py-1 bg-red-200 border border-red-500 text-red-800 text-xs font-bold">OVERDUE</span>}
-                        {isDueSoon && <span className="px-2 py-1 bg-yellow-200 border border-yellow-500 text-yellow-800 text-xs font-bold">DUE SOON</span>}
-                        {!isOverdue && !isDueSoon && <span className="text-xs opacity-50">-</span>}
-                      </td>
-                      <td className="p-2 text-right">
-                        <input type="number" value={task.estimatedCost || 0} onChange={e => handleDeadlineChange(task.id, 'estimatedCost', parseFloat(e.target.value) || 0)} className="border-2 border-black p-1 text-xs w-20 text-right" />
                       </td>
                       <td className="p-2 text-xs">
                         <div className="flex flex-wrap gap-1">
                           {(task.assignedMembers || []).slice(0, 2).map(m => {
                             const member = teamMembers.find(tm => tm.id === m.memberId);
-                            return <span key={m.memberId + m.cost} className="px-1 py-0.5 bg-purple-100 border border-black font-bold text-[10px]">{member?.name?.split(' ')[0] || '?'}</span>;
+                            return <span key={m.memberId + (m.cost || '')} className="px-1 py-0.5 bg-purple-100 border border-black font-bold text-[10px]">{member?.name?.split(' ')[0] || '?'}</span>;
                           })}
                           {(task.assignedMembers || []).length > 2 && <span className="text-[10px]">+{(task.assignedMembers || []).length - 2}</span>}
+                          {(!task.assignedMembers || task.assignedMembers.length === 0) && <span className="text-[10px] opacity-50">-</span>}
                         </div>
-                      </td>
-                      <td className="p-2 text-center">
-                        <button 
-                          onClick={() => handleOpenTaskEdit(task, { type: 'song' })} 
-                          className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-gray-700 text-white")}
-                        >
-                          Edit
-                        </button>
                       </td>
                     </tr>
                   );
-                  })}
-                  
-                  {/* Version tasks */}
-                  {(currentSong.versions || []).filter(v => v.id !== 'core').flatMap(v => 
-                    (v.tasks || []).map(task => {
-                      const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
-                      const isDueSoon = task.date && !isOverdue && new Date(task.date) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && task.status !== 'Complete' && task.status !== 'Done';
-                      return (
-                      <tr key={`${v.id}-${task.id}`} className={cn("border-b border-gray-200", isOverdue ? "bg-red-50" : "bg-blue-50")}>
-                        <td className="p-2"><span className="px-2 py-1 text-xs font-bold bg-blue-200 border border-black">{v.name}</span></td>
-                        <td className="p-2">
-                          <span className="font-bold">{task.type || task.title}</span>
-                          {task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}
-                        </td>
-                        <td className="p-2"><span className="px-2 py-1 text-xs bg-gray-200">{task.category || '-'}</span></td>
-                        <td className="p-2">
-                          <input type="date" value={task.date || ''} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { date: e.target.value })} className="border-2 border-black p-1 text-xs" />
-                        </td>
-                        <td className="p-2">
-                          <select value={task.status || 'Not Started'} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { status: e.target.value })} className="border-2 border-black p-1 text-xs">
-                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </td>
-                        <td className="p-2 text-center">
-                          {isOverdue && <span className="px-2 py-1 bg-red-200 border border-red-500 text-red-800 text-xs font-bold">OVERDUE</span>}
-                          {isDueSoon && <span className="px-2 py-1 bg-yellow-200 border border-yellow-500 text-yellow-800 text-xs font-bold">DUE SOON</span>}
-                          {!isOverdue && !isDueSoon && <span className="text-xs opacity-50">-</span>}
-                        </td>
-                        <td className="p-2 text-right">
-                          <input type="number" value={task.estimatedCost || 0} onChange={e => actions.updateVersionTask(song.id, v.id, task.id, { estimatedCost: parseFloat(e.target.value) || 0 })} className="border-2 border-black p-1 text-xs w-20 text-right" />
-                        </td>
-                        <td className="p-2 text-xs">
-                          <div className="flex flex-wrap gap-1">
-                            {(task.assignedMembers || []).slice(0, 2).map(m => {
-                              const member = teamMembers.find(tm => tm.id === m.memberId);
-                              return <span key={m.memberId + m.cost} className="px-1 py-0.5 bg-purple-100 border border-black font-bold text-[10px]">{member?.name?.split(' ')[0] || '?'}</span>;
-                            })}
-                          </div>
-                        </td>
-                        <td className="p-2 text-center">
-                          <button 
-                            onClick={() => handleOpenTaskEdit(task, { type: 'version', versionId: v.id })} 
-                            className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-gray-700 text-white")}
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                    })
-                  )}
-                </>
-              )}
+                });
+              })()}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Custom Tasks Section (2.2.3) */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Custom Tasks</h3>
-          <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
-        </div>
-        {showAddTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-              <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask({ ...newTask, estimatedCost: parseFloat(e.target.value) || 0 })} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
-              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-            </div>
-          </div>
-        )}
-        {songCustomTasks.length === 0 ? (
-          <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {songCustomTasks.map(task => (
-              <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
-                <div className="flex-1">
-                  <div className="font-bold">{task.title}</div>
-                  <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
-                  {task.description && <div className="text-sm mt-1">{task.description}</div>}
-                    <div className="mt-2 space-y-1">
-                      <div className="flex flex-wrap gap-1">
-                        {(task.assignedMembers || []).map(m => {
-                          const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 border-2 border-black bg-purple-100 text-xs font-bold">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
-                      })}
-                    </div>
-                    <div className="flex gap-1 items-center">
-                      <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-                        <option value="">Assign member</option>
-                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                      <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
-                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
-                      <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateSongCustomTask(song.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
-                      {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => handleOpenTaskEdit(task, { type: 'custom' })} className={cn("p-2", THEME.punk.btn, "bg-gray-700 text-white")} title="Edit Task"><Icon name="Edit" size={16} /></button>
-                <button onClick={() => handleDeleteCustomTask(task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Cost Summary - Calculated from all tasks (per specification B.2) */}
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span>Core Song Tasks:</span><span className="font-bold">{formatMoney(tasksCost)}</span></div>
-          <div className="flex justify-between"><span>Custom Tasks:</span><span className="font-bold">{formatMoney(customTasksCost)}</span></div>
-          <div className="flex justify-between"><span>Version Tasks:</span><span className="font-bold">{formatMoney(versionsCost)}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost)}</span></div>
-        </div>
-      </div>
+      {/* Issue #15: Cost Summary module REMOVED - costs are displayed in the Song Information section above */}
 
       {/* Song Task More/Edit Info Page Modal - Per spec Section 3 */}
+      {/* Issue #11: AutoTasks have locked Name/Due Date fields with override option */}
       {editingTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
           <div className={cn("w-full max-w-lg p-6 bg-white max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-              <h3 className="font-black uppercase">Edit Song Task</h3>
+              <h3 className="font-black uppercase">
+                {editingTaskContext?.type === 'new-custom' ? 'Add Custom Task' : 'Edit Task'}
+              </h3>
               <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
             </div>
 
             <div className="space-y-4">
-              {/* Task Name - Required */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Task Name *</label>
-                <input 
-                  value={editingTask.type || editingTask.title || ''} 
-                  onChange={e => setEditingTask(prev => ({ ...prev, type: e.target.value, title: e.target.value }))} 
-                  className={cn("w-full", THEME.punk.input)} 
-                />
-              </div>
+              {/* Issue #11: AutoTask indicator with locked fields */}
+              {(() => {
+                const isAutoTask = editingTask._isAuto || (editingTask.isAutoTask !== false && !editingTask.title?.includes('Custom') && editingTaskContext?.type !== 'new-custom' && editingTaskContext?.type !== 'custom');
+                const canEditLockedFields = editingTask.isOverridden || !isAutoTask;
+                
+                return (
+                  <>
+                    {isAutoTask && (
+                      <div className="p-3 bg-blue-50 border-2 border-blue-300 text-xs">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-bold">AutoTask</span>
+                            <span className="ml-2 opacity-75">Name and Due Date are locked. Override to edit.</span>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              checked={editingTask.isOverridden || false}
+                              onChange={e => setEditingTask(prev => ({ ...prev, isOverridden: e.target.checked }))}
+                              className="w-4 h-4"
+                            />
+                            <span className="font-bold">Override</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Task Name */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">
+                        Task Name {!canEditLockedFields && <span className="text-blue-500">(locked)</span>}
+                      </label>
+                      <input 
+                        value={editingTask.type || editingTask.title || ''} 
+                        onChange={e => setEditingTask(prev => ({ ...prev, type: e.target.value, title: e.target.value }))} 
+                        className={cn("w-full", THEME.punk.input, !canEditLockedFields && "bg-gray-100 cursor-not-allowed")}
+                        disabled={!canEditLockedFields}
+                      />
+                    </div>
 
-              {/* Task Due Date - Required */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Due Date *</label>
-                <input 
-                  type="date" 
-                  value={editingTask.date || editingTask.dueDate || ''} 
-                  onChange={e => setEditingTask(prev => ({ ...prev, date: e.target.value, dueDate: e.target.value }))} 
-                  className={cn("w-full", THEME.punk.input)} 
-                />
-              </div>
-
-              {/* AutoTask indicator - Display only per spec */}
-              <div className="p-2 bg-gray-100 border-2 border-gray-300 text-xs">
-                <span className="font-bold">AutoTask: </span>
-                <span>{editingTask.isAutoTask !== false && !editingTask.title?.includes('Custom') ? 'Yes (auto-generated)' : 'No (custom task)'}</span>
-              </div>
+                    {/* Task Due Date */}
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">
+                        Due Date {!canEditLockedFields && <span className="text-blue-500">(locked)</span>}
+                      </label>
+                      <input 
+                        type="date" 
+                        value={editingTask.date || editingTask.dueDate || ''} 
+                        onChange={e => setEditingTask(prev => ({ ...prev, date: e.target.value, dueDate: e.target.value }))} 
+                        className={cn("w-full", THEME.punk.input, !canEditLockedFields && "bg-gray-100 cursor-not-allowed")}
+                        disabled={!canEditLockedFields}
+                      />
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Team Member Assignment */}
               <div>
