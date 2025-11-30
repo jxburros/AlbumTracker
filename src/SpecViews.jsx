@@ -1981,6 +1981,7 @@ export const GlobalTasksView = () => {
 };
 
 // Releases List View (Spec 2.4) - Section 2: Enhanced with Grid/List Toggle
+// Phase 3: Enhanced Display Information (Number of Tracks, Tracks Completed, Track Progress %, Has Physical)
 export const ReleasesListView = ({ onSelectRelease }) => {
   const { data, actions } = useStore();
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid' - Tier 1.1: Grid/List Toggle
@@ -1996,6 +1997,54 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   const releaseProgress = (release) => {
     const tasks = [...(release.tasks || []), ...(release.customTasks || [])];
     return calculateTaskProgress(tasks).progress;
+  };
+  
+  // Phase 3.1: Calculate track statistics
+  const getTrackStats = (release) => {
+    const tracks = release.tracks || [];
+    const totalTracks = tracks.length;
+    
+    if (totalTracks === 0) {
+      return { total: 0, completed: 0, remaining: 0, progress: 0 };
+    }
+    
+    let completedTracks = 0;
+    
+    tracks.forEach(track => {
+      if (track.isExternal) {
+        // External tracks count as complete
+        completedTracks++;
+      } else if (track.songId) {
+        const song = (data.songs || []).find(s => s.id === track.songId);
+        if (song) {
+          // Check if all selected versions are complete
+          const versionIds = track.versionIds || [];
+          if (versionIds.length === 0) {
+            // If no versions specified, check core version (song deadlines)
+            const songTasks = [...(song.deadlines || []), ...(song.customTasks || [])];
+            const songProgress = calculateTaskProgress(songTasks).progress;
+            if (songProgress >= 100) completedTracks++;
+          } else {
+            // Check if all specified versions are complete
+            let allVersionsComplete = true;
+            versionIds.forEach(vId => {
+              const version = (song.versions || []).find(v => v.id === vId);
+              if (version) {
+                const versionTasks = [...(version.tasks || []), ...(version.customTasks || [])];
+                const vProgress = calculateTaskProgress(versionTasks).progress;
+                if (vProgress < 100) allVersionsComplete = false;
+              }
+            });
+            if (allVersionsComplete) completedTracks++;
+          }
+        }
+      }
+    });
+    
+    const remaining = totalTracks - completedTracks;
+    const progress = totalTracks > 0 ? Math.round((completedTracks / totalTracks) * 100) : 0;
+    
+    return { total: totalTracks, completed: completedTracks, remaining, progress };
   };
 
   return (
@@ -2024,51 +2073,59 @@ export const ReleasesListView = ({ onSelectRelease }) => {
         </div>
       </div>
       
-      {/* Tier 1.1: Grid View */}
+      {/* Tier 1.1: Grid View - Phase 3 Enhanced */}
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {releases.length === 0 ? (
             <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No releases yet. Click Add Release to create one.</div>
           ) : (
-            releases.map(release => (
-              <div 
-                key={release.id} 
-                onClick={() => onSelectRelease && onSelectRelease(release)} 
-                className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
-              >
-                <div className="font-bold text-lg mb-2">{release.name}</div>
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Type:</span>
-                    <span className="font-bold">{release.type}</span>
+            releases.map(release => {
+              const trackStats = getTrackStats(release);
+              return (
+                <div 
+                  key={release.id} 
+                  onClick={() => onSelectRelease && onSelectRelease(release)} 
+                  className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
+                >
+                  <div className="font-bold text-lg mb-2">{release.name}</div>
+                  <div className="text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Type:</span>
+                      <span className="font-bold">{release.type}{release.type === 'Other' && release.typeDetails ? ` (${release.typeDetails})` : ''}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Release Date:</span>
+                      <span className="font-bold">{release.releaseDate || 'TBD'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Task Progress:</span>
+                      <span className="font-bold">{releaseProgress(release)}%</span>
+                    </div>
+                    {/* Phase 3.1: Track Info */}
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Tracks:</span>
+                      <span className="font-bold">{trackStats.completed}/{trackStats.total}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Track Progress:</span>
+                      <span className="font-bold">{trackStats.progress}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-60">Has Physical:</span>
+                      <span className={cn("font-bold", release.hasPhysicalCopies ? "text-green-600" : "text-gray-400")}>{release.hasPhysicalCopies ? 'YES' : 'NO'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Release Date:</span>
-                    <span className="font-bold">{release.releaseDate || 'TBD'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Progress:</span>
-                    <span className="font-bold">{releaseProgress(release)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Est. Cost:</span>
-                    <span className="font-bold">{formatMoney(release.estimatedCost || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Songs:</span>
-                    <span className="font-bold">{(release.attachedSongIds || []).length}</span>
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {release.hasPhysicalCopies && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">PHYSICAL</span>}
+                    {release.hasExclusivity && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">EXCLUSIVE</span>}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1 mt-3">
-                  {release.hasPhysicalCopies && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">PHYSICAL</span>}
-                  {release.exclusiveType && release.exclusiveType !== 'None' && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">{release.exclusiveType}</span>}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       ) : (
-        /* List View (Original) */
+        /* List View - Phase 3 Enhanced */
         <div className={cn("overflow-x-auto", THEME.punk.card)}>
           <table className="w-full text-sm">
             <thead>
@@ -2076,24 +2133,31 @@ export const ReleasesListView = ({ onSelectRelease }) => {
                 <th className="p-3 text-left">Name</th>
                 <th className="p-3 text-left">Type</th>
                 <th className="p-3 text-left">Release Date</th>
+                <th className="p-3 text-center">Tracks</th>
+                <th className="p-3 text-center">Track Progress</th>
                 <th className="p-3 text-center">Physical</th>
-                <th className="p-3 text-right">Progress</th>
+                <th className="p-3 text-right">Task Progress</th>
                 <th className="p-3 text-right">Estimated Cost</th>
               </tr>
             </thead>
             <tbody>
               {releases.length === 0 ? (
-                <tr><td colSpan="6" className="p-10 text-center opacity-50">No releases yet. Click Add Release to create one.</td></tr>
-              ) : releases.map(release => (
-                <tr key={release.id} onClick={() => onSelectRelease && onSelectRelease(release)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                  <td className="p-3 font-bold">{release.name}</td>
-                  <td className="p-3">{release.type}</td>
-                  <td className="p-3">{release.releaseDate || '-'}</td>
-                  <td className="p-3 text-center">{release.hasPhysicalCopies ? 'Yes' : 'No'}</td>
-                  <td className="p-3 text-right">{releaseProgress(release)}%</td>
-                  <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
-                </tr>
-              ))}
+                <tr><td colSpan="8" className="p-10 text-center opacity-50">No releases yet. Click Add Release to create one.</td></tr>
+              ) : releases.map(release => {
+                const trackStats = getTrackStats(release);
+                return (
+                  <tr key={release.id} onClick={() => onSelectRelease && onSelectRelease(release)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
+                    <td className="p-3 font-bold">{release.name}</td>
+                    <td className="p-3">{release.type}{release.type === 'Other' && release.typeDetails ? ` (${release.typeDetails})` : ''}</td>
+                    <td className="p-3">{release.releaseDate || '-'}</td>
+                    <td className="p-3 text-center">{trackStats.completed}/{trackStats.total}</td>
+                    <td className="p-3 text-center">{trackStats.progress}%</td>
+                    <td className="p-3 text-center">{release.hasPhysicalCopies ? <span className="text-green-600 font-bold">YES</span> : <span className="text-gray-400">NO</span>}</td>
+                    <td className="p-3 text-right">{releaseProgress(release)}%</td>
+                    <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2102,13 +2166,16 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   );
 };
 
-// Release Detail View (Spec 2.5) - Section 3: Enhanced with Display Information and Task Sorting/Filtering
-export const ReleaseDetailView = ({ release, onBack }) => {
+// Release Detail View (Spec 2.5) - Phase 3: Releases System Overhaul
+// Includes: Enhanced Display Info, Exclusive YES/NO, Release Types with Other, Stage/Era/Tags, Tracks Module
+export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...release });
-  const [showAddReq, setShowAddReq] = useState(false);
-  const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
-  // Unified task state - no separate custom tasks section
+  // Phase 3.5: Tracks module state (replaces Required Recordings)
+  const [showAddTrack, setShowAddTrack] = useState(false);
+  const [newTrack, setNewTrack] = useState({ songId: '', versionIds: [], isExternal: false, externalArtist: '', externalTitle: '' });
+  const [selectedSongForTrack, setSelectedSongForTrack] = useState(null);
+  // Unified task state
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
   // Task sorting/filtering state
@@ -2123,29 +2190,45 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const handleSave = async () => { await actions.updateRelease(release.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
 
-  const handleAddRequirement = async () => {
-    await actions.addRecordingRequirement(release.id, newReq);
-    setNewReq({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
-    setShowAddReq(false);
-  };
-
-  const handleUpdateRequirement = async (reqId, field, value) => {
-    await actions.updateRecordingRequirement(release.id, reqId, { [field]: value });
-  };
-
-  const handleDeleteRequirement = async (reqId) => {
-    if (confirm('Delete this requirement?')) await actions.deleteRecordingRequirement(release.id, reqId);
-  };
-
   const handleDeleteRelease = async () => {
     if (confirm('Delete this release?')) { await actions.deleteRelease(release.id); onBack(); }
   };
 
-  // Handle custom task addition (now unified)
+  // Handle custom task addition
   const handleAddCustomTask = async () => {
     await actions.addReleaseCustomTask(release.id, newTask);
     setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
     setShowAddTask(false);
+  };
+
+  // Phase 3.5: Handle adding track
+  const handleAddTrack = async () => {
+    if (newTrack.isExternal) {
+      if (!newTrack.externalTitle) return;
+      await actions.addReleaseTrack(release.id, {
+        isExternal: true,
+        externalArtist: newTrack.externalArtist,
+        externalTitle: newTrack.externalTitle
+      });
+    } else {
+      if (!newTrack.songId) return;
+      await actions.addReleaseTrack(release.id, {
+        songId: newTrack.songId,
+        versionIds: newTrack.versionIds
+      });
+    }
+    setNewTrack({ songId: '', versionIds: [], isExternal: false, externalArtist: '', externalTitle: '' });
+    setSelectedSongForTrack(null);
+    setShowAddTrack(false);
+  };
+
+  // Phase 3.5: Handle track click to navigate to song
+  const handleTrackClick = (track) => {
+    if (track.isExternal) return;
+    if (track.songId && onSelectSong) {
+      const song = (data.songs || []).find(s => s.id === track.songId);
+      if (song) onSelectSong(song);
+    }
   };
 
   const getSongTitle = (songId) => {
@@ -2153,15 +2236,49 @@ export const ReleaseDetailView = ({ release, onBack }) => {
     return song ? song.title : '(Unknown Song)';
   };
   
-  // Get linked songs for Display Information
-  const linkedSongs = useMemo(() => {
-    const songIds = new Set(currentRelease.attachedSongIds || []);
-    // Also include songs from required recordings
-    (currentRelease.requiredRecordings || []).forEach(req => {
-      if (req.songId) songIds.add(req.songId);
+  // Phase 3.5: Get track statistics
+  const getTrackStats = useMemo(() => {
+    const tracks = currentRelease.tracks || [];
+    const totalTracks = tracks.length;
+    
+    if (totalTracks === 0) {
+      return { total: 0, completed: 0, remaining: 0, progress: 0 };
+    }
+    
+    let completedTracks = 0;
+    
+    tracks.forEach(track => {
+      if (track.isExternal) {
+        completedTracks++;
+      } else if (track.songId) {
+        const song = (data.songs || []).find(s => s.id === track.songId);
+        if (song) {
+          const versionIds = track.versionIds || [];
+          if (versionIds.length === 0) {
+            const songTasks = [...(song.deadlines || []), ...(song.customTasks || [])];
+            const songProgress = calculateTaskProgress(songTasks).progress;
+            if (songProgress >= 100) completedTracks++;
+          } else {
+            let allVersionsComplete = true;
+            versionIds.forEach(vId => {
+              const version = (song.versions || []).find(v => v.id === vId);
+              if (version) {
+                const versionTasks = [...(version.tasks || []), ...(version.customTasks || [])];
+                const vProgress = calculateTaskProgress(versionTasks).progress;
+                if (vProgress < 100) allVersionsComplete = false;
+              }
+            });
+            if (allVersionsComplete) completedTracks++;
+          }
+        }
+      }
     });
-    return (data.songs || []).filter(s => songIds.has(s.id));
-  }, [currentRelease, data.songs]);
+    
+    const remaining = totalTracks - completedTracks;
+    const progress = totalTracks > 0 ? Math.round((completedTracks / totalTracks) * 100) : 0;
+    
+    return { total: totalTracks, completed: completedTracks, remaining, progress };
+  }, [currentRelease.tracks, data.songs]);
   
   // Get assigned team members for Display Information
   const assignedTeamMembers = useMemo(() => {
@@ -2185,9 +2302,8 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const overdueTasks = useMemo(() => allReleaseTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done'), [allReleaseTasks]);
   const openTasks = useMemo(() => allReleaseTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done'), [allReleaseTasks]);
   
-  // Unified filtered and sorted tasks (includes both auto and custom tasks)
+  // Unified filtered and sorted tasks
   const filteredTasks = useMemo(() => {
-    // Combine all tasks with source indicator
     const combined = [
       ...(currentRelease.tasks || []).map(t => ({ ...t, _isAuto: true })),
       ...(currentRelease.customTasks || []).map(t => ({ ...t, _isAuto: false }))
@@ -2206,6 +2322,37 @@ export const ReleaseDetailView = ({ release, onBack }) => {
     return filtered;
   }, [currentRelease.tasks, currentRelease.customTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
+  // Phase 3.5: Get version info for a track
+  const getVersionInfo = (track) => {
+    if (track.isExternal) return null;
+    const song = (data.songs || []).find(s => s.id === track.songId);
+    if (!song) return null;
+    
+    const versionIds = track.versionIds || [];
+    if (versionIds.length === 0) {
+      // Core version
+      const songTasks = [...(song.deadlines || []), ...(song.customTasks || [])];
+      return { 
+        name: 'Core Version', 
+        progress: calculateTaskProgress(songTasks).progress,
+        isComplete: calculateTaskProgress(songTasks).progress >= 100
+      };
+    }
+    
+    return versionIds.map(vId => {
+      const version = (song.versions || []).find(v => v.id === vId);
+      if (!version) return null;
+      const versionTasks = [...(version.tasks || []), ...(version.customTasks || [])];
+      const progress = calculateTaskProgress(versionTasks).progress;
+      return {
+        id: vId,
+        name: version.name || 'Version',
+        progress,
+        isComplete: progress >= 100
+      };
+    }).filter(Boolean);
+  };
+
   return (
     <div className="p-6 pb-24">
       <div className="flex justify-between items-center mb-6">
@@ -2213,7 +2360,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         <button onClick={handleDeleteRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
       </div>
 
-      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      {/* SECTION A: Display Information - Phase 3.1 Enhanced with Track Stats */}
       <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
         
@@ -2221,6 +2368,38 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentRelease.name || 'Untitled Release'}</div>
         
         <div className="grid md:grid-cols-4 gap-4">
+          {/* Phase 3.1: Number of Tracks */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Number of Tracks</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-lg font-black">{getTrackStats.total}</div>
+          </div>
+          
+          {/* Phase 3.1: Number of Tracks Completed */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Tracks Completed</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-lg font-black">{getTrackStats.completed}</div>
+          </div>
+          
+          {/* Phase 3.1: Number of Tracks Remaining */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Tracks Remaining</label>
+            <div className="px-3 py-2 bg-orange-100 border-2 border-black text-lg font-black">{getTrackStats.remaining}</div>
+          </div>
+          
+          {/* Phase 3.1: Track Progress % */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Track Progress</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-lg font-black">{getTrackStats.progress}%</div>
+          </div>
+          
+          {/* Phase 3.1: Has Physical Copies YES/NO */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Has Physical Copies?</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", currentRelease.hasPhysicalCopies ? "bg-green-200" : "bg-gray-100")}>
+              {currentRelease.hasPhysicalCopies ? 'YES' : 'NO'}
+            </div>
+          </div>
+          
           {/* Task Progress */}
           <div>
             <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
@@ -2232,14 +2411,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
             <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
               {currentRelease.releaseDate || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Number of Songs */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Songs Attached</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {linkedSongs.length}
             </div>
           </div>
           
@@ -2301,7 +2472,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
-      {/* SECTION B: Basic Information (editable) */}
+      {/* SECTION B: Release Information (editable) - Phase 3 Enhanced */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Release Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -2309,31 +2480,115 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Name</label>
             <input value={form.name || ''} onChange={e => handleFieldChange('name', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Phase 3.3: Release Type with expanded options */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Type</label>
-            <select value={form.type || 'Album'} onChange={e => { handleFieldChange('type', e.target.value); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
+            <select value={form.type || 'Album'} onChange={e => { handleFieldChange('type', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
               {RELEASE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+          {/* Phase 3.3: If type is 'Other', show details field */}
+          {form.type === 'Other' && (
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold uppercase mb-1">Type Details (for 'Other')</label>
+              <input value={form.typeDetails || ''} onChange={e => handleFieldChange('typeDetails', e.target.value)} onBlur={handleSave} placeholder="Describe the release type" className={cn("w-full", THEME.punk.input)} />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
             <input type="date" value={form.releaseDate || ''} onChange={e => handleFieldChange('releaseDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
+          {/* Phase 3.2: Exclusive YES/NO toggle pattern (like Songs/Versions/Videos) */}
+          <div className="md:col-span-2">
+            <label className="flex items-center gap-2 font-bold mb-2">
+              <input 
+                type="checkbox" 
+                checked={form.hasExclusivity || false} 
+                onChange={e => { handleFieldChange('hasExclusivity', e.target.checked); setTimeout(handleSave, 0); }} 
+                className="w-5 h-5" 
+              />
+              Exclusive Availability?
+            </label>
+            {form.hasExclusivity && (
+              <div className="grid md:grid-cols-3 gap-4 pl-7 mt-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
+                  <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
+                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
+                  <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform, terms..." className={cn("w-full", THEME.punk.input)} />
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Has Physical Copies checkbox (Phase 3.1 & 3.6) */}
+          <div className="flex items-center gap-2 font-bold">
+            <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
+            Has Physical Copies?
+          </div>
+          {form.hasPhysicalCopies && (
+            <div className="text-xs text-blue-600 font-bold">💡 Physical copy tasks will be auto-generated</div>
+          )}
+          {/* Phase 3.4: Stage/Era/Tags */}
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Exclusive Availability</label>
-            <select value={form.exclusiveType || 'None'} onChange={e => handleFieldChange('exclusiveType', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)}>
-              {EXCLUSIVITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            <label className="block text-xs font-bold uppercase mb-1">Era</label>
+            <select 
+              value={(form.eraIds || [])[0] || ''} 
+              onChange={e => {
+                const newEraIds = e.target.value ? [e.target.value] : [];
+                handleFieldChange('eraIds', newEraIds);
+                setTimeout(handleSave, 0);
+              }}
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">No Era</option>
+              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Exclusive Start Date</label>
-            <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+            <select 
+              value={(form.stageIds || [])[0] || ''} 
+              onChange={e => {
+                const newStageIds = e.target.value ? [e.target.value] : [];
+                handleFieldChange('stageIds', newStageIds);
+                setTimeout(handleSave, 0);
+              }}
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">No Stage</option>
+              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+            </select>
           </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
-            <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
+            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
+              {(data.tags || []).map(tag => (
+                <label key={tag.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={(form.tagIds || []).includes(tag.id)} 
+                    onChange={e => {
+                      const newTagIds = e.target.checked 
+                        ? [...(form.tagIds || []), tag.id]
+                        : (form.tagIds || []).filter(id => id !== tag.id);
+                      handleFieldChange('tagIds', newTagIds);
+                      setTimeout(handleSave, 0);
+                    }}
+                    className="w-3 h-3" 
+                  />
+                  <span style={{ color: tag.color }}>{tag.name}</span>
+                </label>
+              ))}
+              {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
+            </div>
           </div>
-          {/* Cost layers with precedence: paidCost > quotedCost > estimatedCost */}
+          {/* Cost fields */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
             <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
@@ -2342,25 +2597,17 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
             <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
-              <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Partial Payment</label>
-              <input type="number" value={form.partially_paid || 0} onChange={e => handleFieldChange('partially_paid', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-            </div>
-            <div className="flex items-center gap-2 font-bold">
-              <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
-              Includes Physical Copies
-            </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Partial Payment</label>
+            <input type="number" value={form.partially_paid || 0} onChange={e => handleFieldChange('partially_paid', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
-            <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform partners, windows, or audience restrictions" className={cn("w-full", THEME.punk.input)} />
           </div>
         </div>
       </div>
@@ -2378,52 +2625,197 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </DetailPane>
 
+      {/* Phase 3.5: Tracks Module (replaces Required Recordings) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Required Recordings</h3>
-          <button onClick={() => setShowAddReq(!showAddReq)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddReq ? 'Cancel' : '+ Add Requirement'}</button>
+          <h3 className="font-black uppercase">Tracks</h3>
+          <button onClick={() => setShowAddTrack(!showAddTrack)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddTrack ? 'Cancel' : '+ Add Track'}</button>
         </div>
 
-        {showAddReq && (
+        {showAddTrack && (
           <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-4 gap-3">
-              <select value={newReq.songId} onChange={e => setNewReq({ ...newReq, songId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
-                <option value="">Select Song...</option>
-                {(data.songs || []).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              <select value={newReq.versionType} onChange={e => setNewReq({ ...newReq, versionType: e.target.value })} className={cn("w-full", THEME.punk.input)}>{VERSION_TYPES.map(v => <option key={v} value={v}>{v}</option>)}</select>
-              <select value={newReq.status} onChange={e => setNewReq({ ...newReq, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <button onClick={handleAddRequirement} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add</button>
+            <div className="mb-3">
+              <label className="flex items-center gap-2 font-bold">
+                <input 
+                  type="checkbox" 
+                  checked={newTrack.isExternal} 
+                  onChange={e => setNewTrack({ ...newTrack, isExternal: e.target.checked, songId: '', versionIds: [] })}
+                  className="w-5 h-5" 
+                />
+                Track from Different Artist (External)
+              </label>
             </div>
+            
+            {newTrack.isExternal ? (
+              /* External track form */
+              <div className="grid md:grid-cols-3 gap-3">
+                <input 
+                  value={newTrack.externalArtist} 
+                  onChange={e => setNewTrack({ ...newTrack, externalArtist: e.target.value })} 
+                  placeholder="Artist Name" 
+                  className={cn("w-full", THEME.punk.input)} 
+                />
+                <input 
+                  value={newTrack.externalTitle} 
+                  onChange={e => setNewTrack({ ...newTrack, externalTitle: e.target.value })} 
+                  placeholder="Track Title" 
+                  className={cn("w-full", THEME.punk.input)} 
+                />
+                <button onClick={handleAddTrack} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add External Track</button>
+              </div>
+            ) : (
+              /* Internal track form - Song + Version selection */
+              <div className="space-y-3">
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Select Song</label>
+                    <select 
+                      value={newTrack.songId} 
+                      onChange={e => {
+                        setNewTrack({ ...newTrack, songId: e.target.value, versionIds: [] });
+                        setSelectedSongForTrack(e.target.value ? (data.songs || []).find(s => s.id === e.target.value) : null);
+                      }} 
+                      className={cn("w-full", THEME.punk.input)}
+                    >
+                      <option value="">Select Song...</option>
+                      {(data.songs || []).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={handleAddTrack} disabled={!newTrack.songId} className={cn("px-4 py-2 self-end", THEME.punk.btn, newTrack.songId ? "bg-green-500 text-white" : "bg-gray-300")}>Add Track</button>
+                </div>
+                
+                {/* Version selection for selected song */}
+                {selectedSongForTrack && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase mb-1">Select Version(s) - leave empty for Core Version</label>
+                    <div className="flex flex-wrap gap-2 p-2 border-2 border-black bg-white">
+                      {(selectedSongForTrack.versions || []).filter(v => v.id !== 'core').map(v => (
+                        <label key={v.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={newTrack.versionIds.includes(v.id)} 
+                            onChange={e => {
+                              const newVersionIds = e.target.checked 
+                                ? [...newTrack.versionIds, v.id]
+                                : newTrack.versionIds.filter(id => id !== v.id);
+                              setNewTrack({ ...newTrack, versionIds: newVersionIds });
+                            }}
+                            className="w-3 h-3" 
+                          />
+                          {v.name}
+                        </label>
+                      ))}
+                      {((selectedSongForTrack.versions || []).filter(v => v.id !== 'core').length === 0) && (
+                        <span className="text-xs opacity-50">No versions available (will use Core Version)</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
+        {/* Phase 3.5: Tracks Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-100 border-b-2 border-black">
-                <th className="p-2 text-left">Song</th>
-                <th className="p-2 text-left">Version Type</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-left">Notes</th>
+                <th className="p-2 text-left">#</th>
+                <th className="p-2 text-left">Track</th>
+                <th className="p-2 text-left">Version(s)</th>
+                <th className="p-2 text-center">Progress</th>
+                <th className="p-2 text-center">Complete?</th>
                 <th className="p-2 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {(currentRelease.requiredRecordings || []).length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-center opacity-50">No required recordings yet.</td></tr>
-              ) : (currentRelease.requiredRecordings || []).map(req => (
-                <tr key={req.id} className="border-b border-gray-200">
-                  <td className="p-2 font-bold">{getSongTitle(req.songId)}</td>
-                  <td className="p-2"><select value={req.versionType || 'Album'} onChange={e => handleUpdateRequirement(req.id, 'versionType', e.target.value)} className="border-2 border-black p-1 text-xs">{VERSION_TYPES.map(v => <option key={v} value={v}>{v}</option>)}</select></td>
-                  <td className="p-2"><select value={req.status || 'Not Started'} onChange={e => handleUpdateRequirement(req.id, 'status', e.target.value)} className="border-2 border-black p-1 text-xs">{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
-                  <td className="p-2"><input value={req.notes || ''} onChange={e => handleUpdateRequirement(req.id, 'notes', e.target.value)} className="border-2 border-black p-1 text-xs w-full" placeholder="Notes..." /></td>
-                  <td className="p-2 text-center"><button onClick={() => handleDeleteRequirement(req.id)} className="p-1 hover:bg-red-100 text-red-500"><Icon name="Trash2" size={14} /></button></td>
-                </tr>
-              ))}
+              {(currentRelease.tracks || []).length === 0 ? (
+                <tr><td colSpan="6" className="p-4 text-center opacity-50">No tracks yet. Add tracks to this release.</td></tr>
+              ) : (currentRelease.tracks || []).sort((a, b) => (a.order || 0) - (b.order || 0)).map((track, idx) => {
+                const versionInfo = getVersionInfo(track);
+                const isComplete = track.isExternal ? true : (Array.isArray(versionInfo) ? versionInfo.every(v => v.isComplete) : versionInfo?.isComplete);
+                const trackProgress = track.isExternal ? 100 : (Array.isArray(versionInfo) ? Math.round(versionInfo.reduce((sum, v) => sum + v.progress, 0) / versionInfo.length) : versionInfo?.progress || 0);
+                
+                return (
+                  <tr 
+                    key={track.id} 
+                    className={cn(
+                      "border-b border-gray-200",
+                      isComplete ? "bg-green-50" : "hover:bg-yellow-50",
+                      !track.isExternal && "cursor-pointer"
+                    )}
+                    onClick={() => handleTrackClick(track)}
+                  >
+                    <td className="p-2 text-center font-bold">{idx + 1}</td>
+                    <td className="p-2">
+                      {track.isExternal ? (
+                        <div>
+                          <div className="font-bold">{track.externalTitle}</div>
+                          <div className="text-xs text-gray-500">by {track.externalArtist} <span className="px-1 py-0.5 bg-orange-100 border border-orange-500 text-orange-800 text-[10px]">EXTERNAL</span></div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="font-bold text-blue-600 hover:underline">{getSongTitle(track.songId)}</div>
+                          <div className="text-[10px] text-gray-500">Click to open Song</div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-2 text-xs">
+                      {track.isExternal ? (
+                        <span className="text-gray-400">N/A</span>
+                      ) : Array.isArray(versionInfo) ? (
+                        <div className="flex flex-wrap gap-1">
+                          {versionInfo.map(v => (
+                            <span key={v.id} className={cn("px-1 py-0.5 border text-[10px] font-bold", v.isComplete ? "bg-green-100 border-green-500" : "bg-gray-100 border-gray-400")}>
+                              {v.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="px-1 py-0.5 bg-blue-100 border border-blue-500 text-[10px] font-bold">{versionInfo?.name || 'Core Version'}</span>
+                      )}
+                    </td>
+                    <td className="p-2 text-center">
+                      <div className={cn(
+                        "px-2 py-1 text-xs font-bold",
+                        trackProgress >= 100 ? "bg-green-200" : trackProgress >= 50 ? "bg-yellow-200" : "bg-gray-200"
+                      )}>
+                        {trackProgress}%
+                      </div>
+                    </td>
+                    <td className="p-2 text-center">
+                      {isComplete ? (
+                        <span className="text-green-600 font-bold">✓</span>
+                      ) : (
+                        <span className="text-gray-400">○</span>
+                      )}
+                    </td>
+                    <td className="p-2 text-center">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); actions.removeReleaseTrack(release.id, track.id); }} 
+                        className="p-1 hover:bg-red-100 text-red-500"
+                        title="Remove Track"
+                      >
+                        <Icon name="Trash2" size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        
+        {/* Track Summary */}
+        {(currentRelease.tracks || []).length > 0 && (
+          <div className="mt-3 p-3 bg-gray-100 border-2 border-black flex gap-4 text-xs font-bold">
+            <span>Total: {getTrackStats.total}</span>
+            <span className="text-green-600">Complete: {getTrackStats.completed}</span>
+            <span className="text-orange-600">Remaining: {getTrackStats.remaining}</span>
+            <span className="text-purple-600">Progress: {getTrackStats.progress}%</span>
+          </div>
+        )}
       </div>
 
       {/* Unified Tasks Module - combines auto-generated and custom tasks */}
@@ -2533,32 +2925,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
               })}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Attached Songs Section */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Attached Songs</h3>
-          <button onClick={() => actions.autoCalculateReleaseDateFromContent(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}>Auto-Calculate Date</button>
-        </div>
-        <div className="flex flex-wrap gap-2 mb-3">
-          <select onChange={e => { if (e.target.value) actions.attachSongToRelease(release.id, e.target.value); }} className={cn("px-3 py-2 text-xs", THEME.punk.input)} value="">
-            <option value="">Attach Song...</option>
-            {(data.songs || []).filter(s => !(currentRelease.attachedSongIds || []).includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(currentRelease.attachedSongIds || []).map(songId => {
-            const song = data.songs.find(s => s.id === songId);
-            return song ? (
-              <span key={songId} className="px-3 py-2 border-2 border-black bg-blue-100 text-sm font-bold flex items-center gap-2">
-                {song.title} <span className="text-xs opacity-60">({song.releaseDate || 'No date'})</span>
-                <button onClick={() => actions.detachSongFromRelease(release.id, songId)} className="text-red-600 ml-1">×</button>
-              </span>
-            ) : null;
-          })}
-          {(currentRelease.attachedSongIds || []).length === 0 && <span className="opacity-50 text-sm">No songs attached yet.</span>}
         </div>
       </div>
     </div>

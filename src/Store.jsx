@@ -360,28 +360,23 @@ export const generateVideoTasks = (releaseDate, videoTypeKey) => {
   return tasks;
 };
 
-// Release task types - per APP ARCHITECTURE.txt Section 3.4
-// Auto-spawn when release is created: Record/Mix/Master all songs (as meta-progress tasks), Submit album, Create album art, Release album, Physical production tasks (optional)
+// Release task types - per APP ARCHITECTURE.txt Section 3.4 and Phase 3 specification
+// Phase 3.6: When Release is created, auto-generate these tasks
+// Core tasks: Complete All Tracks, Finalize Album Art, Submit Release, Release
 export const RELEASE_TASK_TYPES = [
-  { type: 'Cover Art Design', category: 'Marketing', daysBeforeRelease: 45 },
-  { type: 'Create Album Art', category: 'Marketing', daysBeforeRelease: 45 },
-  { type: 'Cover Art Approval', category: 'Marketing', daysBeforeRelease: 35 },
-  { type: 'Album Reveal', category: 'Marketing', daysBeforeRelease: 14 },
-  { type: 'Pre-order Setup', category: 'Distribution', daysBeforeRelease: 21 },
-  { type: 'Metadata Submission', category: 'Distribution', daysBeforeRelease: 14 },
-  { type: 'Submit Album', category: 'Distribution', daysBeforeRelease: 14 },
-  { type: 'Release Album', category: 'Distribution', daysBeforeRelease: 0 },
+  { type: 'Complete All Tracks', category: 'Production', daysBeforeRelease: 60 },
+  { type: 'Finalize Album Art', category: 'Marketing', daysBeforeRelease: 45 },
+  { type: 'Submit Release', category: 'Distribution', daysBeforeRelease: 14 },
   { type: 'Release', category: 'Distribution', daysBeforeRelease: 0 }
 ];
 
 // Physical release task types (optional, for releases with hasPhysicalCopies)
-// These tasks are used when a Release entity has hasPhysicalCopies=true
-// hasPhysicalCopies is a boolean field on Release objects in data.releases
-// Per APP ARCHITECTURE.txt Section 3.4: "Physical production tasks (optional)"
+// Phase 3.6: If "Has Physical Copies?" = Yes, add these tasks
+// Submit Physical Design, Receive Physical Copies, Distribute Physical Copies
 export const PHYSICAL_RELEASE_TASK_TYPES = [
-  { type: 'Physical Manufacturing Order', category: 'Distribution', daysBeforeRelease: 60 },
-  { type: 'Physical Quality Check', category: 'Distribution', daysBeforeRelease: 21 },
-  { type: 'Physical Distribution Setup', category: 'Distribution', daysBeforeRelease: 14 }
+  { type: 'Submit Physical Design', category: 'Distribution', daysBeforeRelease: 90 },
+  { type: 'Receive Physical Copies', category: 'Distribution', daysBeforeRelease: 21 },
+  { type: 'Distribute Physical Copies', category: 'Distribution', daysBeforeRelease: 7 }
 ];
 
 // Event task types - per APP ARCHITECTURE.txt Section 3.5
@@ -428,8 +423,20 @@ export const generateEventTasks = (eventDate, includePreparation = true) => {
 // Deadline types (legacy - kept for compatibility)
 export const DEADLINE_TYPES = ['Mix', 'Master', 'Artwork', 'Upload', 'VideoDelivery', 'Release'];
 
-// Release types
-export const RELEASE_TYPES = ['Album', 'EP', 'Remix EP', 'Deluxe', 'Other'];
+// Release types - Phase 3 Overhaul: Expanded list
+export const RELEASE_TYPES = [
+  'Album',
+  'Deluxe Album',
+  'Double Album',
+  'EP',
+  'Remix EP',
+  'Holiday Release',
+  'Single',
+  'Double Single',
+  'Mixtape',
+  'Re-issue',
+  'Other'
+];
 
 // Version types for recording requirements
 export const VERSION_TYPES = ['Album', 'Radio Edit', 'Acoustic', 'Extended', 'Loop Version', 'Remix', 'Instrumental', 'Clean'];
@@ -2010,34 +2017,63 @@ export const StoreProvider = ({ children }) => {
      // Release actions - Phase 3 enhancement
      addRelease: async (release) => {
        // Auto-spawn release tasks based on release date
-       const releaseTasks = calculateReleaseTasks(release.releaseDate);
+       let releaseTasks = calculateReleaseTasks(release.releaseDate);
+       
+       // Phase 3.6: If hasPhysicalCopies, add physical release tasks
+       if (release.hasPhysicalCopies && release.releaseDate) {
+         const releaseDate = new Date(release.releaseDate);
+         PHYSICAL_RELEASE_TASK_TYPES.forEach(taskType => {
+           const taskDate = new Date(releaseDate);
+           taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
+           releaseTasks.push(createUnifiedTask({
+             type: taskType.type,
+             category: taskType.category,
+             date: taskDate.toISOString().split('T')[0],
+             dueDate: taskDate.toISOString().split('T')[0],
+             parentType: 'release'
+           }));
+         });
+         // Sort by date
+         releaseTasks.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+       }
        
        const newRelease = {
          id: crypto.randomUUID(),
          name: release.name || 'New Release',
-        type: release.type || 'Album',
-        releaseDate: release.releaseDate || '',
-        // Cost layers with precedence: paidCost > quotedCost > estimatedCost
-        estimatedCost: release.estimatedCost || 0,
-        quotedCost: release.quotedCost || 0,
-        paidCost: release.paidCost || 0,
-        notes: release.notes || '',
-        // Availability windows for exclusivity
-        exclusiveType: release.exclusiveType || 'None',
-        exclusiveStartDate: release.exclusiveStartDate || '',
-        exclusiveEndDate: release.exclusiveEndDate || '',
-        exclusiveNotes: release.exclusiveNotes || '',
-        hasPhysicalCopies: release.hasPhysicalCopies || false,
-        requiredRecordings: [],
-        tasks: releaseTasks,  // Auto-spawned tasks
-        // Phase 3: Custom tasks on releases
-        customTasks: [],
-        // Phase 3: Attached content (songs, versions, videos)
-        attachedSongIds: release.attachedSongIds || [],
-        attachedVersions: release.attachedVersions || [], // [{songId, versionId}]
-        attachedVideoIds: release.attachedVideoIds || [],
-        attachedStandaloneVideoIds: release.attachedStandaloneVideoIds || []
-      };
+         type: release.type || 'Album',
+         // Phase 3.3: If type is 'Other', store details
+         typeDetails: release.typeDetails || '',
+         releaseDate: release.releaseDate || '',
+         // Cost layers with precedence: paidCost > quotedCost > estimatedCost
+         estimatedCost: release.estimatedCost || 0,
+         quotedCost: release.quotedCost || 0,
+         paidCost: release.paidCost || 0,
+         notes: release.notes || '',
+         // Phase 3.2: Exclusive YES/NO pattern (like Songs/Versions/Videos)
+         hasExclusivity: release.hasExclusivity || false,
+         exclusiveStartDate: release.exclusiveStartDate || '',
+         exclusiveEndDate: release.exclusiveEndDate || '',
+         exclusiveNotes: release.exclusiveNotes || '',
+         // Phase 3.1 & 3.5: Has physical copies
+         hasPhysicalCopies: release.hasPhysicalCopies || false,
+         // Phase 3.5: Tracks module (replaces requiredRecordings and attachedSongIds)
+         // Each track: { id, songId, versionIds: [], order, isExternal, externalArtist, externalTitle }
+         tracks: release.tracks || [],
+         // Legacy: Keep requiredRecordings for backward compatibility
+         requiredRecordings: release.requiredRecordings || [],
+         tasks: releaseTasks,  // Auto-spawned tasks
+         // Phase 3: Custom tasks on releases
+         customTasks: [],
+         // Phase 3.4: Stage/Era/Tags directly on Release
+         eraIds: release.eraIds || [],
+         stageIds: release.stageIds || [],
+         tagIds: release.tagIds || [],
+         // Legacy: Attached content (replaced by tracks module but kept for migration)
+         attachedSongIds: release.attachedSongIds || [],
+         attachedVersions: release.attachedVersions || [], // [{songId, versionId}]
+         attachedVideoIds: release.attachedVideoIds || [],
+         attachedStandaloneVideoIds: release.attachedStandaloneVideoIds || []
+       };
        if (mode === 'cloud') {
          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_releases'), { ...newRelease, createdAt: serverTimestamp() });
        } else {
@@ -2248,6 +2284,93 @@ export const StoreProvider = ({ children }) => {
             releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, customTasks: updatedCustomTasks } : r)
           }));
         }
+      }
+    },
+
+    // Phase 3.5: Add track to release (Tracks Module)
+    // Track: { id, songId, versionIds: [], order, isExternal, externalArtist, externalTitle }
+    addReleaseTrack: async (releaseId, track) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      const existingTracks = release.tracks || [];
+      const newTrack = {
+        id: track.id || crypto.randomUUID(),
+        songId: track.songId || null,
+        versionIds: track.versionIds || [],
+        order: track.order ?? existingTracks.length,
+        isExternal: track.isExternal || false,
+        externalArtist: track.externalArtist || '',
+        externalTitle: track.externalTitle || ''
+      };
+      
+      const updatedTracks = [...existingTracks, newTrack];
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+      } else {
+        setData(p => ({
+          ...p,
+          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+        }));
+      }
+      return newTrack;
+    },
+
+    // Phase 3.5: Update track in release
+    updateReleaseTrack: async (releaseId, trackId, updates) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      const updatedTracks = (release.tracks || []).map(t => 
+        t.id === trackId ? { ...t, ...updates } : t
+      );
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+      } else {
+        setData(p => ({
+          ...p,
+          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+        }));
+      }
+    },
+
+    // Phase 3.5: Remove track from release
+    removeReleaseTrack: async (releaseId, trackId) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      const updatedTracks = (release.tracks || []).filter(t => t.id !== trackId);
+      // Reorder remaining tracks
+      updatedTracks.forEach((t, idx) => { t.order = idx; });
+      
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+      } else {
+        setData(p => ({
+          ...p,
+          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+        }));
+      }
+    },
+
+    // Phase 3.5: Reorder tracks in release
+    reorderReleaseTracks: async (releaseId, orderedTrackIds) => {
+      const release = data.releases.find(r => r.id === releaseId);
+      if (!release) return;
+      
+      const trackMap = new Map((release.tracks || []).map(t => [t.id, t]));
+      const updatedTracks = orderedTrackIds.map((id, idx) => ({
+        ...trackMap.get(id),
+        order: idx
+      })).filter(Boolean);
+      
+      if (mode === 'cloud') {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+      } else {
+        setData(p => ({
+          ...p,
+          releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+        }));
       }
     },
 
