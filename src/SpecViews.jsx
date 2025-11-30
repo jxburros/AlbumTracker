@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, VERSION_TYPES, GLOBAL_TASK_CATEGORIES, EXCLUSIVITY_OPTIONS, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, SONG_TASK_TYPES } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
@@ -224,6 +224,46 @@ export const SongDetailView = ({ song, onBack }) => {
     }
     return [];
   };
+
+  // Issue #4: Helper function to add an instrument and auto-create its Record task
+  // Addresses code review feedback: extracted to avoid duplication
+  const addInstrumentWithTask = useCallback(async (instrumentName) => {
+    if (!instrumentName) return;
+    const trimmedName = instrumentName.trim();
+    if (!trimmedName) return;
+    
+    const newInstrumentData = { name: trimmedName, musicians: [] };
+    const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
+    handleFieldChange('instrumentData', updatedInstruments);
+    // Also update legacy instruments array for compatibility
+    handleFieldChange('instruments', updatedInstruments.map(i => i.name));
+    setNewInstrumentName('');
+    setTimeout(handleSave, 0);
+    
+    // Auto-create "Record (Instrument Name)" task using constant from SONG_TASK_TYPES
+    const instrumentRecordingTask = SONG_TASK_TYPES.find(t => t.type === 'Instrument Recording');
+    const daysBeforeRelease = instrumentRecordingTask?.daysBeforeRelease || 55;
+    
+    const existingTask = (currentSong.deadlines || []).find(t => t.type === `Record (${trimmedName})`);
+    if (!existingTask && actions.addSongDeadline) {
+      try {
+        await actions.addSongDeadline(song.id, {
+          type: `Record (${trimmedName})`,
+          category: 'Recording',
+          status: 'Not Started',
+          date: currentSong.releaseDate ? (() => {
+            const d = new Date(currentSong.releaseDate);
+            d.setDate(d.getDate() - daysBeforeRelease);
+            return d.toISOString().split('T')[0];
+          })() : '',
+          isAutoTask: true,
+          generatedFromInstrument: trimmedName
+        });
+      } catch (error) {
+        console.error('Failed to create Record task for instrument:', error);
+      }
+    }
+  }, [form.instrumentData, handleFieldChange, handleSave, currentSong, song.id, actions]);
 
   const addAssignment = (taskKey, taskObj, updater) => {
     const entry = newAssignments[taskKey] || { memberId: '', cost: 0, instrument: '' };
@@ -851,63 +891,15 @@ export const SongDetailView = ({ song, onBack }) => {
                   onChange={e => setNewInstrumentName(e.target.value)} 
                   placeholder="e.g., Guitar, Synth, Drums" 
                   className={cn("w-full", THEME.punk.input)} 
-                  onKeyDown={async e => {
+                  onKeyDown={e => {
                     if (e.key === 'Enter' && newInstrumentName.trim()) {
-                      const instrumentName = newInstrumentName.trim();
-                      const newInstrumentData = { name: instrumentName, musicians: [] };
-                      const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
-                      handleFieldChange('instrumentData', updatedInstruments);
-                      // Also update legacy instruments array for compatibility
-                      handleFieldChange('instruments', updatedInstruments.map(i => i.name));
-                      setNewInstrumentName('');
-                      setTimeout(handleSave, 0);
-                      // Issue #4: Auto-create "Record (Instrument Name)" task
-                      const existingTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrumentName})`);
-                      if (!existingTask) {
-                        await actions.addSongDeadline?.(song.id, {
-                          type: `Record (${instrumentName})`,
-                          category: 'Recording',
-                          status: 'Not Started',
-                          date: currentSong.releaseDate ? (() => {
-                            const d = new Date(currentSong.releaseDate);
-                            d.setDate(d.getDate() - 55);
-                            return d.toISOString().split('T')[0];
-                          })() : '',
-                          isAutoTask: true,
-                          generatedFromInstrument: instrumentName
-                        });
-                      }
+                      addInstrumentWithTask(newInstrumentName);
                     }
                   }}
                 />
               </div>
               <button 
-                onClick={async () => {
-                  if (!newInstrumentName.trim()) return;
-                  const instrumentName = newInstrumentName.trim();
-                  const newInstrumentData = { name: instrumentName, musicians: [] };
-                  const updatedInstruments = [...(form.instrumentData || []), newInstrumentData];
-                  handleFieldChange('instrumentData', updatedInstruments);
-                  handleFieldChange('instruments', updatedInstruments.map(i => i.name));
-                  setNewInstrumentName('');
-                  setTimeout(handleSave, 0);
-                  // Issue #4: Auto-create "Record (Instrument Name)" task
-                  const existingTask = (currentSong.deadlines || []).find(t => t.type === `Record (${instrumentName})`);
-                  if (!existingTask) {
-                    await actions.addSongDeadline?.(song.id, {
-                      type: `Record (${instrumentName})`,
-                      category: 'Recording',
-                      status: 'Not Started',
-                      date: currentSong.releaseDate ? (() => {
-                        const d = new Date(currentSong.releaseDate);
-                        d.setDate(d.getDate() - 55);
-                        return d.toISOString().split('T')[0];
-                      })() : '',
-                      isAutoTask: true,
-                      generatedFromInstrument: instrumentName
-                    });
-                  }
-                }}
+                onClick={() => addInstrumentWithTask(newInstrumentName)}
                 className={cn("px-4 py-2 text-xs", THEME.punk.btn, "bg-black text-white")}
               >
                 + Add
