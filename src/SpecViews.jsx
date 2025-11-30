@@ -1185,7 +1185,8 @@ export const SongDetailView = ({ song, onBack }) => {
                         </button>
                       </td>
                     </tr>
-                  );})}
+                  );
+                  })}
                   
                   {/* Version tasks */}
                   {(currentSong.versions || []).filter(v => v.id !== 'core').flatMap(v => 
@@ -1233,7 +1234,8 @@ export const SongDetailView = ({ song, onBack }) => {
                           </button>
                         </td>
                       </tr>
-                    );})
+                    );
+                    })
                   )}
                 </>
               )}
