@@ -2101,7 +2101,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [form, setForm] = useState({ ...release });
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
-  const [newAssignments, setNewAssignments] = useState({});
   // Unified task state - no separate custom tasks section
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
@@ -2111,24 +2110,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
-
-  const taskBudget = (task = {}) => {
-    if (task.paidCost !== undefined) return task.paidCost || 0;
-    if (task.actualCost !== undefined) return task.actualCost || 0;
-    if (task.quotedCost !== undefined) return task.quotedCost || 0;
-    return task.estimatedCost || 0;
-  };
-
-  const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
-    const budget = taskBudget(taskObj);
-    const current = (taskObj.assignedMembers || []).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
-    const nextTotal = current + (parseFloat(entry.cost) || 0);
-    if (budget > 0 && nextTotal > budget) return;
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
-    updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
-  };
 
   const currentRelease = data.releases.find(r => r.id === release.id) || release;
 
@@ -5547,6 +5528,7 @@ export const VideoDetailView = ({ video, onBack }) => {
   
   const getVideoTypeLabels = useMemo(() => {
     return videoTypes.filter(t => form.types?.[t.key]).map(t => t.label);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.types]);
 
   const handleSave = async () => {
