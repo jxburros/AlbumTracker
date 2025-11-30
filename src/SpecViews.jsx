@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, GLOBAL_TASK_CATEGORIES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
+import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
@@ -1709,16 +1709,9 @@ export const GlobalTasksView = () => {
 
   const teamMembers = data.teamMembers || [];
   
-  // Get all categories - combine legacy GLOBAL_TASK_CATEGORIES with new Task Category Items
+  // Phase 5.1: Categories are user-created Items only - no prefilled categories
   const allCategories = useMemo(() => {
-    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
-    const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
-    // Merge: prefer Item categories over legacy if same name
-    const merged = [];
-    const nameSet = new Set();
-    itemCategories.forEach(c => { merged.push(c); nameSet.add(c.name); });
-    legacyCategories.forEach(c => { if (!nameSet.has(c.name)) merged.push(c); });
-    return merged;
+    return (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
   }, [data.taskCategories]);
 
   const taskBudget = (task = {}) => {
@@ -7192,17 +7185,11 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
   );
 
-  // Phase 5.1: Categories as Items - user-created only, no prefilled
+  // Phase 5.1: Categories as Items - user-created only, no prefilled categories
   const allCategories = useMemo(() => {
     // Only show user-created categories (taskCategories collection)
-    // Legacy categories are only shown if no custom categories exist (for backward compat)
-    const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
-    if (itemCategories.length > 0) {
-      return itemCategories;
-    }
-    // Fallback to legacy if no custom categories created yet
-    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
-    return legacyCategories;
+    // Phase 5.1: No prefilled categories - users create their own
+    return (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
   }, [data.taskCategories]);
 
   const tasks = useMemo(() => {
@@ -7424,15 +7411,10 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
   const [newCategoryName, setNewCategoryName] = useState('');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
-  // Phase 5.1: Categories as Items - show only user-created categories (or legacy fallback)
+  // Phase 5.1: Categories as Items - show only user-created categories, no prefilled
   const allCategories = useMemo(() => {
-    const itemCategories = (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
-    if (itemCategories.length > 0) {
-      return itemCategories;
-    }
-    // Fallback to legacy if no custom categories exist
-    const legacyCategories = GLOBAL_TASK_CATEGORIES.map(name => ({ id: `legacy-${name}`, name, isLegacy: true }));
-    return legacyCategories;
+    // Phase 5.1: No prefilled categories - users create their own
+    return (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
   }, [data.taskCategories]);
 
   const handleSave = async () => { await actions.updateGlobalTask(task.id, form); };
