@@ -368,26 +368,13 @@ export const CalendarView = ({ onEdit }) => {
                                     <div className="space-y-2 text-xs">
                                         <div>
                                             <label className="block font-black uppercase mb-1">Notes</label>
-                                            <textarea value={selectedItem.notes || ''} onChange={e => updateSelectedEvent('notes', e.target.value)} className={cn("w-full h-16", THEME.punk.input)} placeholder="Venue, exclusivity, ticketing" />
+                                            <textarea value={selectedItem.notes || ''} onChange={e => updateSelectedEvent('notes', e.target.value)} className={cn("w-full h-16", THEME.punk.input)} placeholder="Venue, ticketing notes" />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block font-black uppercase mb-1">Exclusivity</label>
-                                                <input value={selectedItem.exclusiveType || ''} onChange={e => updateSelectedEvent('exclusiveType', e.target.value)} className={cn("w-full", THEME.punk.input)} placeholder="Fans-first, livestream only" />
-                                            </div>
-                                            <div>
-                                                <label className="block font-black uppercase mb-1">Platforms</label>
-                                                <input value={(selectedItem.platforms || []).join(', ')} onChange={e => updateSelectedEvent('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
-                                            </div>
+                                        <div>
+                                            <label className="block font-black uppercase mb-1">Platforms</label>
+                                            <input value={(selectedItem.platforms || []).join(', ')} onChange={e => updateSelectedEvent('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
                                         </div>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {['Estimated', 'Quoted', 'Paid'].map(k => (
-                                                <div key={k}>
-                                                    <label className="block font-black uppercase mb-1">{k}</label>
-                                                    <input type="number" value={selectedItem[`${k.toLowerCase()}Cost`] || 0} onChange={e => updateSelectedEvent(`${k.toLowerCase()}Cost`, parseFloat(e.target.value) || 0)} className={cn("w-full", THEME.punk.input)} />
-                                                </div>
-                                            ))}
-                                        </div>
+                                        {/* Phase 2: Removed Exclusive Type and Estimated/Quoted/Paid Cost fields - Events derive cost from Tasks only */}
                                     </div>
                                 </DetailPane>
                                 <div className="mt-4 border-t-2 border-black pt-4">
