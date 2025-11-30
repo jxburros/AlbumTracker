@@ -358,6 +358,9 @@ export const SongDetailView = ({ song, onBack }) => {
     return ids;
   }, [currentSong.coreReleaseIds, currentSong.coreReleaseId]);
 
+  // Set for O(1) lookup of core release IDs
+  const coreReleaseIdSet = useMemo(() => new Set(coreReleaseIds), [coreReleaseIds]);
+
   // Calculate earliest release date from attached releases
   const earliestReleaseDate = useMemo(() => {
     const dates = coreReleaseIds
@@ -486,7 +489,7 @@ export const SongDetailView = ({ song, onBack }) => {
                 <label key={r.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
                   <input 
                     type="checkbox" 
-                    checked={coreReleaseIds.includes(r.id)} 
+                    checked={coreReleaseIdSet.has(r.id)} 
                     onChange={e => handleCoreReleasesChange(r.id, e.target.checked)}
                     className="w-4 h-4" 
                   />
