@@ -4,12 +4,12 @@ import { Icon } from './Components';
 // Shared card for songs, versions, videos, releases, and tasks
 export const ItemCard = ({ item, onClick }) => (
   <button
-    onClick={() => onClick?.(item)}
-    className={cn(
-      'w-full text-left p-4 border-4 flex flex-col gap-2 hover:-translate-y-0.5 transition-transform',
-      THEME.punk.card,
-      item.accent || ''
-    )}
+      onClick={() => onClick?.(item)}
+      className={cn(
+        'w-full text-left p-4 flex flex-col gap-3 hover:-translate-y-0.5 transition-transform min-h-[180px] justify-between',
+        THEME.punk.card,
+        item.accent || ''
+      )}
   >
     <div className="flex items-center justify-between gap-2">
       <div className="font-black uppercase text-sm flex-1 truncate">{item.name}</div>
