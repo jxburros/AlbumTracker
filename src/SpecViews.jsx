@@ -2102,14 +2102,13 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const [showAddReq, setShowAddReq] = useState(false);
   const [newReq, setNewReq] = useState({ songId: '', versionType: 'Album', status: 'Not Started', notes: '' });
   const [newAssignments, setNewAssignments] = useState({});
-  // Phase 3: Custom tasks state
-  const [showAddCustomTask, setShowAddCustomTask] = useState(false);
-  const [newCustomTask, setNewCustomTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
-  // Tier 1.3: Task sorting/filtering state
+  // Unified task state - no separate custom tasks section
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+  // Task sorting/filtering state
   const [taskSortBy, setTaskSortBy] = useState('date');
   const [taskSortDir, setTaskSortDir] = useState('asc');
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
-  const [taskFilterCategory, setTaskFilterCategory] = useState('all');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
@@ -2154,11 +2153,11 @@ export const ReleaseDetailView = ({ release, onBack }) => {
     if (confirm('Delete this release?')) { await actions.deleteRelease(release.id); onBack(); }
   };
 
-  // Phase 3: Handle custom task addition
+  // Handle custom task addition (now unified)
   const handleAddCustomTask = async () => {
-    await actions.addReleaseCustomTask(release.id, newCustomTask);
-    setNewCustomTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
-    setShowAddCustomTask(false);
+    await actions.addReleaseCustomTask(release.id, newTask);
+    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
+    setShowAddTask(false);
   };
 
   const getSongTitle = (songId) => {
@@ -2166,7 +2165,7 @@ export const ReleaseDetailView = ({ release, onBack }) => {
     return song ? song.title : '(Unknown Song)';
   };
   
-  // Tier 1.2: Get linked songs for Display Information
+  // Get linked songs for Display Information
   const linkedSongs = useMemo(() => {
     const songIds = new Set(currentRelease.attachedSongIds || []);
     // Also include songs from required recordings
@@ -2190,31 +2189,34 @@ export const ReleaseDetailView = ({ release, onBack }) => {
   const allReleaseTasks = useMemo(() => [...(currentRelease.tasks || []), ...(currentRelease.customTasks || [])], [currentRelease]);
   const { progress: releaseProgressValue } = calculateTaskProgress(allReleaseTasks);
   
-  // Get unique task categories for filter dropdown
-  const taskCategories = useMemo(() => {
-    const categories = new Set();
-    (currentRelease.tasks || []).forEach(t => t.category && categories.add(t.category));
-    return Array.from(categories);
-  }, [currentRelease.tasks]);
+  // Calculate costs
+  const costPaid = useMemo(() => allReleaseTasks.reduce((sum, t) => sum + (t.paidCost || 0), 0), [allReleaseTasks]);
+  const estimatedCost = useMemo(() => allReleaseTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0) + getEffectiveCost(currentRelease), [allReleaseTasks, currentRelease]);
   
-  // Tier 1.3: Filtered and sorted release tasks
-  const filteredReleaseTasks = useMemo(() => {
-    let tasks = [...(currentRelease.tasks || [])];
+  // Calculate overdue tasks
+  const overdueTasks = useMemo(() => allReleaseTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done'), [allReleaseTasks]);
+  const openTasks = useMemo(() => allReleaseTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done'), [allReleaseTasks]);
+  
+  // Unified filtered and sorted tasks (includes both auto and custom tasks)
+  const filteredTasks = useMemo(() => {
+    // Combine all tasks with source indicator
+    const combined = [
+      ...(currentRelease.tasks || []).map(t => ({ ...t, _isAuto: true })),
+      ...(currentRelease.customTasks || []).map(t => ({ ...t, _isAuto: false }))
+    ];
+    let filtered = [...combined];
     if (taskFilterStatus !== 'all') {
-      tasks = tasks.filter(t => t.status === taskFilterStatus);
+      filtered = filtered.filter(t => t.status === taskFilterStatus);
     }
-    if (taskFilterCategory !== 'all') {
-      tasks = tasks.filter(t => t.category === taskFilterCategory);
-    }
-    tasks.sort((a, b) => {
+    filtered.sort((a, b) => {
       const valA = a[taskSortBy] || '';
       const valB = b[taskSortBy] || '';
       return taskSortDir === 'asc' 
         ? (valA < valB ? -1 : valA > valB ? 1 : 0)
         : (valA > valB ? -1 : valA < valB ? 1 : 0);
     });
-    return tasks;
-  }, [currentRelease.tasks, taskFilterStatus, taskFilterCategory, taskSortBy, taskSortDir]);
+    return filtered;
+  }, [currentRelease.tasks, currentRelease.customTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   return (
     <div className="p-6 pb-24">
@@ -2223,6 +2225,95 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         <button onClick={handleDeleteRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
       </div>
 
+      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        
+        {/* Release Title - prominent at top */}
+        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentRelease.name || 'Untitled Release'}</div>
+        
+        <div className="grid md:grid-cols-4 gap-4">
+          {/* Task Progress */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{releaseProgressValue}%</div>
+          </div>
+          
+          {/* Release Date */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
+              {currentRelease.releaseDate || 'Not Set'}
+            </div>
+          </div>
+          
+          {/* Number of Songs */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Songs Attached</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
+              {linkedSongs.length}
+            </div>
+          </div>
+          
+          {/* Number of Open Tasks */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
+              {openTasks.length}
+            </div>
+          </div>
+          
+          {/* Overdue Task Indicator */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
+              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
+            )}>
+              {overdueTasks.length}
+            </div>
+          </div>
+          
+          {/* Cost Paid */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
+              {formatMoney(costPaid)}
+            </div>
+          </div>
+          
+          {/* Estimated Total Cost */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
+              {formatMoney(estimatedCost)}
+            </div>
+          </div>
+          
+          {/* Release Type */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Release Type</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
+              {currentRelease.type || 'Album'}
+            </div>
+          </div>
+          
+          {/* Team Members */}
+          <div className="md:col-span-4">
+            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION B: Basic Information (editable) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Release Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -2299,61 +2390,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </DetailPane>
 
-      {/* Tier 1.2: Display Information Module - Read-only linked data */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        <div className="grid md:grid-cols-3 gap-4">
-          {/* Linked Songs */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Linked Songs</label>
-            <div className="space-y-1">
-              {linkedSongs.length === 0 ? (
-                <span className="text-xs opacity-50">No songs linked</span>
-              ) : linkedSongs.map(s => (
-                <div key={s.id} className="px-2 py-1 bg-blue-100 border-2 border-black text-xs font-bold">
-                  {s.title} ({s.releaseDate || 'TBD'})
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Assigned Team Members */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
-            <div className="space-y-1">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
-                  {m.name} {m.isMusician && '🎵'}
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Summary Stats */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
-                <span>Songs:</span>
-                <span className="font-bold">{linkedSongs.length}</span>
-              </div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
-                <span>Recordings:</span>
-                <span className="font-bold">{(currentRelease.requiredRecordings || []).length}</span>
-              </div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black">
-                <span>Tasks:</span>
-                <span className="font-bold">{allReleaseTasks.length}</span>
-              </div>
-              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black">
-                <span>Progress:</span>
-                <span className="font-bold">{releaseProgressValue}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Required Recordings</h3>
@@ -2402,83 +2438,117 @@ export const ReleaseDetailView = ({ release, onBack }) => {
         </div>
       </div>
 
-      {/* Release Tasks Section - Tier 1.3: Enhanced with Sorting/Filtering */}
+      {/* Unified Tasks Module - combines auto-generated and custom tasks */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
-          <h3 className="font-black uppercase">Release Tasks</h3>
+          <h3 className="font-black uppercase">Tasks</h3>
           <div className="flex flex-wrap gap-2 items-center">
-            {/* Tier 1.3: Task Filters */}
+            {/* Task Filters */}
             <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
               <option value="all">All Status</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={taskFilterCategory} onChange={e => setTaskFilterCategory(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-              <option value="all">All Categories</option>
-              {taskCategories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            {/* Tier 1.3: Task Sorting */}
+            {/* Task Sorting */}
             <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
               <option value="date">Sort by Date</option>
               <option value="type">Sort by Type</option>
               <option value="status">Sort by Status</option>
-              <option value="estimatedCost">Sort by Cost</option>
             </select>
             <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
               {taskSortDir === 'asc' ? '↑' : '↓'}
             </button>
-            <button onClick={() => actions.recalculateReleaseTasksAction(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate from Release Date</button>
+            <button onClick={() => actions.recalculateReleaseTasksAction(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate</button>
+            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
           </div>
         </div>
+        
+        {/* Add Task Form */}
+        {showAddTask && (
+          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
+            <div className="grid md:grid-cols-2 gap-3">
+              <input value={newTask.title} onChange={e => setNewTask(prev => ({ ...prev, title: e.target.value }))} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={newTask.date} onChange={e => setNewTask(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
+              <input value={newTask.description} onChange={e => setNewTask(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
+              <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
+              <select value={newTask.status} onChange={e => setNewTask(prev => ({ ...prev, status: e.target.value }))} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
+            </div>
+          </div>
+        )}
+        
+        {/* Legend */}
+        <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
+          <span className="px-2 py-1 bg-yellow-100 border-2 border-black">Auto Task</span>
+          <span className="px-2 py-1 bg-green-100 border-2 border-black">Custom Task</span>
+        </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-100 border-b-2 border-black">
-                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Type {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-left">Category</th>
+                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('type'); setTaskSortDir(taskSortBy === 'type' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Task {taskSortBy === 'type' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('date'); setTaskSortDir(taskSortBy === 'date' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Date {taskSortBy === 'date' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
                 <th className="p-2 text-left cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('status'); setTaskSortDir(taskSortBy === 'status' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Status {taskSortBy === 'status' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-right cursor-pointer hover:bg-gray-200" onClick={() => { setTaskSortBy('estimatedCost'); setTaskSortDir(taskSortBy === 'estimatedCost' && taskSortDir === 'asc' ? 'desc' : 'asc'); }}>Est. Cost {taskSortBy === 'estimatedCost' && (taskSortDir === 'asc' ? '↑' : '↓')}</th>
-                <th className="p-2 text-left">Assignments</th>
-                <th className="p-2 text-left">Notes</th>
+                <th className="p-2 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredReleaseTasks.length === 0 ? (
-                <tr><td colSpan="7" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate.</td></tr>
-              ) : filteredReleaseTasks.map(task => (
-                <tr key={task.id} className="border-b border-gray-200">
-                  <td className="p-2 font-bold">{task.type}{task.isOverridden && <span className="text-xs text-orange-500 ml-1">(edited)</span>}</td>
-                  <td className="p-2"><span className="px-2 py-1 text-xs bg-gray-200">{task.category}</span></td>
-                  <td className="p-2"><input type="date" value={task.date || ''} onChange={e => actions.updateReleaseTask(release.id, task.id, { date: e.target.value })} className="border-2 border-black p-1 text-xs" /></td>
-                  <td className="p-2"><select value={task.status || 'Not Started'} onChange={e => actions.updateReleaseTask(release.id, task.id, { status: e.target.value })} className="border-2 border-black p-1 text-xs">{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
-                  <td className="p-2"><input type="number" value={task.estimatedCost || 0} onChange={e => actions.updateReleaseTask(release.id, task.id, { estimatedCost: parseFloat(e.target.value) || 0 })} className="border-2 border-black p-1 text-xs w-20 text-right" /></td>
-                  <td className="p-2 text-xs space-y-1">
-                    <div className="flex flex-wrap gap-1">
-                      {(task.assignedMembers || []).map(m => {
-                        const member = teamMembers.find(tm => tm.id === m.memberId);
-                        return <span key={m.memberId + m.cost + (m.instrument || '')} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold text-xs">{member?.name || 'Member'} {m.instrument ? `• ${m.instrument}` : ''} ({formatMoney(m.cost)})</span>;
-                      })}
-                    </div>
-                    <div className="flex gap-1 items-center">
-                      <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-                        <option value="">Assign member</option>
-                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {filteredTasks.length === 0 ? (
+                <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet. Set a release date and click Recalculate, or add a custom task.</td></tr>
+              ) : filteredTasks.map(task => {
+                const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
+                return (
+                  <tr key={task.id} className={cn(
+                    "border-b border-gray-200",
+                    isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
+                  )}>
+                    <td className="p-2">
+                      <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
+                        {task._isAuto ? 'Auto' : 'Custom'}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      <div className="font-bold">{task.type || task.title}</div>
+                      {task.isOverridden && <span className="text-xs text-orange-500">(edited)</span>}
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs", isOverdue && "text-red-600 font-bold")}>
+                          {task.date || '-'}
+                        </span>
+                        {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <select 
+                        value={task.status || 'Not Started'} 
+                        onChange={e => {
+                          if (task._isAuto) {
+                            actions.updateReleaseTask(release.id, task.id, { status: e.target.value });
+                          } else {
+                            actions.updateReleaseCustomTask(release.id, task.id, { status: e.target.value });
+                          }
+                        }} 
+                        className="border-2 border-black p-1 text-xs"
+                      >
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
-                      <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="Cost" className={cn("px-2 py-1 text-xs w-20", THEME.punk.input)} />
-                      <input value={newAssignments[task.id]?.instrument || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), instrument: e.target.value } }))} placeholder="Instrument" className={cn("px-2 py-1 text-xs w-28", THEME.punk.input)} />
-                      <button onClick={() => addAssignment(task.id, task, (assignedMembers) => actions.updateReleaseTask(release.id, task.id, { assignedMembers }))} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>Add</button>
-                      {taskBudget(task) > 0 && <span className="text-[10px] font-bold">Remaining: {formatMoney(taskBudget(task) - (task.assignedMembers || []).reduce((s, m) => s + (m.cost || 0), 0))}</span>}
-                    </div>
-                  </td>
-                  <td className="p-2"><input value={task.notes || ''} onChange={e => actions.updateReleaseTask(release.id, task.id, { notes: e.target.value })} className="border-2 border-black p-1 text-xs w-full" placeholder="Notes..." /></td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-2 text-center">
+                      {!task._isAuto && (
+                        <button onClick={() => actions.deleteReleaseCustomTask(release.id, task.id)} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Phase 3: Attached Songs Section */}
+      {/* Attached Songs Section */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
           <h3 className="font-black uppercase">Attached Songs</h3>
@@ -2501,53 +2571,6 @@ export const ReleaseDetailView = ({ release, onBack }) => {
             ) : null;
           })}
           {(currentRelease.attachedSongIds || []).length === 0 && <span className="opacity-50 text-sm">No songs attached yet.</span>}
-        </div>
-      </div>
-
-      {/* Phase 3: Custom Tasks Section */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Custom Tasks</h3>
-          <button onClick={() => setShowAddCustomTask(!showAddCustomTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddCustomTask ? 'Cancel' : '+ Add Custom Task'}</button>
-        </div>
-        {showAddCustomTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newCustomTask.title} onChange={e => setNewCustomTask(prev => ({ ...prev, title: e.target.value }))} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newCustomTask.date} onChange={e => setNewCustomTask(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
-              <input value={newCustomTask.description} onChange={e => setNewCustomTask(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newCustomTask.estimatedCost} onChange={e => setNewCustomTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
-              <select value={newCustomTask.status} onChange={e => setNewCustomTask(prev => ({ ...prev, status: e.target.value }))} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-            </div>
-          </div>
-        )}
-        <div className="space-y-2">
-          {(currentRelease.customTasks || []).length === 0 ? (
-            <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
-          ) : (currentRelease.customTasks || []).map(task => (
-            <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
-              <div className="flex-1">
-                <div className="font-bold">{task.title}</div>
-                <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(getEffectiveCost(task))}</div>
-                {task.description && <div className="text-sm mt-1">{task.description}</div>}
-              </div>
-              <button onClick={() => actions.deleteReleaseCustomTask(release.id, task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between"><span>Release Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentRelease))}</span></div>
-          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
-          <div className="flex justify-between"><span>Custom Tasks Total:</span><span className="font-bold">{formatMoney((currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg">
-            <span className="font-black">TOTAL:</span>
-            <span className="font-black">{formatMoney(getEffectiveCost(currentRelease) + (currentRelease.tasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0) + (currentRelease.customTasks || []).reduce((sum, t) => sum + getEffectiveCost(t), 0))}</span>
-          </div>
         </div>
       </div>
     </div>
@@ -4707,17 +4730,11 @@ export const EventDetailView = ({ event, onBack }) => {
   const [form, setForm] = useState({ ...event });
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
-  const [newAssignments, setNewAssignments] = useState({});
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+  const [taskSortBy, setTaskSortBy] = useState('date');
+  const [taskSortDir, setTaskSortDir] = useState('asc');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
-
-  const addAssignment = (taskKey, taskObj, updater) => {
-    const entry = newAssignments[taskKey] || { memberId: '', cost: 0 };
-    const updatedMembers = [...(taskObj.assignedMembers || []), { memberId: entry.memberId, cost: parseFloat(entry.cost) || 0 }];
-    updater(updatedMembers);
-    setNewAssignments(prev => ({ ...prev, [taskKey]: { memberId: '', cost: 0 } }));
-  };
 
   const handleSave = async () => { await actions.updateEvent(event.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
@@ -4726,10 +4743,6 @@ export const EventDetailView = ({ event, onBack }) => {
     await actions.addEventCustomTask(event.id, newTask);
     setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
     setShowAddTask(false);
-  };
-
-  const handleDeleteCustomTask = async (taskId) => {
-    if (confirm('Delete this task?')) { await actions.deleteEventCustomTask(event.id, taskId); }
   };
 
   const handleDeleteEvent = async () => {
@@ -4741,17 +4754,14 @@ export const EventDetailView = ({ event, onBack }) => {
   const eventCustomTasks = useMemo(() => currentEvent.customTasks || [], [currentEvent.customTasks]);
   const allEventTasks = useMemo(() => [...eventTasks, ...eventCustomTasks], [eventTasks, eventCustomTasks]);
   const { progress: eventProgressValue } = calculateTaskProgress(allEventTasks);
-  const tasksCost = eventTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
-  const customTasksCost = eventCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
-  const totalCost = getEffectiveCost(currentEvent) + tasksCost + customTasksCost;
-
-  const filteredEventTasks = useMemo(() => {
-    let tasks = [...eventTasks];
-    if (taskFilterStatus !== 'all') {
-      tasks = tasks.filter(t => t.status === taskFilterStatus);
-    }
-    return tasks;
-  }, [eventTasks, taskFilterStatus]);
+  
+  // Calculate costs
+  const costPaid = useMemo(() => allEventTasks.reduce((sum, t) => sum + (t.paidCost || 0), 0), [allEventTasks]);
+  const estimatedCost = useMemo(() => allEventTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0) + getEffectiveCost(currentEvent), [allEventTasks, currentEvent]);
+  
+  // Calculate overdue tasks
+  const overdueTasks = useMemo(() => allEventTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done'), [allEventTasks]);
+  const openTasks = useMemo(() => allEventTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done'), [allEventTasks]);
 
   const assignedTeamMembers = useMemo(() => {
     const memberIds = new Set();
@@ -4760,6 +4770,26 @@ export const EventDetailView = ({ event, onBack }) => {
     });
     return teamMembers.filter(m => memberIds.has(m.id));
   }, [allEventTasks, teamMembers]);
+  
+  // Unified filtered and sorted tasks (includes both auto and custom tasks)
+  const filteredTasks = useMemo(() => {
+    const combined = [
+      ...eventTasks.map(t => ({ ...t, _isAuto: true })),
+      ...eventCustomTasks.map(t => ({ ...t, _isAuto: false }))
+    ];
+    let filtered = [...combined];
+    if (taskFilterStatus !== 'all') {
+      filtered = filtered.filter(t => t.status === taskFilterStatus);
+    }
+    filtered.sort((a, b) => {
+      const valA = a[taskSortBy] || '';
+      const valB = b[taskSortBy] || '';
+      return taskSortDir === 'asc' 
+        ? (valA < valB ? -1 : valA > valB ? 1 : 0)
+        : (valA > valB ? -1 : valA < valB ? 1 : 0);
+    });
+    return filtered;
+  }, [eventTasks, eventCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   return (
     <div className="p-6 pb-24">
@@ -4772,6 +4802,95 @@ export const EventDetailView = ({ event, onBack }) => {
         </button>
       </div>
 
+      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        
+        {/* Event Title - prominent at top */}
+        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentEvent.title || 'Untitled Event'}</div>
+        
+        <div className="grid md:grid-cols-4 gap-4">
+          {/* Task Progress */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{eventProgressValue}%</div>
+          </div>
+          
+          {/* Event Date/Time */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Event Date</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
+              {currentEvent.date || 'Not Set'} {currentEvent.time && `@ ${currentEvent.time}`}
+            </div>
+          </div>
+          
+          {/* Location */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Location</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
+              {currentEvent.location || 'TBD'}
+            </div>
+          </div>
+          
+          {/* Number of Open Tasks */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
+              {openTasks.length}
+            </div>
+          </div>
+          
+          {/* Overdue Task Indicator */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
+              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
+            )}>
+              {overdueTasks.length}
+            </div>
+          </div>
+          
+          {/* Entry Cost */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Entry Cost</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
+              {formatMoney(currentEvent.entryCost || 0)}
+            </div>
+          </div>
+          
+          {/* Cost Paid */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
+              {formatMoney(costPaid)}
+            </div>
+          </div>
+          
+          {/* Estimated Total Cost */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
+              {formatMoney(estimatedCost)}
+            </div>
+          </div>
+          
+          {/* Team Members */}
+          <div className="md:col-span-4">
+            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION B: Basic Information (editable) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Event Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -4817,9 +4936,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
             <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-2 text-xs font-black bg-yellow-200 border-2 border-black">Progress: {eventProgressValue}%</span>
-          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Event notes..." />
@@ -4831,117 +4947,28 @@ export const EventDetailView = ({ event, onBack }) => {
         </div>
       </div>
 
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        <div className="grid md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
-            <div className="space-y-1">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">{m.name}</div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Auto Tasks:</span><span className="font-bold">{eventTasks.length}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Custom Tasks:</span><span className="font-bold">{eventCustomTasks.length}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black"><span>Progress:</span><span className="font-bold">{eventProgressValue}%</span></div>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Schedule</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Date:</span><span className="font-bold">{currentEvent.date || 'TBD'}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Time:</span><span className="font-bold">{currentEvent.time || 'TBD'}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Location:</span><span className="font-bold">{currentEvent.location || 'TBD'}</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      {/* Unified Tasks Module - combines auto-generated and custom tasks */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
-          <h3 className="font-black uppercase">All Tasks</h3>
-          <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-            <option value="all">All Status</option>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <h3 className="font-black uppercase">Tasks</h3>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Status</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="date">Sort by Date</option>
+              <option value="type">Sort by Type</option>
+              <option value="status">Sort by Status</option>
+            </select>
+            <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
+              {taskSortDir === 'asc' ? '↑' : '↓'}
+            </button>
+            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+          </div>
         </div>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-100 border-b-2 border-black">
-                <th className="p-2 text-left">Type</th>
-                <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-right">Est. Cost</th>
-                <th className="p-2 text-left">Assignments</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEventTasks.length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet.</td></tr>
-              ) : (
-                filteredEventTasks.map(task => (
-                  <tr key={task.id} className="border-b border-gray-200 bg-blue-50">
-                    <td className="p-2 font-bold">{task.type}</td>
-                    <td className="p-2">
-                      <input type="date" value={task.date || ''} onChange={e => {
-                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, date: e.target.value } : t);
-                        actions.updateEvent(event.id, { tasks: updatedTasks });
-                      }} className="border-2 border-black p-1 text-xs" />
-                    </td>
-                    <td className="p-2">
-                      <select value={task.status || 'Not Started'} onChange={e => {
-                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
-                        actions.updateEvent(event.id, { tasks: updatedTasks });
-                      }} className="border-2 border-black p-1 text-xs">
-                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input type="number" value={task.estimatedCost || 0} onChange={e => {
-                        const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, estimatedCost: parseFloat(e.target.value) || 0 } : t);
-                        actions.updateEvent(event.id, { tasks: updatedTasks });
-                      }} className="border-2 border-black p-1 text-xs w-20 text-right" />
-                    </td>
-                    <td className="p-2 text-xs">
-                      <div className="flex flex-wrap gap-1">
-                        {(task.assignedMembers || []).map(m => {
-                          const member = teamMembers.find(tm => tm.id === m.memberId);
-                          return <span key={m.memberId} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>;
-                        })}
-                      </div>
-                      <div className="flex gap-1 items-center mt-1">
-                        <select value={newAssignments[task.id]?.memberId || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), memberId: e.target.value } }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-                          <option value="">Assign</option>
-                          {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                        <input type="number" value={newAssignments[task.id]?.cost || ''} onChange={e => setNewAssignments(prev => ({ ...prev, [task.id]: { ...(prev[task.id] || {}), cost: e.target.value } }))} placeholder="$" className={cn("px-2 py-1 text-xs w-16", THEME.punk.input)} />
-                        <button onClick={() => addAssignment(task.id, task, (assignedMembers) => {
-                          const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, assignedMembers } : t);
-                          actions.updateEvent(event.id, { tasks: updatedTasks });
-                        })} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>+</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Custom Tasks</h3>
-          <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
-        </div>
+        {/* Add Task Form */}
         {showAddTask && (
           <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
             <div className="grid md:grid-cols-2 gap-3">
@@ -4954,30 +4981,76 @@ export const EventDetailView = ({ event, onBack }) => {
             </div>
           </div>
         )}
-        {eventCustomTasks.length === 0 ? (
-          <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {eventCustomTasks.map(task => (
-              <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
-                <div className="flex-1">
-                  <div className="font-bold">{task.title}</div>
-                  <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
-                </div>
-                <button onClick={() => handleDeleteCustomTask(task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between"><span>Event Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentEvent))}</span></div>
-          <div className="flex justify-between"><span>Entry Cost:</span><span className="font-bold">{formatMoney(currentEvent.entryCost || 0)}</span></div>
-          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney(tasksCost + customTasksCost)}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost + (currentEvent.entryCost || 0))}</span></div>
+        
+        {/* Legend */}
+        <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
+          <span className="px-2 py-1 bg-yellow-100 border-2 border-black">Auto Task</span>
+          <span className="px-2 py-1 bg-green-100 border-2 border-black">Custom Task</span>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 border-b-2 border-black">
+                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left">Task</th>
+                <th className="p-2 text-left">Date</th>
+                <th className="p-2 text-left">Status</th>
+                <th className="p-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.length === 0 ? (
+                <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet. Add a custom task.</td></tr>
+              ) : filteredTasks.map(task => {
+                const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
+                return (
+                  <tr key={task.id} className={cn(
+                    "border-b border-gray-200",
+                    isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
+                  )}>
+                    <td className="p-2">
+                      <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
+                        {task._isAuto ? 'Auto' : 'Custom'}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      <div className="font-bold">{task.type || task.title}</div>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs", isOverdue && "text-red-600 font-bold")}>
+                          {task.date || '-'}
+                        </span>
+                        {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <select 
+                        value={task.status || 'Not Started'} 
+                        onChange={e => {
+                          if (task._isAuto) {
+                            const updatedTasks = eventTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
+                            actions.updateEvent(event.id, { tasks: updatedTasks });
+                          } else {
+                            actions.updateEventCustomTask(event.id, task.id, { status: e.target.value });
+                          }
+                        }} 
+                        className="border-2 border-black p-1 text-xs"
+                      >
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2 text-center">
+                      {!task._isAuto && (
+                        <button onClick={() => { if (confirm('Delete this task?')) actions.deleteEventCustomTask(event.id, task.id); }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -5116,13 +5189,25 @@ export const ExpensesListView = ({ onSelectExpense }) => {
   );
 };
 
-// Expense Detail View
+// Expense Detail View - SPECIAL CASE: Has validation for Complete status requiring paidCost > 0
 export const ExpenseDetailView = ({ expense, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...expense });
+  const [statusWarning, setStatusWarning] = useState('');
 
   const handleSave = async () => { await actions.updateExpense(expense.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+
+  // SPECIAL VALIDATION: When status changes to Complete, check if paidCost > 0
+  const handleStatusChange = (newStatus) => {
+    if (newStatus === 'Complete' && (!form.paidCost || form.paidCost <= 0)) {
+      setStatusWarning('Cannot set status to Complete without a Paid Amount greater than 0.');
+      return; // Don't change the status
+    }
+    setStatusWarning('');
+    handleFieldChange('status', newStatus);
+    setTimeout(handleSave, 0);
+  };
 
   const handleDeleteExpense = async () => {
     if (confirm('Delete this expense?')) { await actions.deleteExpense(expense.id); onBack(); }
@@ -5152,6 +5237,62 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
         </div>
       )}
 
+      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        
+        {/* Expense Name - prominent at top */}
+        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentExpense.name || 'Untitled Expense'}</div>
+        
+        <div className="grid md:grid-cols-4 gap-4">
+          {/* Status */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Status</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold",
+              currentExpense.status === 'Complete' ? "bg-green-100" : 
+              currentExpense.status === 'In Progress' ? "bg-yellow-100" : "bg-gray-100"
+            )}>
+              {currentExpense.status || 'Not Started'}
+            </div>
+          </div>
+          
+          {/* Date */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Date</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
+              {currentExpense.date || 'Not Set'}
+            </div>
+          </div>
+          
+          {/* Amount Paid */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Amount Paid</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
+              {formatMoney(currentExpense.paidCost || 0)}
+            </div>
+          </div>
+          
+          {/* Category */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Category</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
+              {currentExpense.category || 'General'}
+            </div>
+          </div>
+          
+          {/* Vendor */}
+          {currentExpense.vendorId && (
+            <div className="md:col-span-4">
+              <label className="block text-xs font-bold uppercase mb-2">Vendor</label>
+              <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
+                {(data.vendors || []).find(v => v.id === currentExpense.vendorId)?.name || 'Unknown Vendor'}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SECTION B: Basic Information (editable) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Expense Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -5169,9 +5310,17 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Status</label>
-            <select value={form.status || 'Complete'} onChange={e => { handleFieldChange('status', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+            <select 
+              value={form.status || 'Not Started'} 
+              onChange={e => handleStatusChange(e.target.value)} 
+              className={cn("w-full", THEME.punk.input, statusWarning && "border-red-500")}
+            >
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            {statusWarning && (
+              <div className="text-xs text-red-600 font-bold mt-1">⚠️ {statusWarning}</div>
+            )}
+            <div className="text-[10px] text-gray-500 mt-1">Note: Setting to Complete requires Paid Amount &gt; 0</div>
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
@@ -5183,7 +5332,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Paid Amount</label>
-            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+            <input type="number" value={form.paidCost || 0} onChange={e => { handleFieldChange('paidCost', parseFloat(e.target.value) || 0); setStatusWarning(''); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Vendor</label>
@@ -5200,15 +5349,6 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
           </div>
-        </div>
-      </div>
-
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between"><span>Estimated:</span><span className="font-bold">{formatMoney(currentExpense.estimatedCost || 0)}</span></div>
-          <div className="flex justify-between"><span>Quoted:</span><span className="font-bold">{formatMoney(currentExpense.quotedCost || 0)}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">PAID:</span><span className="font-black text-green-600">{formatMoney(getEffectiveCost(currentExpense))}</span></div>
         </div>
       </div>
     </div>
@@ -5384,13 +5524,15 @@ export const VideosListView = ({ onSelectVideo }) => {
   );
 };
 
-// Video Detail View - Following unified Item/Page architecture
+// Video Detail View - Following unified Item/Page architecture with SongDetailView pattern
 export const VideoDetailView = ({ video, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...video });
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+  const [taskSortBy, setTaskSortBy] = useState('date');
+  const [taskSortDir, setTaskSortDir] = useState('asc');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
   const videoTypes = [
@@ -5398,8 +5540,14 @@ export const VideoDetailView = ({ video, onBack }) => {
     { key: 'enhancedLyric', label: 'Enhanced Lyric' },
     { key: 'music', label: 'Music Video' },
     { key: 'visualizer', label: 'Visualizer' },
+    { key: 'live', label: 'Live Video' },
+    { key: 'loop', label: 'Loop Video' },
     { key: 'custom', label: 'Custom' }
   ];
+  
+  const getVideoTypeLabels = useMemo(() => {
+    return videoTypes.filter(t => form.types?.[t.key]).map(t => t.label);
+  }, [form.types]);
 
   const handleSave = async () => {
     if (video._source === 'standalone') {
@@ -5419,16 +5567,6 @@ export const VideoDetailView = ({ video, onBack }) => {
     }
     setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
     setShowAddTask(false);
-  };
-
-  const handleDeleteCustomTask = async (taskId) => {
-    if (confirm('Delete this task?')) {
-      if (video._source === 'standalone') {
-        await actions.deleteStandaloneVideoCustomTask(video.id, taskId);
-      } else {
-        await actions.deleteSongVideoCustomTask(video._songId, video.id, taskId);
-      }
-    }
   };
 
   const handleDeleteVideo = async () => {
@@ -5456,15 +5594,14 @@ export const VideoDetailView = ({ video, onBack }) => {
   const videoCustomTasks = useMemo(() => currentVideo.customTasks || [], [currentVideo.customTasks]);
   const allVideoTasks = useMemo(() => [...videoTasks, ...videoCustomTasks], [videoTasks, videoCustomTasks]);
   const { progress: videoProgressValue } = calculateTaskProgress(allVideoTasks);
-  const tasksCost = videoTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
-  const customTasksCost = videoCustomTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
-  const totalCost = getEffectiveCost(currentVideo) + tasksCost + customTasksCost;
-
-  const filteredVideoTasks = useMemo(() => {
-    let tasks = [...videoTasks];
-    if (taskFilterStatus !== 'all') tasks = tasks.filter(t => t.status === taskFilterStatus);
-    return tasks;
-  }, [videoTasks, taskFilterStatus]);
+  
+  // Calculate costs
+  const costPaid = useMemo(() => allVideoTasks.reduce((sum, t) => sum + (t.paidCost || 0), 0), [allVideoTasks]);
+  const estimatedCost = useMemo(() => allVideoTasks.reduce((sum, t) => sum + getEffectiveCost(t), 0) + getEffectiveCost(currentVideo), [allVideoTasks, currentVideo]);
+  
+  // Calculate overdue tasks
+  const overdueTasks = useMemo(() => allVideoTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done'), [allVideoTasks]);
+  const openTasks = useMemo(() => allVideoTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done'), [allVideoTasks]);
 
   const assignedTeamMembers = useMemo(() => {
     const memberIds = new Set();
@@ -5473,6 +5610,26 @@ export const VideoDetailView = ({ video, onBack }) => {
     });
     return teamMembers.filter(m => memberIds.has(m.id));
   }, [allVideoTasks, teamMembers]);
+  
+  // Unified filtered and sorted tasks (includes both auto and custom tasks)
+  const filteredTasks = useMemo(() => {
+    const combined = [
+      ...videoTasks.map(t => ({ ...t, _isAuto: true })),
+      ...videoCustomTasks.map(t => ({ ...t, _isAuto: false }))
+    ];
+    let filtered = [...combined];
+    if (taskFilterStatus !== 'all') {
+      filtered = filtered.filter(t => t.status === taskFilterStatus);
+    }
+    filtered.sort((a, b) => {
+      const valA = a[taskSortBy] || '';
+      const valB = b[taskSortBy] || '';
+      return taskSortDir === 'asc' 
+        ? (valA < valB ? -1 : valA > valB ? 1 : 0)
+        : (valA > valB ? -1 : valA < valB ? 1 : 0);
+    });
+    return filtered;
+  }, [videoTasks, videoCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   return (
     <div className="p-6 pb-24">
@@ -5485,7 +5642,95 @@ export const VideoDetailView = ({ video, onBack }) => {
         </button>
       </div>
 
-      {/* Basic Information */}
+      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        
+        {/* Video Title - prominent at top */}
+        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentVideo.title || 'Untitled Video'}</div>
+        
+        <div className="grid md:grid-cols-4 gap-4">
+          {/* Task Progress */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{videoProgressValue}%</div>
+          </div>
+          
+          {/* Release Date */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
+              {currentVideo.releaseDate || 'Not Set'}
+            </div>
+          </div>
+          
+          {/* Video Types */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Video Types</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
+              {getVideoTypeLabels.length > 0 ? getVideoTypeLabels.join(', ') : 'None'}
+            </div>
+          </div>
+          
+          {/* Number of Open Tasks */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
+              {openTasks.length}
+            </div>
+          </div>
+          
+          {/* Overdue Task Indicator */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
+              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
+            )}>
+              {overdueTasks.length}
+            </div>
+          </div>
+          
+          {/* Cost Paid */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
+              {formatMoney(costPaid)}
+            </div>
+          </div>
+          
+          {/* Estimated Total Cost */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
+              {formatMoney(estimatedCost)}
+            </div>
+          </div>
+          
+          {/* Source */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Source</label>
+            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
+              {video._source === 'song' ? video._songTitle : 'Standalone'}
+            </div>
+          </div>
+          
+          {/* Team Members */}
+          <div className="md:col-span-4">
+            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.length === 0 ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION B: Basic Information (editable) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Video Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -5539,9 +5784,6 @@ export const VideoDetailView = ({ video, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
             <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-2 text-xs font-black bg-yellow-200 border-2 border-black">Progress: {videoProgressValue}%</span>
-          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Video notes..." />
@@ -5549,104 +5791,28 @@ export const VideoDetailView = ({ video, onBack }) => {
         </div>
       </div>
 
-      {/* Display Information */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        <div className="grid md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Assigned Team</label>
-            <div className="space-y-1">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">{m.name}</div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Auto Tasks:</span><span className="font-bold">{videoTasks.length}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Custom Tasks:</span><span className="font-bold">{videoCustomTasks.length}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-yellow-100 border border-black"><span>Progress:</span><span className="font-bold">{videoProgressValue}%</span></div>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Source</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Type:</span><span className="font-bold">{video._source === 'song' ? 'Song Video' : 'Standalone'}</span></div>
-              {video._source === 'song' && (
-                <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Song:</span><span className="font-bold">{video._songTitle}</span></div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tasks Module */}
+      {/* Unified Tasks Module - combines auto-generated and custom tasks */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
           <h3 className="font-black uppercase">Tasks</h3>
-          <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
-            <option value="all">All Status</option>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={taskFilterStatus} onChange={e => setTaskFilterStatus(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="all">All Status</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={taskSortBy} onChange={e => setTaskSortBy(e.target.value)} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+              <option value="date">Sort by Date</option>
+              <option value="type">Sort by Type</option>
+              <option value="status">Sort by Status</option>
+            </select>
+            <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
+              {taskSortDir === 'asc' ? '↑' : '↓'}
+            </button>
+            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+          </div>
         </div>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-100 border-b-2 border-black">
-                <th className="p-2 text-left">Type</th>
-                <th className="p-2 text-left">Date</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-right">Est. Cost</th>
-                <th className="p-2 text-left">Assignments</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredVideoTasks.length === 0 ? (
-                <tr><td colSpan="5" className="p-4 text-center opacity-50">No auto-generated tasks yet.</td></tr>
-              ) : (
-                filteredVideoTasks.map(task => (
-                  <tr key={task.id} className="border-b border-gray-200 bg-blue-50">
-                    <td className="p-2 font-bold">{task.type}</td>
-                    <td className="p-2">{task.date || '-'}</td>
-                    <td className="p-2">
-                      <select value={task.status || 'Not Started'} onChange={e => {
-                        const updatedTasks = videoTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
-                        if (video._source === 'standalone') {
-                          actions.updateStandaloneVideo(video.id, { tasks: updatedTasks });
-                        } else {
-                          actions.updateSongVideo(video._songId, video.id, { tasks: updatedTasks });
-                        }
-                      }} className="border-2 border-black p-1 text-xs">
-                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2 text-right">{formatMoney(task.estimatedCost || 0)}</td>
-                    <td className="p-2 text-xs">
-                      <div className="flex flex-wrap gap-1">
-                        {(task.assignedMembers || []).map(m => {
-                          const member = teamMembers.find(tm => tm.id === m.memberId);
-                          return <span key={m.memberId} className="px-2 py-1 bg-purple-100 border-2 border-black font-bold">{member?.name || 'Member'}</span>;
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Custom Tasks */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-          <h3 className="font-black uppercase">Custom Tasks</h3>
-          <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
-        </div>
+        {/* Add Task Form */}
         {showAddTask && (
           <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
             <div className="grid md:grid-cols-2 gap-3">
@@ -5659,30 +5825,92 @@ export const VideoDetailView = ({ video, onBack }) => {
             </div>
           </div>
         )}
-        {videoCustomTasks.length === 0 ? (
-          <p className="text-center opacity-50 py-4">No custom tasks yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {videoCustomTasks.map(task => (
-              <div key={task.id} className="flex items-center gap-2 p-3 bg-gray-50 border-2 border-black">
-                <div className="flex-1">
-                  <div className="font-bold">{task.title}</div>
-                  <div className="text-xs opacity-60">{task.date} | {task.status} | {formatMoney(task.estimatedCost || 0)}</div>
-                </div>
-                <button onClick={() => handleDeleteCustomTask(task.id)} className="p-2 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={16} /></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Cost Summary */}
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between"><span>Video Base Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(currentVideo))}</span></div>
-          <div className="flex justify-between"><span>Tasks Total:</span><span className="font-bold">{formatMoney(tasksCost + customTasksCost)}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">TOTAL:</span><span className="font-black">{formatMoney(totalCost)}</span></div>
+        
+        {/* Legend */}
+        <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
+          <span className="px-2 py-1 bg-yellow-100 border-2 border-black">Auto Task</span>
+          <span className="px-2 py-1 bg-green-100 border-2 border-black">Custom Task</span>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 border-b-2 border-black">
+                <th className="p-2 text-left">Type</th>
+                <th className="p-2 text-left">Task</th>
+                <th className="p-2 text-left">Date</th>
+                <th className="p-2 text-left">Status</th>
+                <th className="p-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.length === 0 ? (
+                <tr><td colSpan="5" className="p-4 text-center opacity-50">No tasks yet. Add a custom task.</td></tr>
+              ) : filteredTasks.map(task => {
+                const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
+                return (
+                  <tr key={task.id} className={cn(
+                    "border-b border-gray-200",
+                    isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
+                  )}>
+                    <td className="p-2">
+                      <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
+                        {task._isAuto ? 'Auto' : 'Custom'}
+                      </span>
+                    </td>
+                    <td className="p-2">
+                      <div className="font-bold">{task.type || task.title}</div>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs", isOverdue && "text-red-600 font-bold")}>
+                          {task.date || '-'}
+                        </span>
+                        {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <select 
+                        value={task.status || 'Not Started'} 
+                        onChange={e => {
+                          if (task._isAuto) {
+                            const updatedTasks = videoTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
+                            if (video._source === 'standalone') {
+                              actions.updateStandaloneVideo(video.id, { tasks: updatedTasks });
+                            } else {
+                              actions.updateSongVideo(video._songId, video.id, { tasks: updatedTasks });
+                            }
+                          } else {
+                            if (video._source === 'standalone') {
+                              actions.updateStandaloneVideoCustomTask(video.id, task.id, { status: e.target.value });
+                            } else {
+                              actions.updateSongVideoCustomTask(video._songId, video.id, task.id, { status: e.target.value });
+                            }
+                          }
+                        }} 
+                        className="border-2 border-black p-1 text-xs"
+                      >
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2 text-center">
+                      {!task._isAuto && (
+                        <button onClick={() => { 
+                          if (confirm('Delete this task?')) {
+                            if (video._source === 'standalone') {
+                              actions.deleteStandaloneVideoCustomTask(video.id, task.id);
+                            } else {
+                              actions.deleteSongVideoCustomTask(video._songId, video.id, task.id);
+                            }
+                          }
+                        }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -5849,7 +6077,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   );
 };
 
-// Global Task Detail View - Following unified Item/Page architecture
+// Global Task Detail View - Following unified Item/Page architecture with SongDetailView pattern
 export const GlobalTaskDetailView = ({ task, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...task });
@@ -5893,6 +6121,13 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
   };
 
   const currentTask = useMemo(() => (data.globalTasks || []).find(t => t.id === task.id) || task, [data.globalTasks, task]);
+  
+  // Get assigned members list
+  const assignedTeamMembers = useMemo(() => {
+    const memberIds = new Set();
+    (currentTask.assignedMembers || []).forEach(m => memberIds.add(m.memberId));
+    return teamMembers.filter(m => memberIds.has(m.id));
+  }, [currentTask, teamMembers]);
 
   return (
     <div className="p-6 pb-24">
@@ -5916,7 +6151,84 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         </div>
       )}
 
-      {/* Basic Information */}
+      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
+      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
+        
+        {/* Task Name - prominent at top */}
+        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentTask.taskName || 'Untitled Task'}</div>
+        
+        <div className="grid md:grid-cols-4 gap-4">
+          {/* Status */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Status</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold",
+              currentTask.status === 'Complete' || currentTask.status === 'Done' ? "bg-green-100" : 
+              currentTask.status === 'In Progress' ? "bg-yellow-100" : "bg-gray-100"
+            )}>
+              {currentTask.status || 'Not Started'}
+            </div>
+          </div>
+          
+          {/* Due Date */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Due Date</label>
+            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
+              {currentTask.date || 'Not Set'}
+            </div>
+          </div>
+          
+          {/* Category */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Category</label>
+            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
+              {currentTask.category || 'Other'}
+            </div>
+          </div>
+          
+          {/* Cost Paid */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
+            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
+              {formatMoney(currentTask.paidCost || 0)}
+            </div>
+          </div>
+          
+          {/* Estimated Cost */}
+          <div>
+            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
+            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
+              {formatMoney(currentTask.estimatedCost || 0)}
+            </div>
+          </div>
+          
+          {/* Assigned To (legacy field) */}
+          {currentTask.assignedTo && (
+            <div>
+              <label className="block text-xs font-bold uppercase mb-2">Assigned To</label>
+              <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
+                {currentTask.assignedTo}
+              </div>
+            </div>
+          )}
+          
+          {/* Team Members */}
+          <div className="md:col-span-4">
+            <label className="block text-xs font-bold uppercase mb-2">Assigned Members</label>
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.length === 0 && !currentTask.assignedTo ? (
+                <span className="text-xs opacity-50">No team members assigned</span>
+              ) : assignedTeamMembers.map(m => (
+                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION B: Basic Information (editable) */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -5953,7 +6265,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
             <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
-            <label className="block text-xs font-bold uppercase mb-1">Assigned To</label>
+            <label className="block text-xs font-bold uppercase mb-1">Assigned To (Legacy)</label>
             <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="md:col-span-2">
@@ -5967,52 +6279,31 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         </div>
       </div>
 
-      {/* Display Information */}
+      {/* Team Member Assignments */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Assigned Team Members</label>
-            <div className="space-y-1 mb-3">
-              {(form.assignedMembers || []).length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : (form.assignedMembers || []).map((m, index) => {
-                const member = teamMembers.find(tm => tm.id === m.memberId);
-                return (
-                  <div key={index} className="flex justify-between items-center px-2 py-1 bg-purple-100 border-2 border-black">
-                    <span className="text-xs font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>
-                    <button onClick={() => removeAssignment(index)} className="text-red-500 text-xs">✕</button>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <select value={newAssignments.memberId} onChange={e => setNewAssignments(prev => ({ ...prev, memberId: e.target.value }))} className={cn("flex-1 text-xs", THEME.punk.input)}>
-                <option value="">Assign member</option>
-                {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-              <input type="number" value={newAssignments.cost} onChange={e => setNewAssignments(prev => ({ ...prev, cost: e.target.value }))} placeholder="$" className={cn("w-20 text-xs", THEME.punk.input)} />
-              <button onClick={addAssignment} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-pink-600 text-white")}>+</button>
-            </div>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Team Member Assignments</h3>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {(form.assignedMembers || []).length === 0 ? (
+              <span className="text-xs opacity-50">No team members assigned yet</span>
+            ) : (form.assignedMembers || []).map((m, index) => {
+              const member = teamMembers.find(tm => tm.id === m.memberId);
+              return (
+                <div key={index} className="flex items-center gap-2 px-3 py-2 bg-purple-100 border-2 border-black">
+                  <span className="text-sm font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>
+                  <button onClick={() => removeAssignment(index)} className="text-red-500 text-sm font-bold">✕</button>
+                </div>
+              );
+            })}
           </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Summary</label>
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Category:</span><span className="font-bold">{currentTask.category}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Status:</span><span className="font-bold">{currentTask.status}</span></div>
-              <div className="flex justify-between px-2 py-1 bg-gray-100 border border-black"><span>Due Date:</span><span className="font-bold">{currentTask.date || 'TBD'}</span></div>
-            </div>
+          <div className="flex gap-2">
+            <select value={newAssignments.memberId} onChange={e => setNewAssignments(prev => ({ ...prev, memberId: e.target.value }))} className={cn("flex-1 text-sm", THEME.punk.input)}>
+              <option value="">Select team member...</option>
+              {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <input type="number" value={newAssignments.cost} onChange={e => setNewAssignments(prev => ({ ...prev, cost: e.target.value }))} placeholder="Cost" className={cn("w-24 text-sm", THEME.punk.input)} />
+            <button onClick={addAssignment} className={cn("px-4 py-2 text-sm", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
           </div>
-        </div>
-      </div>
-
-      {/* Cost Summary */}
-      <div className={cn("p-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Cost Summary</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between"><span>Estimated:</span><span className="font-bold">{formatMoney(currentTask.estimatedCost || 0)}</span></div>
-          <div className="flex justify-between"><span>Quoted:</span><span className="font-bold">{formatMoney(currentTask.quotedCost || 0)}</span></div>
-          <div className="flex justify-between border-t-4 border-black pt-2 text-lg"><span className="font-black">PAID:</span><span className="font-black text-green-600">{formatMoney(getEffectiveCost(currentTask))}</span></div>
         </div>
       </div>
     </div>
