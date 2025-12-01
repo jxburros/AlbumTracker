@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
+import { DetailPane, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
 
 // Song List View - Standardized Architecture
 export const SongListView = ({ onSelectSong }) => {
@@ -756,51 +756,12 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
         </div>
         
-        {/* B.7 Metadata: Era, Stage, Tags, Notes */}
+        {/* B.7 Notes */}
         <div>
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Metadata</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Era</label>
-              <UniversalEraPicker
-                value={(form.eraIds || [])[0] || ''}
-                onChange={value => {
-                  handleFieldChange('eraIds', value ? [value] : []);
-                  setTimeout(handleSave, 0);
-                }}
-                eras={data.eras || []}
-                placeholder="No Era"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-              <UniversalStagePicker
-                value={(form.stageIds || [])[0] || ''}
-                onChange={value => {
-                  handleFieldChange('stageIds', value ? [value] : []);
-                  setTimeout(handleSave, 0);
-                }}
-                stages={data.stages || []}
-                placeholder="No Stage"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-              <UniversalTagsPicker
-                value={form.tagIds || []}
-                onChange={newTagIds => {
-                  handleFieldChange('tagIds', newTagIds);
-                  setTimeout(handleSave, 0);
-                }}
-                tags={data.tags || []}
-                onCreateTag={actions.addTag}
-                placeholder="Add tag..."
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Notes</label>
-              <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Additional notes..." />
-            </div>
+          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Notes</h4>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Additional notes..." />
           </div>
         </div>
       </div>
@@ -1028,43 +989,6 @@ export const SongDetailView = ({ song, onBack }) => {
                           );
                         })}
                       </div>
-                    </div>
-                    
-                    {/* Era per spec Section C */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-bold uppercase mb-1">Era</label>
-                      <select 
-                        value={(v.eraIds || [])[0] || ''} 
-                        onChange={e => actions.updateSongVersion(song.id, v.id, { eraIds: e.target.value ? [e.target.value] : [] })}
-                        className={cn("w-full", THEME.punk.input)}
-                      >
-                        <option value="">No Era</option>
-                        {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                      </select>
-                    </div>
-                    
-                    {/* Stage per spec Section C */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-                      <select 
-                        value={(v.stageIds || [])[0] || ''} 
-                        onChange={e => actions.updateSongVersion(song.id, v.id, { stageIds: e.target.value ? [e.target.value] : [] })}
-                        className={cn("w-full", THEME.punk.input)}
-                      >
-                        <option value="">No Stage</option>
-                        {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                      </select>
-                    </div>
-                    
-                    {/* Tags per spec Section C */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-                      <input 
-                        value={(v.tags || []).join(', ')} 
-                        onChange={e => actions.updateSongVersion(song.id, v.id, { tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })} 
-                        placeholder="comma-separated tags" 
-                        className={cn("w-full", THEME.punk.input)} 
-                      />
                     </div>
                     
                     {/* Notes per spec Section C */}
@@ -1469,43 +1393,6 @@ export const SongDetailView = ({ song, onBack }) => {
                 >
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </div>
-
-              {/* Issue #7: Era and Stage for Song Tasks */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
-                  <select
-                    value={(editingTask.eraIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Era</option>
-                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-                  <select
-                    value={(editingTask.stageIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Stage</option>
-                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* Tags */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-                <input 
-                  value={(editingTask.tags || []).join(', ')} 
-                  onChange={e => setEditingTask(prev => ({ ...prev, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) }))} 
-                  placeholder="comma-separated tags" 
-                  className={cn("w-full", THEME.punk.input)} 
-                />
               </div>
 
               {/* Notes */}
@@ -2263,22 +2150,6 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           {form.hasPhysicalCopies && (
             <div className="text-xs text-blue-600 font-bold">💡 Physical copy tasks will be auto-generated</div>
           )}
-          {/* Phase 3.4: Stage/Era/Tags */}
-          <div className="md:col-span-2">
-            <EraStageTagsPicker
-              value={{
-                eraIds: form.eraIds || [],
-                stageIds: form.stageIds || [],
-                tagIds: form.tagIds || []
-              }}
-              onChange={({ eraIds, stageIds, tagIds }) => {
-                handleFieldChange('eraIds', eraIds);
-                handleFieldChange('stageIds', stageIds);
-                handleFieldChange('tagIds', tagIds);
-                setTimeout(handleSave, 0);
-              }}
-            />
-          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} />
@@ -2667,32 +2538,6 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
                 >
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </div>
-
-              {/* Era and Stage */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
-                  <select
-                    value={(editingTask.eraIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Era</option>
-                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-                  <select
-                    value={(editingTask.stageIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Stage</option>
-                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                  </select>
-                </div>
               </div>
 
               {/* Cost Fields */}
@@ -5078,23 +4923,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <input type="number" value={form.entryCost || 0} onChange={e => handleFieldChange('entryCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           <div className="md:col-span-2">
-            <EraStageTagsPicker
-              value={{
-                eraIds: form.eraIds || [],
-                stageIds: form.stageIds || [],
-                tagIds: form.tagIds || []
-              }}
-              onChange={({ eraIds, stageIds, tagIds }) => {
-                handleFieldChange('eraIds', eraIds);
-                handleFieldChange('stageIds', stageIds);
-                handleFieldChange('tagIds', tagIds);
-                setTimeout(handleSave, 0);
-              }}
-              multipleEras={true}
-              multipleStages={true}
-            />
-          </div>
-          <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Event notes..." />
           </div>
@@ -5490,32 +5318,6 @@ export const EventDetailView = ({ event, onBack }) => {
                 </select>
               </div>
 
-              {/* Era and Stage */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
-                  <select
-                    value={(editingTask.eraIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Era</option>
-                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-                  <select
-                    value={(editingTask.stageIds || [])[0] || ''}
-                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
-                    className={cn("w-full", THEME.punk.input)}
-                  >
-                    <option value="">No Stage</option>
-                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                  </select>
-                </div>
-              </div>
-
               {/* Cost Fields */}
               <div className="grid grid-cols-3 gap-2">
                 <div>
@@ -5906,29 +5708,29 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           )}
         </div>
         
-        {/* Era/Stage/Tags */}
-        <div className="md:col-span-2">
-          <EraStageTagsPicker
-            value={{
-              eraIds: form.eraIds || [],
-              stageIds: form.stageIds || [],
-              tagIds: form.tagIds || []
-            }}
-            onChange={({ eraIds, stageIds, tagIds }) => {
-              handleFieldChange('eraIds', eraIds);
-              handleFieldChange('stageIds', stageIds);
-              handleFieldChange('tagIds', tagIds);
-              setTimeout(handleSave, 0);
-            }}
-          />
-        </div>
-        
         <div className="md:col-span-2">
           <label className="block text-xs font-bold uppercase mb-1">Notes</label>
           <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
         </div>
       </div>
     </div>
+  );
+
+  // Era, Stage & Tags Module - Consistent across all Item pages
+  const eraStageTagsSection = (
+    <EraStageTagsModule
+      value={{
+        eraIds: form.eraIds || [],
+        stageIds: form.stageIds || [],
+        tagIds: form.tagIds || []
+      }}
+      onChange={({ eraIds, stageIds, tagIds }) => {
+        handleFieldChange('eraIds', eraIds);
+        handleFieldChange('stageIds', stageIds);
+        handleFieldChange('tagIds', tagIds);
+      }}
+      onSave={handleSave}
+    />
   );
 
   return (
@@ -5942,6 +5744,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
       isArchived={currentExpense.isArchived}
       displaySection={displaySection}
       editSection={editSection}
+      extraSections={eraStageTagsSection}
     />
   );
 };
@@ -6422,23 +6225,6 @@ export const VideoDetailView = ({ video, onBack }) => {
             )}
           </div>
           
-          {/* Phase 1.6: Stage/Era/Tags for Videos */}
-          <div className="md:col-span-2">
-            <EraStageTagsPicker
-              value={{
-                eraIds: form.eraIds || [],
-                stageIds: form.stageIds || [],
-                tagIds: form.tagIds || []
-              }}
-              onChange={({ eraIds, stageIds, tagIds }) => {
-                handleFieldChange('eraIds', eraIds);
-                handleFieldChange('stageIds', stageIds);
-                handleFieldChange('tagIds', tagIds);
-                setTimeout(handleSave, 0);
-              }}
-            />
-          </div>
-          
           {/* Phase 1.3: Attached Items (Releases and Events for tracking) */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Attached Releases</label>
@@ -6659,52 +6445,6 @@ export const VideoDetailView = ({ video, onBack }) => {
                 >
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </div>
-              {/* Phase 1.7: Era */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Era</label>
-                <select 
-                  value={(editingTask.eraIds || [])[0] || ''} 
-                  onChange={e => setEditingTask({ ...editingTask, eraIds: e.target.value ? [e.target.value] : [] })}
-                  className={cn("w-full", THEME.punk.input)}
-                >
-                  <option value="">No Era</option>
-                  {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                </select>
-              </div>
-              {/* Phase 1.7: Stage */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-                <select 
-                  value={(editingTask.stageIds || [])[0] || ''} 
-                  onChange={e => setEditingTask({ ...editingTask, stageIds: e.target.value ? [e.target.value] : [] })}
-                  className={cn("w-full", THEME.punk.input)}
-                >
-                  <option value="">No Stage</option>
-                  {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-                </select>
-              </div>
-              {/* Phase 1.7: Tags */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-                <div className="flex flex-wrap gap-1 p-1 border-4 border-black bg-white text-xs max-h-16 overflow-y-auto">
-                  {(data.tags || []).map(tag => (
-                    <label key={tag.id} className="flex items-center gap-1 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={(editingTask.tagIds || []).includes(tag.id)} 
-                        onChange={e => {
-                          const ids = e.target.checked 
-                            ? [...(editingTask.tagIds || []), tag.id]
-                            : (editingTask.tagIds || []).filter(id => id !== tag.id);
-                          setEditingTask({ ...editingTask, tagIds: ids });
-                        }}
-                        className="w-3 h-3" 
-                      />
-                      <span style={{ color: tag.color }}>{tag.name}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
               {/* Phase 1.7: Cost fields */}
               <div>
@@ -7152,23 +6892,6 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         <div>
           <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text)</span></label>
           <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
-        </div>
-        
-        {/* Era/Stage/Tags */}
-        <div className="md:col-span-2">
-          <EraStageTagsPicker
-            value={{
-              eraIds: form.eraIds || [],
-              stageIds: form.stageIds || [],
-              tagIds: form.tagIds || []
-            }}
-            onChange={({ eraIds, stageIds, tagIds }) => {
-              handleFieldChange('eraIds', eraIds);
-              handleFieldChange('stageIds', stageIds);
-              handleFieldChange('tagIds', tagIds);
-              setTimeout(handleSave, 0);
-            }}
-          />
         </div>
         
         <div className="md:col-span-2">
