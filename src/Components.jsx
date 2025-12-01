@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp } from 'lucide-react';
+import { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp, File, FileText, Video, FileSpreadsheet } from 'lucide-react';
 import { useStore, STATUS_OPTIONS, getEffectiveCost } from './Store';
 import { THEME, COLORS, formatMoney, STAGES, cn } from './utils';
 
 export const Icon = ({ name, ...props }) => {
-  const icons = { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp };
+  const icons = { Music, List, Zap, Image, Users, Receipt, Calendar, PieChart, Archive, Settings, Menu, X, ChevronDown, ChevronRight, Plus, Split, Folder, Circle, PlayCircle, Activity, CheckCircle, Trash2, Camera, Download, Copy, Upload, DollarSign, TrendingUp, File, FileText, Video, FileSpreadsheet };
   const I = icons[name] || Circle;
   return <I {...props} />;
 };
@@ -14,58 +14,147 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
   const settings = data.settings || {};
   const colorClass = COLORS[settings.themeColor || 'pink'].split(' ')[2]; 
   const isDark = settings.themeMode === 'dark';
+  const [viewsExpanded, setViewsExpanded] = useState(false);
 
-  const menu = [
-      // New Spec Views (primary) - Following unified Item/Page architecture
-      { id: 'songs', label: 'Songs', icon: 'Music' },
-      { id: 'videos', label: 'Videos', icon: 'PlayCircle' },
-      { id: 'events', label: 'Events', icon: 'Calendar' },
-      { id: 'releases', label: 'Releases', icon: 'Download' },
-      { id: 'expenses', label: 'Expenses', icon: 'Receipt' },
-      { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
-      { id: 'timeline', label: 'Timeline', icon: 'List' },
-      { id: 'dashboard', label: 'Dashboard', icon: 'PieChart' },
-      { id: 'financials', label: 'Financials', icon: 'DollarSign' },
-      { id: 'progress', label: 'Progress', icon: 'TrendingUp' },
-      // Original views (secondary)
-      { id: 'active', label: 'Active', icon: 'Zap' },
-      { id: 'calendar', label: 'Calendar View', icon: 'Calendar' },
-      { id: 'gallery', label: 'Photos', icon: 'Image' },
-      { id: 'team', label: 'Team', icon: 'Users' },
-      { id: 'archive', label: 'Trash', icon: 'Archive' },
-      { id: 'settings', label: 'Settings', icon: 'Settings' },
+  // Top buttons (side-by-side)
+  const topButtons = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'PieChart' },
+    { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
   ];
 
-    return (
+  // Main sections
+  const mainMenu = [
+    { id: 'songs', label: 'Songs', icon: 'Music' },
+    { id: 'releases', label: 'Releases', icon: 'Download' },
+    { id: 'videos', label: 'Videos', icon: 'PlayCircle' },
+    { id: 'events', label: 'Events', icon: 'Calendar' },
+    { id: 'globalTasks', label: 'Global Tasks', icon: 'Activity' },
+    { id: 'expenses', label: 'Expenses', icon: 'Receipt' },
+    { id: 'team', label: 'Team', icon: 'Users' },
+    { id: 'gallery', label: 'Photos', icon: 'Image' },
+    { id: 'files', label: 'Files', icon: 'File' },
+  ];
+
+  // Views sub-items
+  const viewsMenu = [
+    { id: 'financials', label: 'Financials', icon: 'DollarSign' },
+    { id: 'progress', label: 'Progress', icon: 'TrendingUp' },
+    { id: 'timeline', label: 'Timeline', icon: 'List' },
+    { id: 'active', label: 'Active Tasks', icon: 'Zap' },
+  ];
+
+  // Footer items
+  const footerMenu = [
+    { id: 'archive', label: 'Trash', icon: 'Trash2' },
+    { id: 'settings', label: 'Settings', icon: 'Settings' },
+  ];
+
+  const isViewsActive = viewsMenu.some(v => v.id === activeTab);
+
+  const MenuButton = ({ item, compact = false }) => (
+    <button 
+      onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
+      className={cn(
+        "w-full flex items-center gap-3 px-4 text-left font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5",
+        compact ? "py-2 text-sm" : "py-3",
+        isDark ? "border-slate-600" : "border-black",
+        activeTab === item.id
+          ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
+          : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-[var(--accent-soft)]")
+      )}
+    >
+      <Icon name={item.icon} size={compact ? 14 : 18} /> {item.label}
+    </button>
+  );
+
+  return (
+    <div className={cn(
+      "fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 flex flex-col punk-panel",
+      isDark ? "text-slate-50" : "text-slate-900",
+      isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+    )}>
+      {/* Logo Header */}
       <div className={cn(
-        "fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 flex flex-col punk-panel",
-        isDark ? "text-slate-50" : "text-slate-900",
-        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        "p-6 border-b-[3px] flex justify-between items-center",
+        isDark ? "bg-slate-900 border-slate-600" : "bg-gray-50 border-black"
       )}>
-        <div className={cn(
-          "p-6 border-b-[3px] flex justify-between items-center",
-          isDark ? "bg-slate-900 border-slate-600" : "bg-gray-50 border-black"
-        )}>
-          <div>
-             <h1 className={cn("text-xl flex items-center gap-2 punk-accent-underline", THEME.punk.textStyle, colorClass)}><Icon name="Music" /> TRACKER</h1>
-             <div className={cn("text-xs font-bold mt-1", isDark ? "text-slate-400" : "opacity-60")}>{settings.artistName || 'Artist'}</div>
-          </div>
-          <button onClick={() => setIsOpen(false)} className={cn("md:hidden", isDark && "text-slate-50") }><Icon name="X" /></button>
+        <div>
+          <h1 className={cn("text-xl flex items-center gap-2 punk-accent-underline font-rubik-distressed", colorClass)}><Icon name="Music" /> Era Manifesto</h1>
+          <div className={cn("text-xs font-bold mt-1", isDark ? "text-slate-400" : "opacity-60")}>{settings.artistName || 'Artist'}</div>
         </div>
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-           {menu.map(i => (
-              <button key={i.id} onClick={() => {setActiveTab(i.id); setIsOpen(false)}}
-                 className={cn(
-                   "w-full flex items-center gap-3 px-4 py-3 text-left font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5",
-                   isDark ? "border-slate-600" : "border-black",
-                   activeTab === i.id
-                     ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
-                     : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-[var(--accent-soft)]")
-                 )}>
-                 <Icon name={i.icon} size={18} /> {i.label}
-              </button>
-           ))}
-        </nav>
+        <button onClick={() => setIsOpen(false)} className={cn("md:hidden", isDark && "text-slate-50")}><Icon name="X" /></button>
+      </div>
+
+      {/* Top Buttons (Dashboard + Calendar side-by-side) */}
+      <div className="p-4 pb-2">
+        <div className="grid grid-cols-2 gap-2">
+          {topButtons.map(item => (
+            <button 
+              key={item.id}
+              onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 p-3 font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5 text-xs",
+                isDark ? "border-slate-600" : "border-black",
+                activeTab === item.id
+                  ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
+                  : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-[var(--accent-soft)]")
+              )}
+            >
+              <Icon name={item.icon} size={20} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Navigation */}
+      <nav className="flex-1 px-4 pb-4 space-y-2 overflow-y-auto">
+        {/* Main Menu Items */}
+        {mainMenu.map(item => (
+          <MenuButton key={item.id} item={item} />
+        ))}
+
+        {/* Views Expandable Section */}
+        <div className="pt-2">
+          <button 
+            onClick={() => setViewsExpanded(!viewsExpanded)}
+            className={cn(
+              "w-full flex items-center justify-between px-4 py-3 text-left font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5",
+              isDark ? "border-slate-600" : "border-black",
+              isViewsActive
+                ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
+                : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-[var(--accent-soft)]")
+            )}
+          >
+            <span className="flex items-center gap-3">
+              <Icon name="Folder" size={18} /> Views
+            </span>
+            <Icon name={viewsExpanded ? "ChevronDown" : "ChevronRight"} size={16} />
+          </button>
+          
+          {/* Views Sub-items */}
+          {viewsExpanded && (
+            <div className={cn(
+              "ml-4 mt-2 space-y-2 pl-2 border-l-[3px]",
+              isDark ? "border-slate-600" : "border-black"
+            )}>
+              {viewsMenu.map(item => (
+                <MenuButton key={item.id} item={item} compact />
+              ))}
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* Footer Items */}
+      <div className={cn(
+        "p-4 pt-2 space-y-2 border-t-[3px]",
+        isDark ? "border-slate-600" : "border-black"
+      )}>
+        {footerMenu.map(item => (
+          <MenuButton key={item.id} item={item} />
+        ))}
+      </div>
     </div>
   );
 };

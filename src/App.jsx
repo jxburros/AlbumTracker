@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
-import { ListView, CalendarView, GalleryView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
+import { ListView, CalendarView, GalleryView, FilesView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
 import { SongListView, SongDetailView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, FinancialsView, ProgressView, EventsListView, EventDetailView, ExpensesListView, ExpenseDetailView, VideosListView, VideoDetailView, GlobalTasksListView, GlobalTaskDetailView } from './SpecViews';
 import { COLOR_VALUES, THEME, cn } from './utils';
 
@@ -142,6 +142,7 @@ function AppInner() {
           {tab === 'list' && <ListView onEdit={setEditing} />}
           {tab === 'calendar' && <CalendarView onEdit={setEditing} />}
           {tab === 'gallery' && <GalleryView />}
+          {tab === 'files' && <FilesView />}
           {tab === 'team' && <TeamView />}
           {tab === 'misc' && <MiscView />}
           {tab === 'archive' && <ArchiveView />}

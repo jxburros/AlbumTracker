@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane } from './ItemComponents';
+import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker } from './ItemComponents';
 
 // Song List View (Spec 2.1) - Section 2: Enhanced with Grid/List Toggle
 export const SongListView = ({ onSelectSong }) => {
@@ -170,9 +170,6 @@ export const SongListView = ({ onSelectSong }) => {
 export const SongDetailView = ({ song, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...song });
-  const [showAddTask, setShowAddTask] = useState(false);
-  // Issue #8: Custom tasks can be attached to a specific Version or the Song (default)
-  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '', versionId: '' });
   const [newVersionMusicians, setNewVersionMusicians] = useState({});
   const [newAssignments, setNewAssignments] = useState({});
   // Section 3: Task sorting/filtering state
@@ -244,19 +241,6 @@ export const SongDetailView = ({ song, onBack }) => {
 
   const handleDeadlineChange = async (deadlineId, field, value) => {
     await actions.updateSongDeadline(song.id, deadlineId, { [field]: value });
-  };
-
-  // Issue #8: Custom tasks can be attached to a specific Version or the Song
-  const handleAddCustomTask = async () => {
-    if (newTask.versionId && newTask.versionId !== '') {
-      // Attach to specific version
-      await actions.addVersionCustomTask(song.id, newTask.versionId, { ...newTask, isAutoTask: false });
-    } else {
-      // Attach to song (default)
-      await actions.addSongCustomTask(song.id, { ...newTask, isAutoTask: false });
-    }
-    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started', notes: '', versionId: '' });
-    setShowAddTask(false);
   };
 
   // Handler for deleting custom tasks (used in task management UI)
@@ -896,18 +880,17 @@ export const SongDetailView = ({ song, onBack }) => {
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Era</label>
               <div className="flex gap-2">
-                <select 
-                  value={(form.eraIds || [])[0] || ''} 
-                  onChange={e => {
-                    const newEraIds = e.target.value ? [e.target.value] : [];
-                    handleFieldChange('eraIds', newEraIds);
-                    setTimeout(handleSave, 0);
-                  }}
-                  className={cn("flex-1", THEME.punk.input)}
-                >
-                  <option value="">No Era</option>
-                  {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-                </select>
+                <div className="flex-1">
+                  <UniversalEraPicker
+                    value={(form.eraIds || [])[0] || ''}
+                    onChange={value => {
+                      handleFieldChange('eraIds', value ? [value] : []);
+                      setTimeout(handleSave, 0);
+                    }}
+                    eras={data.eras || []}
+                    placeholder="No Era"
+                  />
+                </div>
                 <button 
                   onClick={() => {
                     if (confirm('Propagate this Era to all tasks in this song (including versions and videos)?')) {
@@ -923,22 +906,28 @@ export const SongDetailView = ({ song, onBack }) => {
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-              <select 
-                value={(form.stageIds || [])[0] || ''} 
-                onChange={e => {
-                  const newStageIds = e.target.value ? [e.target.value] : [];
-                  handleFieldChange('stageIds', newStageIds);
+              <UniversalStagePicker
+                value={(form.stageIds || [])[0] || ''}
+                onChange={value => {
+                  handleFieldChange('stageIds', value ? [value] : []);
                   setTimeout(handleSave, 0);
                 }}
-                className={cn("w-full", THEME.punk.input)}
-              >
-                <option value="">No Stage</option>
-                {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-              </select>
+                stages={data.stages || []}
+                placeholder="No Stage"
+              />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-              <input value={(form.tags || []).join(', ')} onChange={e => handleFieldChange('tags', e.target.value.split(',').map(t => t.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated tags" className={cn("w-full", THEME.punk.input)} />
+              <UniversalTagsPicker
+                value={form.tagIds || []}
+                onChange={newTagIds => {
+                  handleFieldChange('tagIds', newTagIds);
+                  setTimeout(handleSave, 0);
+                }}
+                tags={data.tags || []}
+                onCreateTag={actions.addTag}
+                placeholder="Add tag..."
+              />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Notes</label>
@@ -1276,32 +1265,6 @@ export const SongDetailView = ({ song, onBack }) => {
             </button>
           </div>
         </div>
-        
-        {/* Add Task Form - Issue #7: Shown when adding new custom task */}
-        {showAddTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-              <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
-              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              {/* Issue #8: Version attachment dropdown for custom tasks */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Attach to</label>
-                <select value={newTask.versionId || ''} onChange={e => setNewTask({ ...newTask, versionId: e.target.value })} className={cn("w-full", THEME.punk.input)}>
-                  <option value="">Song (Core)</option>
-                  {(currentSong.versions || []).filter(v => v.id !== 'core').map(v => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-2 items-end">
-                <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-                <button onClick={() => setShowAddTask(false)} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
         
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
@@ -2178,13 +2141,13 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [newTrack, setNewTrack] = useState({ songId: '', versionIds: [], isExternal: false, externalArtist: '', externalTitle: '' });
   const [selectedSongForTrack, setSelectedSongForTrack] = useState(null);
-  // Unified task state
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
   // Task sorting/filtering state
   const [taskSortBy, setTaskSortBy] = useState('date');
   const [taskSortDir, setTaskSortDir] = useState('asc');
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
+  // Task editing modal state - Unified Task Handling Architecture
+  const [editingTask, setEditingTask] = useState(null);
+  const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'auto'|'custom'|'new-custom' }
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
@@ -2197,11 +2160,43 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
     if (confirm('Delete this release?')) { await actions.deleteRelease(release.id); onBack(); }
   };
 
-  // Handle custom task addition
-  const handleAddCustomTask = async () => {
-    await actions.addReleaseCustomTask(release.id, newTask);
-    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
-    setShowAddTask(false);
+  // Handle opening the Task Edit Modal - Unified Task Handling Architecture
+  const handleOpenTaskEdit = (task, context) => {
+    setEditingTask({ ...task });
+    setEditingTaskContext(context);
+  };
+
+  // Handle saving task from the Task Edit Modal - Unified Task Handling Architecture
+  const handleSaveTaskEdit = async () => {
+    if (!editingTask || !editingTaskContext) return;
+    
+    if (editingTaskContext.type === 'new-custom') {
+      // Creating a new custom task
+      await actions.addReleaseCustomTask(release.id, {
+        title: editingTask.type || editingTask.title || 'New Task',
+        type: editingTask.type || editingTask.title || 'Custom',
+        date: editingTask.date || editingTask.dueDate || '',
+        dueDate: editingTask.date || editingTask.dueDate || '',
+        status: editingTask.status || 'Not Started',
+        estimatedCost: editingTask.estimatedCost || 0,
+        quotedCost: editingTask.quotedCost || 0,
+        paidCost: editingTask.paidCost || 0,
+        notes: editingTask.notes || editingTask.description || '',
+        description: editingTask.description || editingTask.notes || '',
+        assignedMembers: editingTask.assignedMembers || [],
+        eraIds: editingTask.eraIds || [],
+        stageIds: editingTask.stageIds || [],
+        tagIds: editingTask.tagIds || [],
+        isAutoTask: false
+      });
+    } else if (editingTaskContext.type === 'auto') {
+      await actions.updateReleaseTask(release.id, editingTask.id, editingTask);
+    } else if (editingTaskContext.type === 'custom') {
+      await actions.updateReleaseCustomTask(release.id, editingTask.id, editingTask);
+    }
+    
+    setEditingTask(null);
+    setEditingTaskContext(null);
   };
 
   // Phase 3.5: Handle adding track
@@ -2540,56 +2535,40 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           {/* Phase 3.4: Stage/Era/Tags */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <select 
-              value={(form.eraIds || [])[0] || ''} 
-              onChange={e => {
-                const newEraIds = e.target.value ? [e.target.value] : [];
-                handleFieldChange('eraIds', newEraIds);
+            <UniversalEraPicker
+              value={(form.eraIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('eraIds', value ? [value] : []);
                 setTimeout(handleSave, 0);
               }}
-              className={cn("w-full", THEME.punk.input)}
-            >
-              <option value="">No Era</option>
-              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-            </select>
+              eras={data.eras || []}
+              placeholder="No Era"
+            />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <select 
-              value={(form.stageIds || [])[0] || ''} 
-              onChange={e => {
-                const newStageIds = e.target.value ? [e.target.value] : [];
-                handleFieldChange('stageIds', newStageIds);
+            <UniversalStagePicker
+              value={(form.stageIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('stageIds', value ? [value] : []);
                 setTimeout(handleSave, 0);
               }}
-              className={cn("w-full", THEME.punk.input)}
-            >
-              <option value="">No Stage</option>
-              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-            </select>
+              stages={data.stages || []}
+              placeholder="No Stage"
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
-              {(data.tags || []).map(tag => (
-                <label key={tag.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={(form.tagIds || []).includes(tag.id)} 
-                    onChange={e => {
-                      const newTagIds = e.target.checked 
-                        ? [...(form.tagIds || []), tag.id]
-                        : (form.tagIds || []).filter(id => id !== tag.id);
-                      handleFieldChange('tagIds', newTagIds);
-                      setTimeout(handleSave, 0);
-                    }}
-                    className="w-3 h-3" 
-                  />
-                  <span style={{ color: tag.color }}>{tag.name}</span>
-                </label>
-              ))}
-              {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
-            </div>
+            <UniversalTagsPicker
+              value={form.tagIds || []}
+              onChange={newTagIds => {
+                handleFieldChange('tagIds', newTagIds);
+                setTimeout(handleSave, 0);
+              }}
+              tags={data.tags || []}
+              onCreateTag={actions.addTag}
+              placeholder="Add tag..."
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
@@ -2824,23 +2803,26 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
               {taskSortDir === 'asc' ? '↑' : '↓'}
             </button>
             <button onClick={() => actions.recalculateReleaseTasksAction(release.id)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-blue-500 text-white")}>Recalculate</button>
-            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+            <button 
+              onClick={() => {
+                // Unified Task Handling: Open modal with new blank task
+                const newCustomTask = {
+                  title: 'New Task',
+                  date: '',
+                  description: '',
+                  estimatedCost: 0,
+                  status: 'Not Started',
+                  notes: '',
+                  isAutoTask: false
+                };
+                handleOpenTaskEdit(newCustomTask, { type: 'new-custom' });
+              }} 
+              className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+            >
+              + Add Task
+            </button>
           </div>
         </div>
-        
-        {/* Add Task Form */}
-        {showAddTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newTask.title} onChange={e => setNewTask(prev => ({ ...prev, title: e.target.value }))} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newTask.date} onChange={e => setNewTask(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
-              <input value={newTask.description} onChange={e => setNewTask(prev => ({ ...prev, description: e.target.value }))} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} placeholder="Estimated Cost" className={cn("w-full", THEME.punk.input)} />
-              <select value={newTask.status} onChange={e => setNewTask(prev => ({ ...prev, status: e.target.value }))} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-            </div>
-          </div>
-        )}
         
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
@@ -2865,10 +2847,14 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
               ) : filteredTasks.map(task => {
                 const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
                 return (
-                  <tr key={task.id} className={cn(
-                    "border-b border-gray-200",
-                    isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
-                  )}>
+                  <tr 
+                    key={task.id} 
+                    className={cn(
+                      "border-b border-gray-200 cursor-pointer hover:bg-gray-100",
+                      isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
+                    )}
+                    onClick={() => handleOpenTaskEdit(task, { type: task._isAuto ? 'auto' : 'custom' })}
+                  >
                     <td className="p-2">
                       <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
                         {task._isAuto ? 'Auto' : 'Custom'}
@@ -2886,7 +2872,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
                         {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="p-2" onClick={e => e.stopPropagation()}>
                       <select 
                         value={task.status || 'Not Started'} 
                         onChange={e => {
@@ -2901,7 +2887,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
                         {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
                       {!task._isAuto && (
                         <button onClick={() => actions.deleteReleaseCustomTask(release.id, task.id)} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
                       )}
@@ -2913,6 +2899,158 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           </table>
         </div>
       </div>
+
+      {/* Release Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
+          <div className={cn("w-full max-w-lg p-6 bg-white max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+              <h3 className="font-black uppercase">
+                {editingTaskContext?.type === 'new-custom' ? 'Add Task' : 'Edit Task'}
+              </h3>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Task Name */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
+                <input 
+                  value={editingTask.type || editingTask.title || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, type: e.target.value, title: e.target.value }))} 
+                  className={cn("w-full", THEME.punk.input)}
+                />
+              </div>
+
+              {/* Task Due Date */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
+                <input 
+                  type="date" 
+                  value={editingTask.date || editingTask.dueDate || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, date: e.target.value, dueDate: e.target.value }))} 
+                  className={cn("w-full", THEME.punk.input)}
+                />
+              </div>
+
+              {/* Task Status */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Status</label>
+                <select
+                  value={editingTask.status || 'Not Started'}
+                  onChange={e => setEditingTask(prev => ({ ...prev, status: e.target.value }))}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {/* Era and Stage */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
+                  <select
+                    value={(editingTask.eraIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Era</option>
+                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+                  <select
+                    value={(editingTask.stageIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Stage</option>
+                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Cost Fields */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Estimated</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.estimatedCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Quoted</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.quotedCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, quotedCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Paid</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.paidCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, paidCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+              </div>
+
+              {/* Team Members */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Team Members</label>
+                <div className="flex flex-wrap gap-1 p-2 border-4 border-black bg-white text-xs max-h-24 overflow-y-auto">
+                  {teamMembers.map(m => (
+                    <label key={m.id} className="flex items-center gap-1 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={(editingTask.assignedMembers || []).some(am => am.memberId === m.id)} 
+                        onChange={e => {
+                          const members = editingTask.assignedMembers || [];
+                          if (e.target.checked) {
+                            setEditingTask(prev => ({ ...prev, assignedMembers: [...members, { memberId: m.id, cost: 0 }] }));
+                          } else {
+                            setEditingTask(prev => ({ ...prev, assignedMembers: members.filter(am => am.memberId !== m.id) }));
+                          }
+                        }}
+                        className="w-3 h-3" 
+                      />
+                      {m.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+                <textarea 
+                  value={editingTask.notes || editingTask.description || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, notes: e.target.value, description: e.target.value }))} 
+                  className={cn("w-full h-20", THEME.punk.input)} 
+                  placeholder="Additional details..."
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 mt-6 pt-4 border-t-4 border-black">
+              <button onClick={handleSaveTaskEdit} className={cn("flex-1 px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>
+                Save Changes
+              </button>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className={cn("px-4 py-2", THEME.punk.btn, "bg-gray-500 text-white")}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -5100,21 +5238,56 @@ export const EventsListView = ({ onSelectEvent }) => {
 export const EventDetailView = ({ event, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...event });
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
   const [taskSortBy, setTaskSortBy] = useState('date');
   const [taskSortDir, setTaskSortDir] = useState('asc');
+  // Task editing modal state - Unified Task Handling Architecture
+  const [editingTask, setEditingTask] = useState(null);
+  const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'auto'|'custom'|'new-custom' }
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
   const handleSave = async () => { await actions.updateEvent(event.id, form); };
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
 
-  const handleAddCustomTask = async () => {
-    await actions.addEventCustomTask(event.id, newTask);
-    setNewTask({ title: '', date: '', description: '', estimatedCost: 0, status: 'Not Started' });
-    setShowAddTask(false);
+  // Handle opening the Task Edit Modal - Unified Task Handling Architecture
+  const handleOpenTaskEdit = (task, context) => {
+    setEditingTask({ ...task });
+    setEditingTaskContext(context);
+  };
+
+  // Handle saving task from the Task Edit Modal - Unified Task Handling Architecture
+  const handleSaveTaskEdit = async () => {
+    if (!editingTask || !editingTaskContext) return;
+    
+    if (editingTaskContext.type === 'new-custom') {
+      // Creating a new custom task
+      await actions.addEventCustomTask(event.id, {
+        title: editingTask.type || editingTask.title || 'New Task',
+        type: editingTask.type || editingTask.title || 'Custom',
+        date: editingTask.date || editingTask.dueDate || '',
+        dueDate: editingTask.date || editingTask.dueDate || '',
+        status: editingTask.status || 'Not Started',
+        estimatedCost: editingTask.estimatedCost || 0,
+        quotedCost: editingTask.quotedCost || 0,
+        paidCost: editingTask.paidCost || 0,
+        notes: editingTask.notes || editingTask.description || '',
+        description: editingTask.description || editingTask.notes || '',
+        assignedMembers: editingTask.assignedMembers || [],
+        eraIds: editingTask.eraIds || [],
+        stageIds: editingTask.stageIds || [],
+        tagIds: editingTask.tagIds || [],
+        isAutoTask: false
+      });
+    } else if (editingTaskContext.type === 'auto') {
+      const updatedTasks = eventTasks.map(t => t.id === editingTask.id ? editingTask : t);
+      await actions.updateEvent(event.id, { tasks: updatedTasks });
+    } else if (editingTaskContext.type === 'custom') {
+      await actions.updateEventCustomTask(event.id, editingTask.id, editingTask);
+    }
+    
+    setEditingTask(null);
+    setEditingTaskContext(null);
   };
 
   const handleDeleteEvent = async () => {
@@ -5308,39 +5481,42 @@ export const EventDetailView = ({ event, onBack }) => {
           {/* Phase 2.3: Stage/Era/Tags for Events */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <select 
-              multiple 
-              value={form.eraIds || []} 
-              onChange={e => handleFieldChange('eraIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
-              onBlur={handleSave} 
-              className={cn("w-full h-20", THEME.punk.input)}
-            >
-              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-            </select>
+            <UniversalEraPicker
+              value={form.eraIds || []}
+              onChange={values => {
+                handleFieldChange('eraIds', values);
+                setTimeout(handleSave, 0);
+              }}
+              eras={data.eras || []}
+              placeholder="No Era"
+              multiple={true}
+            />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <select 
-              multiple 
-              value={form.stageIds || []} 
-              onChange={e => handleFieldChange('stageIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
-              onBlur={handleSave} 
-              className={cn("w-full h-20", THEME.punk.input)}
-            >
-              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-            </select>
+            <UniversalStagePicker
+              value={form.stageIds || []}
+              onChange={values => {
+                handleFieldChange('stageIds', values);
+                setTimeout(handleSave, 0);
+              }}
+              stages={data.stages || []}
+              placeholder="No Stage"
+              multiple={true}
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <select 
-              multiple 
-              value={form.tagIds || []} 
-              onChange={e => handleFieldChange('tagIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
-              onBlur={handleSave} 
-              className={cn("w-full h-16", THEME.punk.input)}
-            >
-              {(data.tags || []).map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-            </select>
+            <UniversalTagsPicker
+              value={form.tagIds || []}
+              onChange={newTagIds => {
+                handleFieldChange('tagIds', newTagIds);
+                setTimeout(handleSave, 0);
+              }}
+              tags={data.tags || []}
+              onCreateTag={actions.addTag}
+              placeholder="Add tag..."
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
@@ -5578,23 +5754,26 @@ export const EventDetailView = ({ event, onBack }) => {
             >
               Recalculate
             </button>
-            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+            <button 
+              onClick={() => {
+                // Unified Task Handling: Open modal with new blank task
+                const newCustomTask = {
+                  title: 'New Task',
+                  date: '',
+                  description: '',
+                  estimatedCost: 0,
+                  status: 'Not Started',
+                  notes: '',
+                  isAutoTask: false
+                };
+                handleOpenTaskEdit(newCustomTask, { type: 'new-custom' });
+              }} 
+              className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+            >
+              + Add Task
+            </button>
           </div>
         </div>
-        
-        {/* Add Task Form */}
-        {showAddTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-              <input value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })} placeholder="Description" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newTask.estimatedCost} onChange={e => setNewTask({ ...newTask, estimatedCost: parseFloat(e.target.value) || 0 })} placeholder="Est. Cost" className={cn("w-full", THEME.punk.input)} />
-              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-              <button onClick={handleAddCustomTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-            </div>
-          </div>
-        )}
         
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
@@ -5619,10 +5798,14 @@ export const EventDetailView = ({ event, onBack }) => {
               ) : filteredTasks.map(task => {
                 const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
                 return (
-                  <tr key={task.id} className={cn(
-                    "border-b border-gray-200",
-                    isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
-                  )}>
+                  <tr 
+                    key={task.id} 
+                    className={cn(
+                      "border-b border-gray-200 cursor-pointer hover:bg-gray-100",
+                      isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
+                    )}
+                    onClick={() => handleOpenTaskEdit(task, { type: task._isAuto ? 'auto' : 'custom' })}
+                  >
                     <td className="p-2">
                       <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
                         {task._isAuto ? 'Auto' : 'Custom'}
@@ -5639,7 +5822,7 @@ export const EventDetailView = ({ event, onBack }) => {
                         {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="p-2" onClick={e => e.stopPropagation()}>
                       <select 
                         value={task.status || 'Not Started'} 
                         onChange={e => {
@@ -5655,7 +5838,7 @@ export const EventDetailView = ({ event, onBack }) => {
                         {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
                       {!task._isAuto && (
                         <button onClick={() => { if (confirm('Delete this task?')) actions.deleteEventCustomTask(event.id, task.id); }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
                       )}
@@ -5667,6 +5850,158 @@ export const EventDetailView = ({ event, onBack }) => {
           </table>
         </div>
       </div>
+
+      {/* Event Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
+          <div className={cn("w-full max-w-lg p-6 bg-white max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+              <h3 className="font-black uppercase">
+                {editingTaskContext?.type === 'new-custom' ? 'Add Task' : 'Edit Task'}
+              </h3>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Task Name */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
+                <input 
+                  value={editingTask.type || editingTask.title || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, type: e.target.value, title: e.target.value }))} 
+                  className={cn("w-full", THEME.punk.input)}
+                />
+              </div>
+
+              {/* Task Due Date */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
+                <input 
+                  type="date" 
+                  value={editingTask.date || editingTask.dueDate || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, date: e.target.value, dueDate: e.target.value }))} 
+                  className={cn("w-full", THEME.punk.input)}
+                />
+              </div>
+
+              {/* Task Status */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Status</label>
+                <select
+                  value={editingTask.status || 'Not Started'}
+                  onChange={e => setEditingTask(prev => ({ ...prev, status: e.target.value }))}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              {/* Era and Stage */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Era</label>
+                  <select
+                    value={(editingTask.eraIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Era</option>
+                    {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+                  <select
+                    value={(editingTask.stageIds || [])[0] || ''}
+                    onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
+                    className={cn("w-full", THEME.punk.input)}
+                  >
+                    <option value="">No Stage</option>
+                    {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Cost Fields */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Estimated</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.estimatedCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Quoted</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.quotedCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, quotedCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1">Paid</label>
+                  <input 
+                    type="number" 
+                    value={editingTask.paidCost || 0} 
+                    onChange={e => setEditingTask(prev => ({ ...prev, paidCost: parseFloat(e.target.value) || 0 }))} 
+                    className={cn("w-full text-sm", THEME.punk.input)} 
+                  />
+                </div>
+              </div>
+
+              {/* Team Members */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Team Members</label>
+                <div className="flex flex-wrap gap-1 p-2 border-4 border-black bg-white text-xs max-h-24 overflow-y-auto">
+                  {teamMembers.map(m => (
+                    <label key={m.id} className="flex items-center gap-1 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={(editingTask.assignedMembers || []).some(am => am.memberId === m.id)} 
+                        onChange={e => {
+                          const members = editingTask.assignedMembers || [];
+                          if (e.target.checked) {
+                            setEditingTask(prev => ({ ...prev, assignedMembers: [...members, { memberId: m.id, cost: 0 }] }));
+                          } else {
+                            setEditingTask(prev => ({ ...prev, assignedMembers: members.filter(am => am.memberId !== m.id) }));
+                          }
+                        }}
+                        className="w-3 h-3" 
+                      />
+                      {m.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+                <textarea 
+                  value={editingTask.notes || editingTask.description || ''} 
+                  onChange={e => setEditingTask(prev => ({ ...prev, notes: e.target.value, description: e.target.value }))} 
+                  className={cn("w-full h-20", THEME.punk.input)} 
+                  placeholder="Additional details..."
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 mt-6 pt-4 border-t-4 border-black">
+              <button onClick={handleSaveTaskEdit} className={cn("flex-1 px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>
+                Save Changes
+              </button>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className={cn("px-4 py-2", THEME.punk.btn, "bg-gray-500 text-white")}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -6044,50 +6379,40 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           {/* Phase 4.3: Stage/Era/Tags */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <select 
-              multiple 
-              value={form.eraIds || []} 
-              onChange={e => handleFieldChange('eraIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
-              onBlur={handleSave} 
-              className={cn("w-full h-20", THEME.punk.input)}
-            >
-              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-            </select>
+            <UniversalEraPicker
+              value={(form.eraIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('eraIds', value ? [value] : []);
+                setTimeout(handleSave, 0);
+              }}
+              eras={data.eras || []}
+              placeholder="No Era"
+            />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <select 
-              multiple 
-              value={form.stageIds || []} 
-              onChange={e => handleFieldChange('stageIds', Array.from(e.target.selectedOptions).map(o => o.value))} 
-              onBlur={handleSave} 
-              className={cn("w-full h-20", THEME.punk.input)}
-            >
-              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-            </select>
+            <UniversalStagePicker
+              value={(form.stageIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('stageIds', value ? [value] : []);
+                setTimeout(handleSave, 0);
+              }}
+              stages={data.stages || []}
+              placeholder="No Stage"
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
-              {(data.tags || []).map(tag => (
-                <label key={tag.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={(form.tagIds || []).includes(tag.id)} 
-                    onChange={e => {
-                      const newTagIds = e.target.checked 
-                        ? [...(form.tagIds || []), tag.id]
-                        : (form.tagIds || []).filter(id => id !== tag.id);
-                      handleFieldChange('tagIds', newTagIds);
-                      setTimeout(handleSave, 0);
-                    }}
-                    className="w-3 h-3" 
-                  />
-                  <span style={{ color: tag.color }}>{tag.name}</span>
-                </label>
-              ))}
-              {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
-            </div>
+            <UniversalTagsPicker
+              value={form.tagIds || []}
+              onChange={newTagIds => {
+                handleFieldChange('tagIds', newTagIds);
+                setTimeout(handleSave, 0);
+              }}
+              tags={data.tags || []}
+              onCreateTag={actions.addTag}
+              placeholder="Add tag..."
+            />
           </div>
           
           <div className="md:col-span-2">
@@ -6357,23 +6682,8 @@ export const VideosListView = ({ onSelectVideo }) => {
 export const VideoDetailView = ({ video, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...video });
-  const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState(null); // Phase 1.7: Task editing modal
-  // Phase 1.7: Enhanced new task state with all required fields
-  const [newTask, setNewTask] = useState({ 
-    title: '', 
-    date: '', 
-    description: '', 
-    estimatedCost: 0, 
-    quotedCost: 0,
-    paidCost: 0,
-    status: 'Not Started',
-    notes: '',
-    eraIds: [],
-    stageIds: [],
-    tagIds: [],
-    teamMemberIds: []
-  });
+  const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'auto'|'custom'|'new-custom' } - Unified Task Handling
   const [taskFilterStatus, setTaskFilterStatus] = useState('all');
   const [taskSortBy, setTaskSortBy] = useState('date');
   const [taskSortDir, setTaskSortDir] = useState('asc');
@@ -6420,33 +6730,59 @@ export const VideoDetailView = ({ video, onBack }) => {
 
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
 
-  // Phase 1.7: Add custom task with full fields (Stage/Era/Tags, Notes, Team Members, Cost fields, Status)
-  const handleAddCustomTask = async () => {
-    const taskData = {
-      ...newTask,
-      parentType: 'video',
-      parentId: video.id
-    };
-    if (video._source === 'standalone') {
-      await actions.addStandaloneVideoCustomTask(video.id, taskData);
-    } else {
-      await actions.addSongVideoCustomTask(video._songId, video.id, taskData);
+  // Handle opening the Task Edit Modal - Unified Task Handling Architecture
+  const handleOpenTaskEdit = (task, context) => {
+    setEditingTask({ ...task });
+    setEditingTaskContext(context);
+  };
+
+  // Handle saving task from the Task Edit Modal - Unified Task Handling Architecture
+  const handleSaveTaskEdit = async () => {
+    if (!editingTask || !editingTaskContext) return;
+    
+    if (editingTaskContext.type === 'new-custom') {
+      // Creating a new custom task
+      const taskData = {
+        title: editingTask.type || editingTask.title || 'New Task',
+        type: editingTask.type || editingTask.title || 'Custom',
+        date: editingTask.date || editingTask.dueDate || '',
+        dueDate: editingTask.date || editingTask.dueDate || '',
+        status: editingTask.status || 'Not Started',
+        estimatedCost: editingTask.estimatedCost || 0,
+        quotedCost: editingTask.quotedCost || 0,
+        paidCost: editingTask.paidCost || 0,
+        notes: editingTask.notes || editingTask.description || '',
+        description: editingTask.description || editingTask.notes || '',
+        assignedMembers: editingTask.assignedMembers || [],
+        eraIds: editingTask.eraIds || [],
+        stageIds: editingTask.stageIds || [],
+        tagIds: editingTask.tagIds || [],
+        isAutoTask: false,
+        parentType: 'video',
+        parentId: video.id
+      };
+      if (video._source === 'standalone') {
+        await actions.addStandaloneVideoCustomTask(video.id, taskData);
+      } else {
+        await actions.addSongVideoCustomTask(video._songId, video.id, taskData);
+      }
+    } else if (editingTaskContext.type === 'auto') {
+      const updatedTasks = videoTasks.map(t => t.id === editingTask.id ? editingTask : t);
+      if (video._source === 'standalone') {
+        await actions.updateStandaloneVideo(video.id, { tasks: updatedTasks });
+      } else {
+        await actions.updateSongVideo(video._songId, video.id, { tasks: updatedTasks });
+      }
+    } else if (editingTaskContext.type === 'custom') {
+      if (video._source === 'standalone') {
+        await actions.updateStandaloneVideoCustomTask(video.id, editingTask.id, editingTask);
+      } else {
+        await actions.updateSongVideoCustomTask(video._songId, video.id, editingTask.id, editingTask);
+      }
     }
-    setNewTask({ 
-      title: '', 
-      date: '', 
-      description: '', 
-      estimatedCost: 0, 
-      quotedCost: 0,
-      paidCost: 0,
-      status: 'Not Started',
-      notes: '',
-      eraIds: [],
-      stageIds: [],
-      tagIds: [],
-      teamMemberIds: []
-    });
-    setShowAddTask(false);
+    
+    setEditingTask(null);
+    setEditingTaskContext(null);
   };
 
   const handleDeleteVideo = async () => {
@@ -6518,34 +6854,6 @@ export const VideoDetailView = ({ video, onBack }) => {
     });
     return filtered;
   }, [videoTasks, videoCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
-
-  // Phase 1.7: Handle task editing (opens Video Task More/Edit Info Page)
-  const handleOpenTaskEdit = (task) => {
-    setEditingTask({ ...task });
-  };
-
-  const handleSaveTaskEdit = async () => {
-    if (!editingTask) return;
-    
-    if (editingTask._isAuto) {
-      // Update auto task
-      const updatedTasks = videoTasks.map(t => t.id === editingTask.id ? { ...editingTask, isOverridden: true } : t);
-      if (video._source === 'standalone') {
-        await actions.updateStandaloneVideo(video.id, { tasks: updatedTasks });
-      } else {
-        await actions.updateSongVideo(video._songId, video.id, { tasks: updatedTasks });
-      }
-    } else {
-      // Update custom task
-      const updatedTasks = videoCustomTasks.map(t => t.id === editingTask.id ? editingTask : t);
-      if (video._source === 'standalone') {
-        await actions.updateStandaloneVideo(video.id, { customTasks: updatedTasks });
-      } else {
-        await actions.updateSongVideo(video._songId, video.id, { customTasks: updatedTasks });
-      }
-    }
-    setEditingTask(null);
-  };
 
   return (
     <div className="p-6 pb-24">
@@ -6759,54 +7067,40 @@ export const VideoDetailView = ({ video, onBack }) => {
           {/* Phase 1.6: Stage/Era/Tags for Videos */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <select 
-              value={(form.eraIds || [])[0] || ''} 
-              onChange={e => {
-                handleFieldChange('eraIds', e.target.value ? [e.target.value] : []);
+            <UniversalEraPicker
+              value={(form.eraIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('eraIds', value ? [value] : []);
                 setTimeout(handleSave, 0);
               }}
-              className={cn("w-full", THEME.punk.input)}
-            >
-              <option value="">No Era</option>
-              {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-            </select>
+              eras={data.eras || []}
+              placeholder="No Era"
+            />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <select 
-              value={(form.stageIds || [])[0] || ''} 
-              onChange={e => {
-                handleFieldChange('stageIds', e.target.value ? [e.target.value] : []);
+            <UniversalStagePicker
+              value={(form.stageIds || [])[0] || ''}
+              onChange={value => {
+                handleFieldChange('stageIds', value ? [value] : []);
                 setTimeout(handleSave, 0);
               }}
-              className={cn("w-full", THEME.punk.input)}
-            >
-              <option value="">No Stage</option>
-              {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-            </select>
+              stages={data.stages || []}
+              placeholder="No Stage"
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
-              {(data.tags || []).map(tag => (
-                <label key={tag.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={(form.tagIds || []).includes(tag.id)} 
-                    onChange={e => {
-                      const newTagIds = e.target.checked 
-                        ? [...(form.tagIds || []), tag.id]
-                        : (form.tagIds || []).filter(id => id !== tag.id);
-                      handleFieldChange('tagIds', newTagIds);
-                      setTimeout(handleSave, 0);
-                    }}
-                    className="w-3 h-3" 
-                  />
-                  <span style={{ color: tag.color }}>{tag.name}</span>
-                </label>
-              ))}
-              {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
-            </div>
+            <UniversalTagsPicker
+              value={form.tagIds || []}
+              onChange={newTagIds => {
+                handleFieldChange('tagIds', newTagIds);
+                setTimeout(handleSave, 0);
+              }}
+              tags={data.tags || []}
+              onCreateTag={actions.addTag}
+              placeholder="Add tag..."
+            />
           </div>
           
           {/* Phase 1.3: Attached Items (Releases and Events for tracking) */}
@@ -6881,71 +7175,26 @@ export const VideoDetailView = ({ video, onBack }) => {
             <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
               {taskSortDir === 'asc' ? '↑' : '↓'}
             </button>
-            <button onClick={() => setShowAddTask(!showAddTask)} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>{showAddTask ? 'Cancel' : '+ Add Task'}</button>
+            <button 
+              onClick={() => {
+                // Unified Task Handling: Open modal with new blank task
+                const newCustomTask = {
+                  title: 'New Task',
+                  date: '',
+                  description: '',
+                  estimatedCost: 0,
+                  status: 'Not Started',
+                  notes: '',
+                  isAutoTask: false
+                };
+                handleOpenTaskEdit(newCustomTask, { type: 'new-custom' });
+              }} 
+              className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+            >
+              + Add Task
+            </button>
           </div>
         </div>
-        
-        {/* Phase 1.7: Add Task Form - Video Task More/Edit Info Page with full fields */}
-        {showAddTask && (
-          <div className="bg-gray-50 p-4 mb-4 border-2 border-black">
-            <h4 className="font-bold text-sm mb-3 border-b border-gray-300 pb-2">New Video Task</h4>
-            <div className="grid md:grid-cols-2 gap-3">
-              <input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task Title" className={cn("w-full", THEME.punk.input)} />
-              <input type="date" value={newTask.date} onChange={e => setNewTask({ ...newTask, date: e.target.value })} className={cn("w-full", THEME.punk.input)} />
-              <select value={newTask.status} onChange={e => setNewTask({ ...newTask, status: e.target.value })} className={cn("w-full", THEME.punk.input)}>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              {/* Phase 1.7: Stage/Era */}
-              <select 
-                value={(newTask.eraIds || [])[0] || ''} 
-                onChange={e => setNewTask({ ...newTask, eraIds: e.target.value ? [e.target.value] : [] })}
-                className={cn("w-full", THEME.punk.input)}
-              >
-                <option value="">No Era</option>
-                {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
-              </select>
-              <select 
-                value={(newTask.stageIds || [])[0] || ''} 
-                onChange={e => setNewTask({ ...newTask, stageIds: e.target.value ? [e.target.value] : [] })}
-                className={cn("w-full", THEME.punk.input)}
-              >
-                <option value="">No Stage</option>
-                {(data.stages || []).map(stage => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
-              </select>
-              {/* Phase 1.7: Cost fields */}
-              <input type="number" value={newTask.estimatedCost || 0} onChange={e => setNewTask({ ...newTask, estimatedCost: parseFloat(e.target.value) || 0 })} placeholder="Est. Cost" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newTask.quotedCost || 0} onChange={e => setNewTask({ ...newTask, quotedCost: parseFloat(e.target.value) || 0 })} placeholder="Quoted Cost" className={cn("w-full", THEME.punk.input)} />
-              <input type="number" value={newTask.paidCost || 0} onChange={e => setNewTask({ ...newTask, paidCost: parseFloat(e.target.value) || 0 })} placeholder="Paid Cost" className={cn("w-full", THEME.punk.input)} />
-              {/* Phase 1.7: Team Members */}
-              <div>
-                <label className="block text-xs font-bold uppercase mb-1">Team Members</label>
-                <div className="flex flex-wrap gap-1 p-1 border-2 border-black bg-white text-xs max-h-16 overflow-y-auto">
-                  {teamMembers.map(m => (
-                    <label key={m.id} className="flex items-center gap-1 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={(newTask.teamMemberIds || []).includes(m.id)} 
-                        onChange={e => {
-                          const ids = e.target.checked 
-                            ? [...(newTask.teamMemberIds || []), m.id]
-                            : (newTask.teamMemberIds || []).filter(id => id !== m.id);
-                          setNewTask({ ...newTask, teamMemberIds: ids });
-                        }}
-                        className="w-3 h-3" 
-                      />
-                      {m.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              {/* Phase 1.7: Notes */}
-              <div className="md:col-span-2">
-                <textarea value={newTask.notes || ''} onChange={e => setNewTask({ ...newTask, notes: e.target.value })} placeholder="Notes" className={cn("w-full h-16", THEME.punk.input)} />
-              </div>
-              <button onClick={handleAddCustomTask} className={cn("px-4 py-2 md:col-span-2", THEME.punk.btn, "bg-green-500 text-white")}>Add Task</button>
-            </div>
-          </div>
-        )}
         
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-[10px] font-bold">
@@ -6972,7 +7221,7 @@ export const VideoDetailView = ({ video, onBack }) => {
                   <tr key={task.id} className={cn(
                     "border-b border-gray-200 cursor-pointer hover:bg-gray-50",
                     isOverdue ? "bg-red-50" : task._isAuto ? "bg-yellow-50" : "bg-green-50"
-                  )} onClick={() => handleOpenTaskEdit(task)}>
+                  )} onClick={() => handleOpenTaskEdit(task, { type: task._isAuto ? 'auto' : 'custom' })}>
                     <td className="p-2">
                       <span className={cn("px-2 py-1 text-xs font-bold border border-black", task._isAuto ? "bg-yellow-200" : "bg-green-200")}>
                         {task._isAuto ? 'Auto' : 'Custom'}
@@ -6989,12 +7238,10 @@ export const VideoDetailView = ({ video, onBack }) => {
                         {isOverdue && <span className="px-1 py-0.5 bg-red-200 border border-red-500 text-red-800 text-[10px] font-bold">OVERDUE</span>}
                       </div>
                     </td>
-                    <td className="p-2">
+                    <td className="p-2" onClick={e => e.stopPropagation()}>
                       <select 
                         value={task.status || 'Not Started'} 
-                        onClick={e => e.stopPropagation()}
                         onChange={e => {
-                          e.stopPropagation();
                           if (task._isAuto) {
                             const updatedTasks = videoTasks.map(t => t.id === task.id ? { ...t, status: e.target.value } : t);
                             if (video._source === 'standalone') {
@@ -7024,13 +7271,13 @@ export const VideoDetailView = ({ video, onBack }) => {
         </div>
       </div>
 
-      {/* Phase 1.7: Video Task More/Edit Info Page Modal */}
+      {/* Phase 1.7: Video Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
       {editingTask && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={cn("bg-white p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto", THEME.punk.card)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
+          <div className={cn("bg-white p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-              <h3 className="font-black uppercase">Edit Video Task</h3>
-              <button onClick={() => setEditingTask(null)} className="text-2xl font-bold">×</button>
+              <h3 className="font-black uppercase">{editingTaskContext?.type === 'new-custom' ? 'Add Task' : 'Edit Video Task'}</h3>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className="text-2xl font-bold">×</button>
             </div>
             
             <div className="grid md:grid-cols-2 gap-4">
@@ -7171,7 +7418,7 @@ export const VideoDetailView = ({ video, onBack }) => {
             </div>
             
             <div className="flex justify-end gap-2 mt-4 pt-4 border-t-2 border-gray-200">
-              <button onClick={() => setEditingTask(null)} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
+              <button onClick={() => { setEditingTask(null); setEditingTaskContext(null); }} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
               <button onClick={handleSaveTaskEdit} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-600 text-white")}>Save Task</button>
             </div>
           </div>

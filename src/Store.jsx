@@ -653,6 +653,7 @@ export const StoreProvider = ({ children }) => {
   const [data, setData] = useState({
     tasks: [],
     photos: [],
+    files: [],
     vendors: [],
     teamMembers: [],
     misc: [],
@@ -708,7 +709,7 @@ export const StoreProvider = ({ children }) => {
     if (mode === 'cloud' && db && user) {
       const collections = [
         'album_items', 'album_tasks_v2',
-        'album_tasks', 'album_photos', 'album_vendors', 'album_teamMembers', 'album_misc_expenses',
+        'album_tasks', 'album_photos', 'album_files', 'album_vendors', 'album_teamMembers', 'album_misc_expenses',
         'album_events', 'album_stages', 'album_eras', 'album_tags', 'album_songs', 'album_globalTasks', 'album_releases',
         // Per APP ARCHITECTURE.txt Section 1.2: Expense and Task Category Item types
         'album_expenses', 'album_taskCategories'

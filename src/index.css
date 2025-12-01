@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+.font-rubik-distressed {
+  font-family: 'Rubik Distressed', cursive;
+}
+
 :root {
   --accent: #ec4899;
   --accent-strong: #be185d;

@@ -61,8 +61,8 @@ export const CalendarView = ({ onEdit }) => {
     const [date, setDate] = useState(new Date());
     const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '' });
     const [selectedItem, setSelectedItem] = useState(null);
-    // Phase 5: Event custom tasks
-    const [newEventTask, setNewEventTask] = useState({ title: '', date: '', status: 'Not Started', estimatedCost: 0 });
+    // Phase 5: Event custom tasks - Unified Task Handling: Use modal instead of inline form
+    const [editingEventTask, setEditingEventTask] = useState(null);
     const year = date.getFullYear();
     const month = date.getMonth();
 
@@ -378,19 +378,38 @@ export const CalendarView = ({ onEdit }) => {
                                     </div>
                                 </DetailPane>
                                 <div className="mt-4 border-t-2 border-black pt-4">
-                                    <div className="font-bold text-xs uppercase mb-2">Custom Tasks</div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <div className="font-bold text-xs uppercase">Custom Tasks</div>
+                                        <button 
+                                            onClick={() => setEditingEventTask({
+                                                title: 'New Task',
+                                                date: '',
+                                                status: 'Not Started',
+                                                estimatedCost: 0,
+                                                notes: '',
+                                                isNew: true
+                                            })}
+                                            className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
+                                        >
+                                            + Add Task
+                                        </button>
+                                    </div>
                                     {(selectedItem.customTasks || []).length === 0 ? (
                                         <div className="text-xs opacity-50 mb-2">No custom tasks yet.</div>
                                     ) : (
                                         <div className="space-y-2 mb-3">
                                             {(selectedItem.customTasks || []).map(task => (
-                                                <div key={task.id} className="flex items-center justify-between p-2 border border-black bg-gray-50 text-xs">
+                                                <div 
+                                                    key={task.id} 
+                                                    className="flex items-center justify-between p-2 border border-black bg-gray-50 text-xs cursor-pointer hover:bg-gray-100"
+                                                    onClick={() => setEditingEventTask({ ...task, isNew: false })}
+                                                >
                                                     <div>
                                                         <div className="font-bold">{task.title}</div>
                                                         <div className="opacity-60">{task.date} | {task.status}</div>
                                                     </div>
                                                     <button 
-                                                        onClick={() => actions.deleteEventCustomTask(selectedItem.id, task.id)} 
+                                                        onClick={(e) => { e.stopPropagation(); actions.deleteEventCustomTask(selectedItem.id, task.id); }} 
                                                         className="text-red-500 p-1"
                                                     >
                                                         <Icon name="Trash2" size={12} />
@@ -399,44 +418,6 @@ export const CalendarView = ({ onEdit }) => {
                                             ))}
                                         </div>
                                     )}
-                                    {/* Add custom task form */}
-                                    <div className="space-y-2 p-2 bg-gray-100 border border-black">
-                                        <div className="text-xs font-bold uppercase">Add Task</div>
-                                        <input 
-                                            value={newEventTask.title} 
-                                            onChange={e => setNewEventTask(prev => ({ ...prev, title: e.target.value }))} 
-                                            placeholder="Task title" 
-                                            className={cn("w-full text-xs", THEME.punk.input)} 
-                                        />
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <input 
-                                                type="date" 
-                                                value={newEventTask.date} 
-                                                onChange={e => setNewEventTask(prev => ({ ...prev, date: e.target.value }))} 
-                                                className={cn("w-full text-xs", THEME.punk.input)} 
-                                            />
-                                            <select 
-                                                value={newEventTask.status} 
-                                                onChange={e => setNewEventTask(prev => ({ ...prev, status: e.target.value }))} 
-                                                className={cn("w-full text-xs", THEME.punk.input)}
-                                            >
-                                                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                        <button 
-                                            onClick={async () => {
-                                                if (!newEventTask.title) return;
-                                                await actions.addEventCustomTask(selectedItem.id, newEventTask);
-                                                setNewEventTask({ title: '', date: '', status: 'Not Started', estimatedCost: 0 });
-                                                // Refresh selectedItem by getting updated event
-                                                const updated = data.events.find(e => e.id === selectedItem.id);
-                                                if (updated) setSelectedItem({ ...updated, _kind: 'event' });
-                                            }}
-                                            className={cn("w-full px-2 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}
-                                        >
-                                            + Add Task
-                                        </button>
-                                    </div>
                                 </div>
                                 <button 
                                     onClick={() => { actions.delete('events', selectedItem.id); setSelectedItem(null); }} 
@@ -446,6 +427,97 @@ export const CalendarView = ({ onEdit }) => {
                                 </button>
                             </>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Event Task Edit Modal - Unified Task Handling Architecture */}
+            {editingEventTask && selectedItem?._kind === 'event' && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4" onClick={() => setEditingEventTask(null)}>
+                    <div className={cn("w-full max-w-md p-6 bg-white max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+                            <h3 className="font-black uppercase">
+                                {editingEventTask.isNew ? 'Add Task' : 'Edit Task'}
+                            </h3>
+                            <button onClick={() => setEditingEventTask(null)} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
+                                <input 
+                                    value={editingEventTask.title || ''} 
+                                    onChange={e => setEditingEventTask(prev => ({ ...prev, title: e.target.value }))} 
+                                    className={cn("w-full", THEME.punk.input)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
+                                <input 
+                                    type="date" 
+                                    value={editingEventTask.date || ''} 
+                                    onChange={e => setEditingEventTask(prev => ({ ...prev, date: e.target.value }))} 
+                                    className={cn("w-full", THEME.punk.input)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Status</label>
+                                <select
+                                    value={editingEventTask.status || 'Not Started'}
+                                    onChange={e => setEditingEventTask(prev => ({ ...prev, status: e.target.value }))}
+                                    className={cn("w-full", THEME.punk.input)}
+                                >
+                                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+                                <input 
+                                    type="number" 
+                                    value={editingEventTask.estimatedCost || 0} 
+                                    onChange={e => setEditingEventTask(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} 
+                                    className={cn("w-full", THEME.punk.input)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+                                <textarea 
+                                    value={editingEventTask.notes || ''} 
+                                    onChange={e => setEditingEventTask(prev => ({ ...prev, notes: e.target.value }))} 
+                                    className={cn("w-full h-20", THEME.punk.input)}
+                                    placeholder="Additional details..."
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-6 pt-4 border-t-4 border-black">
+                            <button 
+                                onClick={async () => {
+                                    if (!editingEventTask.title) return;
+                                    if (editingEventTask.isNew) {
+                                        await actions.addEventCustomTask(selectedItem.id, {
+                                            title: editingEventTask.title,
+                                            date: editingEventTask.date,
+                                            status: editingEventTask.status,
+                                            estimatedCost: editingEventTask.estimatedCost,
+                                            notes: editingEventTask.notes
+                                        });
+                                    } else {
+                                        await actions.updateEventCustomTask(selectedItem.id, editingEventTask.id, editingEventTask);
+                                    }
+                                    // Refresh selectedItem
+                                    const updated = data.events.find(e => e.id === selectedItem.id);
+                                    if (updated) setSelectedItem({ ...updated, _kind: 'event' });
+                                    setEditingEventTask(null);
+                                }}
+                                className={cn("flex-1 px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}
+                            >
+                                Save
+                            </button>
+                            <button onClick={() => setEditingEventTask(null)} className={cn("px-4 py-2", THEME.punk.btn, "bg-gray-500 text-white")}>
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -596,6 +668,250 @@ export const GalleryView = () => {
                                     Save
                                 </button>
                                 <button onClick={() => setEditingPhoto(null)} className={cn("flex-1 px-4 py-2 bg-gray-300", THEME.punk.btn)}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const FilesView = () => {
+    const { data, actions } = useStore();
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [editingFile, setEditingFile] = useState(null);
+
+    // Helper to determine if file is an image (previewable)
+    const isImageFile = (file) => {
+        if (!file) return false;
+        // Check MIME type if available
+        if (file.mimeType && file.mimeType.startsWith('image/')) return true;
+        // Check by file extension
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+    };
+
+    // Get file extension for icon/display
+    const getFileExtension = (file) => {
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        return ext || 'file';
+    };
+
+    // Get icon name based on file type
+    const getFileIcon = (file) => {
+        const ext = getFileExtension(file);
+        switch (ext) {
+            case 'pdf': return 'FileText';
+            case 'doc':
+            case 'docx': return 'FileText';
+            case 'xls':
+            case 'xlsx': return 'FileSpreadsheet';
+            case 'ppt':
+            case 'pptx': return 'FileSpreadsheet';
+            case 'mp3':
+            case 'wav':
+            case 'flac':
+            case 'm4a':
+            case 'ogg':
+            case 'aac': return 'Music';
+            case 'mp4':
+            case 'mov':
+            case 'avi':
+            case 'mkv':
+            case 'webm': return 'Video';
+            case 'zip':
+            case 'rar':
+            case '7z':
+            case 'tar':
+            case 'gz': return 'Archive';
+            case 'jpg':
+            case 'jpeg':
+            case 'png':
+            case 'gif':
+            case 'webp':
+            case 'bmp':
+            case 'svg': return 'Image';
+            default: return 'File';
+        }
+    };
+
+    const handleUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            actions.add('files', { 
+                data: ev.target.result, 
+                name: file.name,
+                title: file.name.replace(/\.[^/.]+$/, ''), // Remove extension for title
+                mimeType: file.type,
+                size: file.size,
+                description: '',
+                uploadedAt: new Date().toISOString()
+            });
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleDownload = (file) => {
+        const link = document.createElement('a');
+        link.href = file.data;
+        link.download = file.name || 'file';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleDownloadAll = () => {
+        data.files.forEach((file, index) => {
+            setTimeout(() => {
+                handleDownload(file);
+            }, index * 300); // Stagger downloads
+        });
+    };
+
+    const handleUpdateFile = (fileId, updates) => {
+        actions.update('files', fileId, updates);
+    };
+
+    const formatFileSize = (bytes) => {
+        if (!bytes) return '';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    return (
+        <div className="p-6 pb-24">
+            <div className="flex flex-wrap justify-between items-center mb-8 border-b-4 border-black pb-4 gap-4">
+                <h2 className={cn("text-3xl flex items-center gap-2", THEME.punk.textStyle)}><Icon name="File" /> Files</h2>
+                <div className="flex gap-2">
+                    {data.files.length > 0 && (
+                        <button onClick={handleDownloadAll} className={cn("px-4 py-2 flex items-center gap-2", THEME.punk.btn, "bg-blue-500 text-white")}>
+                            <Icon name="Download" size={16}/> Download All
+                        </button>
+                    )}
+                    <label className={cn("px-4 py-2 cursor-pointer bg-white flex items-center gap-2", THEME.punk.btn)}>
+                        <Icon name="Upload" size={16}/> Upload
+                        <input type="file" className="hidden" onChange={handleUpload} />
+                    </label>
+                </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {data.files.map(f => (
+                    <div key={f.id} className={cn("relative aspect-square group overflow-hidden cursor-pointer", THEME.punk.card)}>
+                        {isImageFile(f) ? (
+                            <img 
+                                src={f.data} 
+                                alt={f.title || f.name}
+                                className="w-full h-full object-cover"
+                                onClick={() => setSelectedFile(f)}
+                            />
+                        ) : (
+                            <div 
+                                className="w-full h-full flex flex-col items-center justify-center bg-gray-100"
+                                onClick={() => setSelectedFile(f)}
+                            >
+                                <Icon name={getFileIcon(f)} size={48} className="text-gray-600 mb-2" />
+                                <div className="text-xs font-bold uppercase text-gray-600">.{getFileExtension(f)}</div>
+                            </div>
+                        )}
+                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleDownload(f)} className="bg-blue-500 text-white p-1 rounded" title="Download"><Icon name="Download" size={14} /></button>
+                            <button onClick={() => setEditingFile(f)} className="bg-yellow-500 text-white p-1 rounded" title="Edit"><Icon name="Settings" size={14} /></button>
+                            <button onClick={() => actions.delete('files', f.id)} className="bg-red-500 text-white p-1 rounded" title="Delete"><Icon name="Trash2" size={14} /></button>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-[10px] p-1">
+                            <div className="truncate font-bold">{f.title || f.name}</div>
+                            {f.size && <div className="truncate opacity-80">{formatFileSize(f.size)}</div>}
+                        </div>
+                    </div>
+                ))}
+                {data.files.length === 0 && <div className="col-span-full py-20 text-center opacity-50">No files yet. Upload any file type.</div>}
+            </div>
+
+            {/* File Detail Modal */}
+            {selectedFile && (
+                <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4" onClick={() => setSelectedFile(null)}>
+                    <div className="relative max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-2">
+                            <div className="text-white">
+                                <div className="font-bold text-lg">{selectedFile.title || selectedFile.name}</div>
+                                {selectedFile.description && <div className="text-sm opacity-80">{selectedFile.description}</div>}
+                                {selectedFile.size && <div className="text-xs opacity-60">{formatFileSize(selectedFile.size)}</div>}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleDownload(selectedFile)} className="p-2 bg-blue-500 text-white rounded" title="Download"><Icon name="Download" size={20} /></button>
+                                <button onClick={() => { setEditingFile(selectedFile); setSelectedFile(null); }} className="p-2 bg-yellow-500 text-white rounded" title="Edit"><Icon name="Settings" size={20} /></button>
+                                <button onClick={() => setSelectedFile(null)} className="p-2 bg-gray-500 text-white rounded"><Icon name="X" size={20} /></button>
+                            </div>
+                        </div>
+                        {isImageFile(selectedFile) ? (
+                            <img 
+                                src={selectedFile.data} 
+                                alt={selectedFile.title || selectedFile.name}
+                                className="max-w-full max-h-[80vh] object-contain border-4 border-white"
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center p-12 bg-white border-4 border-white">
+                                <Icon name={getFileIcon(selectedFile)} size={96} className="text-gray-600 mb-4" />
+                                <div className="text-2xl font-bold uppercase text-gray-600 mb-2">.{getFileExtension(selectedFile)}</div>
+                                <div className="text-gray-500 text-sm">Preview not available for this file type</div>
+                                <button onClick={() => handleDownload(selectedFile)} className={cn("mt-4 px-6 py-3", THEME.punk.btn, "bg-blue-500 text-white")}>
+                                    <Icon name="Download" size={16} className="inline mr-2" /> Download File
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Edit File Modal */}
+            {editingFile && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setEditingFile(null)}>
+                    <div className={cn("w-full max-w-md p-6 bg-white", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-black uppercase">Edit File</h3>
+                            <button onClick={() => setEditingFile(null)} className="p-1 hover:bg-gray-200"><Icon name="X" size={16} /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Title</label>
+                                <input 
+                                    value={editingFile.title || ''} 
+                                    onChange={e => setEditingFile(prev => ({ ...prev, title: e.target.value }))} 
+                                    className={cn("w-full", THEME.punk.input)} 
+                                    placeholder="File title"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase mb-1">Description</label>
+                                <textarea 
+                                    value={editingFile.description || ''} 
+                                    onChange={e => setEditingFile(prev => ({ ...prev, description: e.target.value }))} 
+                                    className={cn("w-full h-24", THEME.punk.input)} 
+                                    placeholder="File description"
+                                />
+                            </div>
+                            <div className="text-xs text-gray-500">
+                                <div><strong>File Name:</strong> {editingFile.name}</div>
+                                {editingFile.size && <div><strong>Size:</strong> {formatFileSize(editingFile.size)}</div>}
+                                {editingFile.uploadedAt && <div><strong>Uploaded:</strong> {new Date(editingFile.uploadedAt).toLocaleString()}</div>}
+                            </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => {
+                                        handleUpdateFile(editingFile.id, { title: editingFile.title, description: editingFile.description });
+                                        setEditingFile(null);
+                                    }} 
+                                    className={cn("flex-1 px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}
+                                >
+                                    Save
+                                </button>
+                                <button onClick={() => setEditingFile(null)} className={cn("flex-1 px-4 py-2 bg-gray-300", THEME.punk.btn)}>
                                     Cancel
                                 </button>
                             </div>
