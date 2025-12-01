@@ -10,7 +10,7 @@ export const Icon = ({ name, ...props }) => {
 };
 
 export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
-  const { data, stats } = useStore();
+  const { data } = useStore();
   const settings = data.settings || {};
   const colorClass = COLORS[settings.themeColor || 'pink'].split(' ')[2]; 
   const isDark = settings.themeMode === 'dark';
@@ -66,19 +66,6 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
               </button>
            ))}
         </nav>
-        <div className={cn(
-          "p-4 m-4 border-[3px] punk-panel",
-          isDark ? "border-slate-600" : "border-black"
-        )}>
-          <div className={cn("text-xs font-black uppercase mb-2", isDark ? "text-slate-400" : "opacity-50")}>Rollout Cost</div>
-          <div className={cn("text-2xl font-black", colorClass)}>{formatMoney(stats.grandTotal || stats.act || 0)}</div>
-          <div className={cn("text-xs font-bold mt-1 space-y-1", isDark && "text-slate-300")}>
-             <div className="flex justify-between"><span>Songs:</span><span>{formatMoney(stats.songsTotal || 0)}</span></div>
-             <div className="flex justify-between"><span>Global:</span><span>{formatMoney(stats.globalTasksTotal || 0)}</span></div>
-             <div className="flex justify-between"><span>Releases:</span><span>{formatMoney(stats.releasesTotal || 0)}</span></div>
-             <div className="flex justify-between"><span>Expenses:</span><span>{formatMoney(stats.expensesTotal || 0)}</span></div>
-          </div>
-      </div>
     </div>
   );
 };
