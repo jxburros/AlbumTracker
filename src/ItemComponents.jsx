@@ -850,7 +850,7 @@ export const DisplayInfoSection = ({ item, fields }) => (
     </div>
     <div className="grid md:grid-cols-4 gap-4">
       {fields.map(field => (
-        <div key={field.key}>
+        <div key={field.key} className={field.colSpan ? `md:col-span-${field.colSpan}` : ''}>
           <label className="block text-xs font-bold uppercase mb-2">{field.label}</label>
           <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold", field.bgClass || "bg-gray-100")}>
             {field.render ? field.render(item) : (item[field.key] || field.default || '-')}
@@ -860,3 +860,269 @@ export const DisplayInfoSection = ({ item, fields }) => (
     </div>
   </div>
 );
+
+/**
+ * StandardListPage - Generic list page for any item type with grid/list toggle
+ * 
+ * @param {string} title - Page title (e.g., "Songs", "Releases")
+ * @param {Array} items - Array of items to display
+ * @param {Function} onSelectItem - Callback when item is selected
+ * @param {Function} onAddItem - Callback to add new item
+ * @param {string} addButtonText - Text for add button (default: "+ Add {singularTitle}")
+ * @param {Array} columns - Column configuration for list view [{field, label, sortable?, type?, render?}]
+ * @param {Array} filterOptions - Filter options [{field, label, options: [{value, label}]}]
+ * @param {Function} renderGridCard - Function to render grid card (item) => JSX
+ * @param {Function} renderActions - Function to render row actions (item, e) => JSX
+ * @param {React.Component} headerExtra - Extra header content (e.g., total summary)
+ * @param {string} emptyMessage - Message when no items
+ */
+export const StandardListPage = ({
+  title,
+  items = [],
+  onSelectItem,
+  onAddItem,
+  addButtonText,
+  columns = [],
+  filterOptions = [],
+  renderGridCard,
+  renderActions,
+  headerExtra,
+  emptyMessage
+}) => {
+  const [viewMode, setViewMode] = useState('list');
+  const [sortBy, setSortBy] = useState(columns[0]?.field || 'name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [filters, setFilters] = useState({});
+
+  const toggleSort = (field) => {
+    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => (
+    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
+
+  // Filter and sort items
+  const filteredItems = useMemo(() => {
+    let result = [...items];
+    
+    // Apply filters
+    Object.entries(filters).forEach(([field, value]) => {
+      if (value && value !== 'all') {
+        result = result.filter(item => item[field] === value);
+      }
+    });
+    
+    // Apply sorting
+    result.sort((a, b) => {
+      const valA = a[sortBy] ?? '';
+      const valB = b[sortBy] ?? '';
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDir === 'asc' ? valA - valB : valB - valA;
+      }
+      return sortDir === 'asc' 
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+    
+    return result;
+  }, [items, filters, sortBy, sortDir]);
+
+  const singularTitle = title.replace(/s$/, '');
+  const buttonText = addButtonText || `+ Add ${singularTitle}`;
+  const empty = emptyMessage || `No ${title.toLowerCase()} yet. Click ${buttonText} to create one.`;
+
+  return (
+    <div className="p-6 pb-24">
+      {/* Header */}
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>{title}</h2>
+        <div className="flex flex-wrap gap-2 items-center">
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
+          
+          {/* Filter Controls */}
+          {filterOptions.map(filter => (
+            <select
+              key={filter.field}
+              value={filters[filter.field] || 'all'}
+              onChange={e => setFilters(prev => ({ ...prev, [filter.field]: e.target.value }))}
+              className={cn("px-3 py-2", THEME.punk.input)}
+            >
+              <option value="all">{filter.label}</option>
+              {filter.options.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          ))}
+          
+          {onAddItem && (
+            <button onClick={onAddItem} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>
+              {buttonText}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Optional header extra content (e.g., totals) */}
+      {headerExtra}
+
+      {/* Grid View */}
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredItems.length === 0 ? (
+            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>{empty}</div>
+          ) : (
+            filteredItems.map(item => renderGridCard ? renderGridCard(item) : (
+              <div 
+                key={item.id} 
+                onClick={() => onSelectItem?.(item)} 
+                className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
+              >
+                <div className="font-bold text-lg mb-2">{item.name || item.title}</div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        /* List View */
+        <div className={cn("overflow-x-auto", THEME.punk.card)}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-black text-white">
+                {columns.map(col => (
+                  <th 
+                    key={col.field} 
+                    className={cn(
+                      "p-3",
+                      col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
+                      col.sortable && "cursor-pointer"
+                    )}
+                    onClick={col.sortable ? () => toggleSort(col.field) : undefined}
+                  >
+                    {col.label} {col.sortable && <SortIcon field={col.field} />}
+                  </th>
+                ))}
+                {renderActions && <th className="p-3 text-center">Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.length === 0 ? (
+                <tr><td colSpan={columns.length + (renderActions ? 1 : 0)} className="p-10 text-center opacity-50">{empty}</td></tr>
+              ) : (
+                filteredItems.map(item => (
+                  <tr 
+                    key={item.id} 
+                    className={cn("border-b border-gray-200 hover:bg-yellow-50", item.isArchived && "opacity-50")}
+                  >
+                    {columns.map(col => (
+                      <td 
+                        key={col.field}
+                        className={cn(
+                          "p-3",
+                          col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
+                          col.clickable !== false && "cursor-pointer"
+                        )}
+                        onClick={col.clickable !== false ? () => onSelectItem?.(item) : undefined}
+                      >
+                        {col.render ? col.render(item) : (item[col.field] ?? '-')}
+                      </td>
+                    ))}
+                    {renderActions && (
+                      <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                        {renderActions(item, e => e.stopPropagation())}
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * StandardDetailPage - Generic detail/edit page for any item type
+ * 
+ * @param {Object} item - The item being edited
+ * @param {Function} onBack - Callback to navigate back
+ * @param {string} backText - Text for back button
+ * @param {Function} onDelete - Callback to delete item
+ * @param {Function} onArchive - Optional callback to archive item
+ * @param {Function} onRestore - Optional callback to restore item from archive
+ * @param {boolean} isArchived - Whether item is currently archived
+ * @param {React.ReactNode} displaySection - Content for display section
+ * @param {React.ReactNode} editSection - Content for edit section
+ * @param {React.ReactNode} tasksSection - Optional tasks section content
+ * @param {React.ReactNode} extraSections - Optional extra sections
+ */
+export const StandardDetailPage = ({
+  // eslint-disable-next-line no-unused-vars
+  item,
+  onBack,
+  backText = 'Back',
+  onDelete,
+  onArchive,
+  onRestore,
+  isArchived = false,
+  displaySection,
+  editSection,
+  tasksSection,
+  extraSections
+}) => {
+  const handleDelete = () => {
+    if (confirm('Delete this item?')) {
+      onDelete?.();
+    }
+  };
+
+  return (
+    <div className="p-6 pb-24">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
+          <Icon name="ChevronLeft" size={16} /> {backText}
+        </button>
+        <div className="flex gap-2">
+          {onArchive && !isArchived && (
+            <button onClick={onArchive} className={cn("px-4 py-2", THEME.punk.btn, "bg-orange-500 text-white")}>
+              <Icon name="Archive" size={16} />
+            </button>
+          )}
+          {onRestore && isArchived && (
+            <button onClick={onRestore} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>
+              Restore
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={handleDelete} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}>
+              <Icon name="Trash2" size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Archived Warning */}
+      {isArchived && (
+        <div className={cn("p-4 mb-6 bg-orange-100 border-4 border-orange-500", THEME.punk.card)}>
+          <span className="font-bold text-orange-800">⚠️ This item is archived</span>
+        </div>
+      )}
+
+      {/* Display Section */}
+      {displaySection}
+
+      {/* Edit Section */}
+      {editSection}
+
+      {/* Tasks Section */}
+      {tasksSection}
+
+      {/* Extra Sections */}
+      {extraSections}
+    </div>
+  );
+};
