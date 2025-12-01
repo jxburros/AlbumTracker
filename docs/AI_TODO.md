@@ -103,3 +103,17 @@ Per `music-tracker-implementation-plan.md` Section 6:
 ## Remaining Items
 
 See `docs/REMAINING_TODO.md` for a tiered TODO list of remaining implementation items sorted by complexity.
+
+---
+
+## Standardization Architecture
+
+See `docs/STANDARDIZED_ARCHITECTURE.md` for the architectural design to standardize Pages and Item components across the application. This includes:
+
+- **StandardListPage**: Generic list/grid view component for any item type
+- **StandardDetailPage**: Generic detail/edit view component for any item type  
+- **StandardTaskList**: Consistent task list display across all items
+- **EraStageTagsPicker**: Unified component combining Era, Stage, and Tags pickers
+- **TaskEditModal**: Consistent modal for editing tasks across all contexts
+
+The standardization follows the Unified Item System from `APP ARCHITECTURE.txt` and reduces code duplication by ~60%.

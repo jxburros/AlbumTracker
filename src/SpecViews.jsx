@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker } from './ItemComponents';
+import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, ViewModeToggle } from './ItemComponents';
 
 // Song List View (Spec 2.1) - Section 2: Enhanced with Grid/List Toggle
 export const SongListView = ({ onSelectSong }) => {
@@ -57,22 +57,7 @@ export const SongListView = ({ onSelectSong }) => {
           <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>Songs</h2>
         <div className="flex flex-wrap gap-2">
           {/* Tier 1.1: Grid/List View Toggle */}
-          <div className="flex border-4 border-black">
-            <button 
-              onClick={() => setViewMode('list')} 
-              className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")}
-              title="List View"
-            >
-              <Icon name="List" size={16} />
-            </button>
-            <button 
-              onClick={() => setViewMode('grid')} 
-              className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")}
-              title="Grid View"
-            >
-              <Icon name="Grid" size={16} />
-            </button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Categories</option>
             {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -2019,22 +2004,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
         <h2 className={THEME.punk.textStyle}>Releases</h2>
         <div className="flex gap-2">
           {/* Tier 1.1: Grid/List View Toggle */}
-          <div className="flex border-4 border-black">
-            <button 
-              onClick={() => setViewMode('list')} 
-              className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")}
-              title="List View"
-            >
-              <Icon name="List" size={16} />
-            </button>
-            <button 
-              onClick={() => setViewMode('grid')} 
-              className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")}
-              title="Grid View"
-            >
-              <Icon name="Grid" size={16} />
-            </button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <button onClick={handleAddRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Release</button>
         </div>
       </div>
@@ -2533,41 +2503,19 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
             <div className="text-xs text-blue-600 font-bold">💡 Physical copy tasks will be auto-generated</div>
           )}
           {/* Phase 3.4: Stage/Era/Tags */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <UniversalEraPicker
-              value={(form.eraIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('eraIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              eras={data.eras || []}
-              placeholder="No Era"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <UniversalStagePicker
-              value={(form.stageIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('stageIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              stages={data.stages || []}
-              placeholder="No Stage"
-            />
-          </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <UniversalTagsPicker
-              value={form.tagIds || []}
-              onChange={newTagIds => {
-                handleFieldChange('tagIds', newTagIds);
+            <EraStageTagsPicker
+              value={{
+                eraIds: form.eraIds || [],
+                stageIds: form.stageIds || [],
+                tagIds: form.tagIds || []
+              }}
+              onChange={({ eraIds, stageIds, tagIds }) => {
+                handleFieldChange('eraIds', eraIds);
+                handleFieldChange('stageIds', stageIds);
+                handleFieldChange('tagIds', tagIds);
                 setTimeout(handleSave, 0);
               }}
-              tags={data.tags || []}
-              onCreateTag={actions.addTag}
-              placeholder="Add tag..."
             />
           </div>
           <div className="md:col-span-2">
@@ -5161,14 +5109,7 @@ export const EventsListView = ({ onSelectEvent }) => {
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Events</h2>
         <div className="flex flex-wrap gap-2">
-          <div className="flex border-4 border-black">
-            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View">
-              <Icon name="List" size={16} />
-            </button>
-            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View">
-              <Icon name="PieChart" size={16} />
-            </button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <select value={filterType} onChange={e => setFilterType(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Types</option>
             {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
@@ -5479,43 +5420,21 @@ export const EventDetailView = ({ event, onBack }) => {
             <input type="number" value={form.entryCost || 0} onChange={e => handleFieldChange('entryCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
           {/* Phase 2.3: Stage/Era/Tags for Events */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <UniversalEraPicker
-              value={form.eraIds || []}
-              onChange={values => {
-                handleFieldChange('eraIds', values);
-                setTimeout(handleSave, 0);
-              }}
-              eras={data.eras || []}
-              placeholder="No Era"
-              multiple={true}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <UniversalStagePicker
-              value={form.stageIds || []}
-              onChange={values => {
-                handleFieldChange('stageIds', values);
-                setTimeout(handleSave, 0);
-              }}
-              stages={data.stages || []}
-              placeholder="No Stage"
-              multiple={true}
-            />
-          </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <UniversalTagsPicker
-              value={form.tagIds || []}
-              onChange={newTagIds => {
-                handleFieldChange('tagIds', newTagIds);
+            <EraStageTagsPicker
+              value={{
+                eraIds: form.eraIds || [],
+                stageIds: form.stageIds || [],
+                tagIds: form.tagIds || []
+              }}
+              onChange={({ eraIds, stageIds, tagIds }) => {
+                handleFieldChange('eraIds', eraIds);
+                handleFieldChange('stageIds', stageIds);
+                handleFieldChange('tagIds', tagIds);
                 setTimeout(handleSave, 0);
               }}
-              tags={data.tags || []}
-              onCreateTag={actions.addTag}
-              placeholder="Add tag..."
+              multipleEras={true}
+              multipleStages={true}
             />
           </div>
           <div className="md:col-span-2">
@@ -6056,10 +5975,7 @@ export const ExpensesListView = ({ onSelectExpense }) => {
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Expenses</h2>
         <div className="flex flex-wrap gap-2 items-center">
-          <div className="flex border-4 border-black">
-            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View"><Icon name="List" size={16} /></button>
-            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View"><Icon name="PieChart" size={16} /></button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Categories</option>
             {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -6377,41 +6293,19 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           </div>
           
           {/* Phase 4.3: Stage/Era/Tags */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <UniversalEraPicker
-              value={(form.eraIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('eraIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              eras={data.eras || []}
-              placeholder="No Era"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <UniversalStagePicker
-              value={(form.stageIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('stageIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              stages={data.stages || []}
-              placeholder="No Stage"
-            />
-          </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <UniversalTagsPicker
-              value={form.tagIds || []}
-              onChange={newTagIds => {
-                handleFieldChange('tagIds', newTagIds);
+            <EraStageTagsPicker
+              value={{
+                eraIds: form.eraIds || [],
+                stageIds: form.stageIds || [],
+                tagIds: form.tagIds || []
+              }}
+              onChange={({ eraIds, stageIds, tagIds }) => {
+                handleFieldChange('eraIds', eraIds);
+                handleFieldChange('stageIds', stageIds);
+                handleFieldChange('tagIds', tagIds);
                 setTimeout(handleSave, 0);
               }}
-              tags={data.tags || []}
-              onCreateTag={actions.addTag}
-              placeholder="Add tag..."
             />
           </div>
           
@@ -6535,14 +6429,7 @@ export const VideosListView = ({ onSelectVideo }) => {
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Videos</h2>
         <div className="flex flex-wrap gap-2">
-          <div className="flex border-4 border-black">
-            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View">
-              <Icon name="List" size={16} />
-            </button>
-            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View">
-              <Icon name="PieChart" size={16} />
-            </button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <select value={filterType} onChange={e => setFilterType(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Types</option>
             {videoTypeOptions.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
@@ -7065,41 +6952,19 @@ export const VideoDetailView = ({ video, onBack }) => {
           </div>
           
           {/* Phase 1.6: Stage/Era/Tags for Videos */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Era</label>
-            <UniversalEraPicker
-              value={(form.eraIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('eraIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              eras={data.eras || []}
-              placeholder="No Era"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Stage</label>
-            <UniversalStagePicker
-              value={(form.stageIds || [])[0] || ''}
-              onChange={value => {
-                handleFieldChange('stageIds', value ? [value] : []);
-                setTimeout(handleSave, 0);
-              }}
-              stages={data.stages || []}
-              placeholder="No Stage"
-            />
-          </div>
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Tags</label>
-            <UniversalTagsPicker
-              value={form.tagIds || []}
-              onChange={newTagIds => {
-                handleFieldChange('tagIds', newTagIds);
+            <EraStageTagsPicker
+              value={{
+                eraIds: form.eraIds || [],
+                stageIds: form.stageIds || [],
+                tagIds: form.tagIds || []
+              }}
+              onChange={({ eraIds, stageIds, tagIds }) => {
+                handleFieldChange('eraIds', eraIds);
+                handleFieldChange('stageIds', stageIds);
+                handleFieldChange('tagIds', tagIds);
                 setTimeout(handleSave, 0);
               }}
-              tags={data.tags || []}
-              onCreateTag={actions.addTag}
-              placeholder="Add tag..."
             />
           </div>
           
@@ -7499,14 +7364,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Global Tasks</h2>
         <div className="flex flex-wrap gap-2">
-          <div className="flex border-4 border-black">
-            <button onClick={() => setViewMode('list')} className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")} title="List View">
-              <Icon name="List" size={16} />
-            </button>
-            <button onClick={() => setViewMode('grid')} className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")} title="Grid View">
-              <Icon name="PieChart" size={16} />
-            </button>
-          </div>
+          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
           <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
             <option value="all">All Categories</option>
             {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -7916,6 +7774,22 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Task notes and details..." />
+          </div>
+          {/* Era/Stage/Tags */}
+          <div className="md:col-span-2">
+            <EraStageTagsPicker
+              value={{
+                eraIds: form.eraIds || [],
+                stageIds: form.stageIds || [],
+                tagIds: form.tagIds || []
+              }}
+              onChange={({ eraIds, stageIds, tagIds }) => {
+                handleFieldChange('eraIds', eraIds);
+                handleFieldChange('stageIds', stageIds);
+                handleFieldChange('tagIds', tagIds);
+                setTimeout(handleSave, 0);
+              }}
+            />
           </div>
         </div>
       </div>
