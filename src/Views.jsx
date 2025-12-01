@@ -556,9 +556,13 @@ export const GalleryView = () => {
     };
 
     const handleDownloadAll = () => {
+        const photoCount = data.photos.length;
         data.photos.forEach((photo, index) => {
             setTimeout(() => {
                 handleDownload(photo);
+                if (index === photoCount - 1) {
+                    alert(`Downloaded ${photoCount} photo${photoCount === 1 ? '' : 's'}`);
+                }
             }, index * 300); // Stagger downloads
         });
     };
@@ -766,9 +770,13 @@ export const FilesView = () => {
     };
 
     const handleDownloadAll = () => {
+        const fileCount = data.files.length;
         data.files.forEach((file, index) => {
             setTimeout(() => {
                 handleDownload(file);
+                if (index === fileCount - 1) {
+                    alert(`Downloaded ${fileCount} file${fileCount === 1 ? '' : 's'}`);
+                }
             }, index * 300); // Stagger downloads
         });
     };
@@ -1774,6 +1782,7 @@ export const SettingsView = () => {
       a.click();
       URL.revokeObjectURL(url);
       actions.saveSettings({ lastBackup: new Date().toISOString() });
+      alert('Backup file downloaded successfully');
     };
 
     const runMigrationFlow = async () => {
@@ -2062,6 +2071,21 @@ export const SettingsView = () => {
                       </div>
                     ))}
                     <button onClick={() => actions.addTag({ name: `Tag ${(data.tags?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Tag</button>
+                  </div>
+                </div>
+
+                {/* Eras */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Eras</h3>
+                  <div className="space-y-2">
+                    {(data.eras || []).map(era => (
+                      <div key={era.id} className="flex items-center gap-2">
+                        <input value={era.name} onChange={e => actions.updateEra(era.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <input type="color" value={era.color || '#000000'} onChange={e => actions.updateEra(era.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
+                        <button onClick={() => { if (confirm('Delete this era? This will not affect items already tagged with this era.')) actions.deleteEra(era.id); }} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addEra({ name: `Era ${(data.eras?.length || 0) + 1}` })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Era</button>
                   </div>
                 </div>
 
