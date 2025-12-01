@@ -849,14 +849,18 @@ export const DisplayInfoSection = ({ item, fields }) => (
       {item.name || item.title || 'Untitled'}
     </div>
     <div className="grid md:grid-cols-4 gap-4">
-      {fields.map(field => (
-        <div key={field.key} className={field.colSpan ? `md:col-span-${field.colSpan}` : ''}>
-          <label className="block text-xs font-bold uppercase mb-2">{field.label}</label>
-          <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold", field.bgClass || "bg-gray-100")}>
-            {field.render ? field.render(item) : (item[field.key] || field.default || '-')}
+      {fields.map(field => {
+        // Predefined colSpan classes for Tailwind purging
+        const colSpanClass = field.colSpan === 2 ? 'md:col-span-2' : field.colSpan === 3 ? 'md:col-span-3' : field.colSpan === 4 ? 'md:col-span-4' : '';
+        return (
+          <div key={field.key} className={colSpanClass}>
+            <label className="block text-xs font-bold uppercase mb-2">{field.label}</label>
+            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold", field.bgClass || "bg-gray-100")}>
+              {field.render ? field.render(item) : (item[field.key] || field.default || '-')}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
 );
@@ -1060,8 +1064,6 @@ export const StandardListPage = ({
  * @param {React.ReactNode} extraSections - Optional extra sections
  */
 export const StandardDetailPage = ({
-  // eslint-disable-next-line no-unused-vars
-  item,
   onBack,
   backText = 'Back',
   onDelete,
