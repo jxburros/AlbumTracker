@@ -2,25 +2,12 @@ import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, ViewModeToggle } from './ItemComponents';
+import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
 
-// Song List View (Spec 2.1) - Section 2: Enhanced with Grid/List Toggle
+// Song List View - Standardized Architecture
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
-  const [sortBy, setSortBy] = useState('releaseDate');
-  const [sortDir, setSortDir] = useState('asc');
-  const [filterCategory, setFilterCategory] = useState('all');
   const [filterSingles, setFilterSingles] = useState(false);
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid' - Tier 1.1: Grid/List Toggle
-
-  const toggleSort = (field) => {
-    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
-  );
 
   const songProgress = (song) => {
     const versionTasks = (song.versions || []).flatMap(v => [...(v.tasks || []), ...(v.customTasks || [])]);
@@ -28,126 +15,78 @@ export const SongListView = ({ onSelectSong }) => {
     return calculateTaskProgress(tasks).progress;
   };
 
-  const songs = useMemo(() => {
-    let filtered = [...(data.songs || [])];
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(s => s.category === filterCategory);
-    }
+  // Filter songs (singles filter applied here since it's a toggle, not dropdown)
+  const filteredSongs = useMemo(() => {
+    let songs = [...(data.songs || [])];
     if (filterSingles) {
-      filtered = filtered.filter(s => s.isSingle);
+      songs = songs.filter(s => s.isSingle);
     }
-    filtered.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      if (sortBy === 'estimatedCost') { valA = valA || 0; valB = valB || 0; }
-      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
-      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
-    });
-    return filtered;
-  }, [data.songs, sortBy, sortDir, filterCategory, filterSingles]);
+    return songs;
+  }, [data.songs, filterSingles]);
 
   const handleAddSong = async () => {
     const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false });
     if (onSelectSong) onSelectSong(newSong);
   };
 
-  return (
-    <div className="p-6 pb-24">
-        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-          <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>Songs</h2>
-        <div className="flex flex-wrap gap-2">
-          {/* Tier 1.1: Grid/List View Toggle */}
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Categories</option>
-            {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <label className="flex items-center gap-2 px-3 py-2 border-4 border-black bg-white font-bold">
-            <input type="checkbox" checked={filterSingles} onChange={e => setFilterSingles(e.target.checked)} className="w-4 h-4" />
-            Singles Only
-          </label>
-          <button onClick={handleAddSong} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Song</button>
-        </div>
+  // Column definitions
+  const columns = [
+    { field: 'title', label: 'Title', sortable: true, render: (item) => <span className="font-bold">{item.title}</span> },
+    { field: 'category', label: 'Category', sortable: true },
+    { field: 'releaseDate', label: 'Release Date', sortable: true, render: (item) => item.releaseDate || '-' },
+    { field: 'isSingle', label: 'Single?', align: 'center', render: (item) => item.isSingle ? 'Yes' : 'No' },
+    { field: 'exclusiveType', label: 'Exclusive', render: (item) => item.exclusiveType && item.exclusiveType !== 'None' ? item.exclusiveType : '-' },
+    { field: 'stemsNeeded', label: 'Stems?', align: 'center', render: (item) => item.stemsNeeded ? 'Yes' : 'No' },
+    { field: 'progress', label: 'Progress', align: 'right', render: (item) => `${songProgress(item)}%` },
+    { field: 'estimatedCost', label: 'Est. Cost', sortable: true, align: 'right', render: (item) => formatMoney(item.estimatedCost || 0) }
+  ];
+
+  // Filter options
+  const filterOptions = [
+    { field: 'category', label: 'All Categories', options: SONG_CATEGORIES.map(c => ({ value: c, label: c })) }
+  ];
+
+  // Render grid card
+  const renderGridCard = (song) => (
+    <div key={song.id} onClick={() => onSelectSong?.(song)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
+      <div className="font-bold text-lg mb-2">{song.title}</div>
+      <div className="text-xs space-y-1">
+        <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{song.category}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Release:</span><span className="font-bold">{song.releaseDate || 'TBD'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{songProgress(song)}%</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Est. Cost:</span><span className="font-bold">{formatMoney(song.estimatedCost || 0)}</span></div>
       </div>
-      
-      {/* Tier 1.1: Grid View */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {songs.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No songs yet. Click Add Song to create one.</div>
-          ) : (
-            songs.map(song => (
-              <div 
-                key={song.id} 
-                onClick={() => onSelectSong && onSelectSong(song)} 
-                className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
-              >
-                <div className="font-bold text-lg mb-2">{song.title}</div>
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Category:</span>
-                    <span className="font-bold">{song.category}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Release:</span>
-                    <span className="font-bold">{song.releaseDate || 'TBD'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Progress:</span>
-                    <span className="font-bold">{songProgress(song)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="opacity-60">Est. Cost:</span>
-                    <span className="font-bold">{formatMoney(song.estimatedCost || 0)}</span>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-1 mt-3">
-                  {song.isSingle && <span className="px-2 py-1 bg-pink-200 text-pink-800 text-[10px] font-bold border border-pink-500">SINGLE</span>}
-                  {song.exclusiveType && song.exclusiveType !== 'None' && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">{song.exclusiveType}</span>}
-                  {song.stemsNeeded && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">STEMS</span>}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        /* List View (Original) */
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Release Date <SortIcon field="releaseDate" /></th>
-                <th className="p-3 text-center">Single?</th>
-                <th className="p-3 text-left">Exclusive</th>
-                <th className="p-3 text-center">Stems?</th>
-                <th className="p-3 text-right">Progress</th>
-                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
-              </tr>
-            </thead>
-            <tbody>
-              {songs.length === 0 ? (
-                <tr><td colSpan="8" className="p-10 text-center opacity-50">No songs yet. Click Add Song to create one.</td></tr>
-              ) : (
-                songs.map(song => (
-                  <tr key={song.id} onClick={() => onSelectSong && onSelectSong(song)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                    <td className="p-3 font-bold">{song.title}</td>
-                    <td className="p-3">{song.category}</td>
-                    <td className="p-3">{song.releaseDate || '-'}</td>
-                    <td className="p-3 text-center">{song.isSingle ? 'Yes' : 'No'}</td>
-                    <td className="p-3">{song.exclusiveType && song.exclusiveType !== 'None' ? song.exclusiveType : '-'}</td>
-                    <td className="p-3 text-center">{song.stemsNeeded ? 'Yes' : 'No'}</td>
-                    <td className="p-3 text-right">{songProgress(song)}%</td>
-                    <td className="p-3 text-right">{formatMoney(song.estimatedCost || 0)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="flex flex-wrap gap-1 mt-3">
+        {song.isSingle && <span className="px-2 py-1 bg-pink-200 text-pink-800 text-[10px] font-bold border border-pink-500">SINGLE</span>}
+        {song.exclusiveType && song.exclusiveType !== 'None' && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">{song.exclusiveType}</span>}
+        {song.stemsNeeded && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">STEMS</span>}
+      </div>
     </div>
+  );
+
+  // Header extra content (singles toggle)
+  const headerExtra = (
+    <div className="flex items-center gap-4 mb-4">
+      <label className="flex items-center gap-2 px-3 py-2 border-4 border-black bg-white font-bold text-sm">
+        <input type="checkbox" checked={filterSingles} onChange={e => setFilterSingles(e.target.checked)} className="w-4 h-4" />
+        Singles Only
+      </label>
+    </div>
+  );
+
+  return (
+    <StandardListPage
+      title="Songs"
+      items={filteredSongs}
+      onSelectItem={onSelectSong}
+      onAddItem={handleAddSong}
+      addButtonText="+ Add Song"
+      columns={columns}
+      filterOptions={filterOptions}
+      renderGridCard={renderGridCard}
+      headerExtra={headerExtra}
+      emptyMessage="No songs yet. Click + Add Song to create one."
+    />
   );
 };
 
@@ -529,6 +468,53 @@ export const SongDetailView = ({ song, onBack }) => {
     return Array.from(categories);
   }, [songTasks]);
 
+  // Calculate overdue tasks for Display Section
+  const overdueTasks = useMemo(() => 
+    allSongTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done'), 
+    [allSongTasks]
+  );
+  const openTasks = useMemo(() => 
+    allSongTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done'), 
+    [allSongTasks]
+  );
+  const costPaidValue = useMemo(() => 
+    allSongTasks.reduce((sum, t) => sum + (t.paidCost || 0), 0), 
+    [allSongTasks]
+  );
+
+  // Display Section - using DisplayInfoSection for consistency
+  const displaySection = (
+    <DisplayInfoSection
+      item={{ ...currentSong, name: currentSong.title }}
+      fields={[
+        { key: 'progress', label: 'Task Progress', bgClass: 'bg-yellow-100', render: () => `${songProgressValue}%` },
+        { key: 'releaseDate', label: 'Release Date', bgClass: 'bg-blue-100', render: () => earliestReleaseDate || form.releaseDate || 'Not Set' },
+        { key: 'versions', label: 'Versions', bgClass: 'bg-gray-100', render: () => (currentSong.versions || []).filter(v => v.id !== 'core').length },
+        { key: 'openTasks', label: 'Open Tasks', bgClass: 'bg-gray-100', render: () => openTasks.length },
+        { key: 'videos', label: 'Videos', bgClass: 'bg-gray-100', render: () => (currentSong.videos || []).length },
+        { key: 'overdueTasks', label: 'Overdue Tasks', bgClass: overdueTasks.length > 0 ? 'bg-red-200' : 'bg-green-100', render: () => overdueTasks.length },
+        { key: 'costPaid', label: 'Cost Paid', bgClass: 'bg-green-100', render: () => formatMoney(costPaidValue) },
+        { key: 'estimatedCost', label: 'Estimated Cost', bgClass: 'bg-yellow-100', render: () => formatMoney(totalCost) },
+        { 
+          key: 'teamMembers',
+          label: 'Team Members on Tasks',
+          colSpan: 4,
+          render: () => assignedTeamMembers.length === 0 ? (
+            <span className="opacity-50">No team members assigned</span>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.map(m => (
+                <span key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </span>
+              ))}
+            </div>
+          )
+        }
+      ]}
+    />
+  );
+
   return (
     <div className="p-6 pb-24">
       <div className="flex justify-between items-center mb-6">
@@ -540,96 +526,8 @@ export const SongDetailView = ({ song, onBack }) => {
         </button>
       </div>
 
-      {/* SECTION A: Display-Only Section (per spec order: Song Title, Task Progress, Core Version Release Date, 
-           Number of Versions, Number of Open Tasks, Number of Videos, Overdue Task Indicator, Cost Paid, 
-           Estimated Total Cost, Team Members) */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        
-        {/* Song Title - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentSong.title || 'Untitled Song'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Task Progress */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{songProgressValue}%</div>
-          </div>
-          
-          {/* Core Version Release Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {earliestReleaseDate || form.releaseDate || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Number of Versions */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Versions</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {(currentSong.versions || []).filter(v => v.id !== 'core').length}
-            </div>
-          </div>
-          
-          {/* Number of Open Tasks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {allSongTasks.filter(t => t.status !== 'Complete' && t.status !== 'Done').length}
-            </div>
-          </div>
-          
-          {/* Number of Videos */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Videos</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {(currentSong.videos || []).length}
-            </div>
-          </div>
-          
-          {/* Overdue Task Indicator */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
-              allSongTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done').length > 0 
-                ? "bg-red-200" : "bg-green-100"
-            )}>
-              {allSongTasks.filter(t => t.date && new Date(t.date) < new Date() && t.status !== 'Complete' && t.status !== 'Done').length}
-            </div>
-          </div>
-          
-          {/* Cost Paid */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(allSongTasks.reduce((sum, t) => sum + (t.paidCost || 0), 0))}
-            </div>
-          </div>
-          
-          {/* Estimated Total Cost */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
-              {formatMoney(totalCost)}
-            </div>
-          </div>
-          
-          {/* Team Members */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
-            <div className="flex flex-wrap gap-2">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
-                  {m.name} {m.isMusician && '🎵'}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Display Section */}
+      {displaySection}
 
       {/* SECTION B: Song Information - Per spec order:
            1. Basic Song Fields (Title, Writers, Composers)
@@ -1931,174 +1829,104 @@ export const GlobalTasksView = () => {
   );
 };
 
-// Releases List View (Spec 2.4) - Section 2: Enhanced with Grid/List Toggle
-// Phase 3: Enhanced Display Information (Number of Tracks, Tracks Completed, Track Progress %, Has Physical)
+// Releases List View - Standardized Architecture
 export const ReleasesListView = ({ onSelectRelease }) => {
   const { data, actions } = useStore();
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid' - Tier 1.1: Grid/List Toggle
 
   const handleAddRelease = async () => {
     const newRelease = await actions.addRelease({ name: 'New Release', type: 'Album', releaseDate: '', estimatedCost: 0, notes: '' });
     if (onSelectRelease) onSelectRelease(newRelease);
   };
 
-  const releases = data.releases || [];
-  
   // Calculate progress for each release
   const releaseProgress = (release) => {
     const tasks = [...(release.tasks || []), ...(release.customTasks || [])];
     return calculateTaskProgress(tasks).progress;
   };
   
-  // Phase 3.1: Calculate track statistics
+  // Calculate track statistics
   const getTrackStats = (release) => {
     const tracks = release.tracks || [];
     const totalTracks = tracks.length;
-    
-    if (totalTracks === 0) {
-      return { total: 0, completed: 0, remaining: 0, progress: 0 };
-    }
+    if (totalTracks === 0) return { total: 0, completed: 0, remaining: 0, progress: 0 };
     
     let completedTracks = 0;
-    
     tracks.forEach(track => {
       if (track.isExternal) {
-        // External tracks count as complete
         completedTracks++;
       } else if (track.songId) {
         const song = (data.songs || []).find(s => s.id === track.songId);
         if (song) {
-          // Check if all selected versions are complete
           const versionIds = track.versionIds || [];
           if (versionIds.length === 0) {
-            // If no versions specified, check core version (song deadlines)
             const songTasks = [...(song.deadlines || []), ...(song.customTasks || [])];
-            const songProgress = calculateTaskProgress(songTasks).progress;
-            if (songProgress >= 100) completedTracks++;
+            if (calculateTaskProgress(songTasks).progress >= 100) completedTracks++;
           } else {
-            // Check if all specified versions are complete
-            let allVersionsComplete = true;
+            let allComplete = true;
             versionIds.forEach(vId => {
               const version = (song.versions || []).find(v => v.id === vId);
-              if (version) {
-                const versionTasks = [...(version.tasks || []), ...(version.customTasks || [])];
-                const vProgress = calculateTaskProgress(versionTasks).progress;
-                if (vProgress < 100) allVersionsComplete = false;
-              }
+              if (version && calculateTaskProgress([...(version.tasks || []), ...(version.customTasks || [])]).progress < 100) allComplete = false;
             });
-            if (allVersionsComplete) completedTracks++;
+            if (allComplete) completedTracks++;
           }
         }
       }
     });
-    
-    const remaining = totalTracks - completedTracks;
     const progress = totalTracks > 0 ? Math.round((completedTracks / totalTracks) * 100) : 0;
-    
-    return { total: totalTracks, completed: completedTracks, remaining, progress };
+    return { total: totalTracks, completed: completedTracks, remaining: totalTracks - completedTracks, progress };
+  };
+
+  // Column definitions
+  const columns = [
+    { field: 'name', label: 'Name', sortable: true, render: (item) => <span className="font-bold">{item.name}</span> },
+    { field: 'type', label: 'Type', sortable: true, render: (item) => `${item.type}${item.type === 'Other' && item.typeDetails ? ` (${item.typeDetails})` : ''}` },
+    { field: 'releaseDate', label: 'Release Date', sortable: true, render: (item) => item.releaseDate || '-' },
+    { field: 'tracks', label: 'Tracks', align: 'center', render: (item) => { const s = getTrackStats(item); return `${s.completed}/${s.total}`; }},
+    { field: 'trackProgress', label: 'Track Progress', align: 'center', render: (item) => `${getTrackStats(item).progress}%` },
+    { field: 'hasPhysicalCopies', label: 'Physical', align: 'center', render: (item) => item.hasPhysicalCopies ? <span className="text-green-600 font-bold">YES</span> : <span className="text-gray-400">NO</span> },
+    { field: 'progress', label: 'Task Progress', align: 'right', render: (item) => `${releaseProgress(item)}%` },
+    { field: 'estimatedCost', label: 'Est. Cost', sortable: true, align: 'right', render: (item) => formatMoney(item.estimatedCost || 0) }
+  ];
+
+  // Filter options
+  const filterOptions = [
+    { field: 'type', label: 'All Types', options: RELEASE_TYPES.map(t => ({ value: t, label: t })) }
+  ];
+
+  // Render grid card
+  const renderGridCard = (release) => {
+    const trackStats = getTrackStats(release);
+    return (
+      <div key={release.id} onClick={() => onSelectRelease?.(release)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
+        <div className="font-bold text-lg mb-2">{release.name}</div>
+        <div className="text-xs space-y-1">
+          <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{release.type}{release.type === 'Other' && release.typeDetails ? ` (${release.typeDetails})` : ''}</span></div>
+          <div className="flex justify-between"><span className="opacity-60">Release Date:</span><span className="font-bold">{release.releaseDate || 'TBD'}</span></div>
+          <div className="flex justify-between"><span className="opacity-60">Task Progress:</span><span className="font-bold">{releaseProgress(release)}%</span></div>
+          <div className="flex justify-between"><span className="opacity-60">Tracks:</span><span className="font-bold">{trackStats.completed}/{trackStats.total}</span></div>
+          <div className="flex justify-between"><span className="opacity-60">Track Progress:</span><span className="font-bold">{trackStats.progress}%</span></div>
+          <div className="flex justify-between"><span className="opacity-60">Has Physical:</span><span className={cn("font-bold", release.hasPhysicalCopies ? "text-green-600" : "text-gray-400")}>{release.hasPhysicalCopies ? 'YES' : 'NO'}</span></div>
+        </div>
+        <div className="flex flex-wrap gap-1 mt-3">
+          {release.hasPhysicalCopies && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">PHYSICAL</span>}
+          {release.hasExclusivity && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">EXCLUSIVE</span>}
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Releases</h2>
-        <div className="flex gap-2">
-          {/* Tier 1.1: Grid/List View Toggle */}
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <button onClick={handleAddRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Release</button>
-        </div>
-      </div>
-      
-      {/* Tier 1.1: Grid View - Phase 3 Enhanced */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {releases.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No releases yet. Click Add Release to create one.</div>
-          ) : (
-            releases.map(release => {
-              const trackStats = getTrackStats(release);
-              return (
-                <div 
-                  key={release.id} 
-                  onClick={() => onSelectRelease && onSelectRelease(release)} 
-                  className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}
-                >
-                  <div className="font-bold text-lg mb-2">{release.name}</div>
-                  <div className="text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Type:</span>
-                      <span className="font-bold">{release.type}{release.type === 'Other' && release.typeDetails ? ` (${release.typeDetails})` : ''}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Release Date:</span>
-                      <span className="font-bold">{release.releaseDate || 'TBD'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Task Progress:</span>
-                      <span className="font-bold">{releaseProgress(release)}%</span>
-                    </div>
-                    {/* Phase 3.1: Track Info */}
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Tracks:</span>
-                      <span className="font-bold">{trackStats.completed}/{trackStats.total}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Track Progress:</span>
-                      <span className="font-bold">{trackStats.progress}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="opacity-60">Has Physical:</span>
-                      <span className={cn("font-bold", release.hasPhysicalCopies ? "text-green-600" : "text-gray-400")}>{release.hasPhysicalCopies ? 'YES' : 'NO'}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {release.hasPhysicalCopies && <span className="px-2 py-1 bg-blue-200 text-blue-800 text-[10px] font-bold border border-blue-500">PHYSICAL</span>}
-                    {release.hasExclusivity && <span className="px-2 py-1 bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-500">EXCLUSIVE</span>}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : (
-        /* List View - Phase 3 Enhanced */
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left">Name</th>
-                <th className="p-3 text-left">Type</th>
-                <th className="p-3 text-left">Release Date</th>
-                <th className="p-3 text-center">Tracks</th>
-                <th className="p-3 text-center">Track Progress</th>
-                <th className="p-3 text-center">Physical</th>
-                <th className="p-3 text-right">Task Progress</th>
-                <th className="p-3 text-right">Estimated Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {releases.length === 0 ? (
-                <tr><td colSpan="8" className="p-10 text-center opacity-50">No releases yet. Click Add Release to create one.</td></tr>
-              ) : releases.map(release => {
-                const trackStats = getTrackStats(release);
-                return (
-                  <tr key={release.id} onClick={() => onSelectRelease && onSelectRelease(release)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                    <td className="p-3 font-bold">{release.name}</td>
-                    <td className="p-3">{release.type}{release.type === 'Other' && release.typeDetails ? ` (${release.typeDetails})` : ''}</td>
-                    <td className="p-3">{release.releaseDate || '-'}</td>
-                    <td className="p-3 text-center">{trackStats.completed}/{trackStats.total}</td>
-                    <td className="p-3 text-center">{trackStats.progress}%</td>
-                    <td className="p-3 text-center">{release.hasPhysicalCopies ? <span className="text-green-600 font-bold">YES</span> : <span className="text-gray-400">NO</span>}</td>
-                    <td className="p-3 text-right">{releaseProgress(release)}%</td>
-                    <td className="p-3 text-right">{formatMoney(release.estimatedCost || 0)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    <StandardListPage
+      title="Releases"
+      items={data.releases || []}
+      onSelectItem={onSelectRelease}
+      onAddItem={handleAddRelease}
+      addButtonText="+ Add Release"
+      columns={columns}
+      filterOptions={filterOptions}
+      renderGridCard={renderGridCard}
+      emptyMessage="No releases yet. Click + Add Release to create one."
+    />
   );
 };
 
@@ -2321,6 +2149,48 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
     }).filter(Boolean);
   };
 
+  // Display Section - using DisplayInfoSection for consistency
+  const displaySection = (
+    <DisplayInfoSection
+      item={{ ...currentRelease, name: currentRelease.name }}
+      fields={[
+        { key: 'tracks', label: 'Number of Tracks', bgClass: 'bg-blue-100', render: () => getTrackStats.total },
+        { key: 'completed', label: 'Tracks Completed', bgClass: 'bg-green-100', render: () => getTrackStats.completed },
+        { key: 'remaining', label: 'Tracks Remaining', bgClass: 'bg-orange-100', render: () => getTrackStats.remaining },
+        { key: 'trackProgress', label: 'Track Progress', bgClass: 'bg-purple-100', render: () => `${getTrackStats.progress}%` },
+        { key: 'hasPhysical', label: 'Has Physical Copies?', bgClass: currentRelease.hasPhysicalCopies ? 'bg-green-200' : 'bg-gray-100', render: () => currentRelease.hasPhysicalCopies ? 'YES' : 'NO' },
+        { key: 'progress', label: 'Task Progress', bgClass: 'bg-yellow-100', render: () => `${releaseProgressValue}%` },
+        { key: 'releaseDate', label: 'Release Date', bgClass: 'bg-blue-100', default: 'Not Set' },
+        { key: 'openTasks', label: 'Open Tasks', bgClass: 'bg-gray-100', render: () => openTasks.length },
+        { key: 'overdueTasks', label: 'Overdue Tasks', bgClass: overdueTasks.length > 0 ? 'bg-red-200' : 'bg-green-100', render: () => overdueTasks.length },
+        { key: 'costPaid', label: 'Cost Paid', bgClass: 'bg-green-100', render: () => formatMoney(costPaid) },
+        { key: 'estimatedCost', label: 'Estimated Cost', bgClass: 'bg-yellow-100', render: () => formatMoney(estimatedCost) },
+        { key: 'type', label: 'Release Type', bgClass: 'bg-gray-100', render: () => (
+          <>
+            {currentRelease.type}
+            {currentRelease.type === 'Other' && currentRelease.typeDetails && ` (${currentRelease.typeDetails})`}
+          </>
+        )},
+        { 
+          key: 'teamMembers',
+          label: 'Team Members on Tasks',
+          colSpan: 4,
+          render: () => assignedTeamMembers.length === 0 ? (
+            <span className="opacity-50">No team members assigned</span>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.map(m => (
+                <span key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </span>
+              ))}
+            </div>
+          )
+        }
+      ]}
+    />
+  );
+
   return (
     <div className="p-6 pb-24">
       <div className="flex justify-between items-center mb-6">
@@ -2328,117 +2198,8 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
         <button onClick={handleDeleteRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
       </div>
 
-      {/* SECTION A: Display Information - Phase 3.1 Enhanced with Track Stats */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        
-        {/* Release Title - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentRelease.name || 'Untitled Release'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Phase 3.1: Number of Tracks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Number of Tracks</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-lg font-black">{getTrackStats.total}</div>
-          </div>
-          
-          {/* Phase 3.1: Number of Tracks Completed */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Tracks Completed</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-lg font-black">{getTrackStats.completed}</div>
-          </div>
-          
-          {/* Phase 3.1: Number of Tracks Remaining */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Tracks Remaining</label>
-            <div className="px-3 py-2 bg-orange-100 border-2 border-black text-lg font-black">{getTrackStats.remaining}</div>
-          </div>
-          
-          {/* Phase 3.1: Track Progress % */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Track Progress</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-lg font-black">{getTrackStats.progress}%</div>
-          </div>
-          
-          {/* Phase 3.1: Has Physical Copies YES/NO */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Has Physical Copies?</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", currentRelease.hasPhysicalCopies ? "bg-green-200" : "bg-gray-100")}>
-              {currentRelease.hasPhysicalCopies ? 'YES' : 'NO'}
-            </div>
-          </div>
-          
-          {/* Task Progress */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{releaseProgressValue}%</div>
-          </div>
-          
-          {/* Release Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {currentRelease.releaseDate || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Number of Open Tasks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {openTasks.length}
-            </div>
-          </div>
-          
-          {/* Overdue Task Indicator */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
-              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
-            )}>
-              {overdueTasks.length}
-            </div>
-          </div>
-          
-          {/* Cost Paid */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(costPaid)}
-            </div>
-          </div>
-          
-          {/* Estimated Total Cost */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
-              {formatMoney(estimatedCost)}
-            </div>
-          </div>
-          
-          {/* Release Type */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Release Type</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
-              {currentRelease.type || 'Album'}
-            </div>
-          </div>
-          
-          {/* Team Members */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
-            <div className="flex flex-wrap gap-2">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
-                  {m.name} {m.isMusician && '🎵'}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Display Section */}
+      {displaySection}
 
       {/* SECTION B: Release Information (editable) - Phase 3 Enhanced */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
@@ -5049,52 +4810,26 @@ export const ProgressView = () => {
   );
 };
 
-// Events List View - Following same pattern as Songs and Releases per unified Item/Page architecture
+// Events List View - Standardized Architecture
 export const EventsListView = ({ onSelectEvent }) => {
   const { data, actions } = useStore();
-  const [sortBy, setSortBy] = useState('date');
-  const [sortDir, setSortDir] = useState('asc');
-  const [filterType, setFilterType] = useState('all');
-  const [viewMode, setViewMode] = useState('list');
-
-  const toggleSort = (field) => {
-    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
-  );
 
   const eventProgress = (event) => {
     const tasks = [...(event.tasks || []), ...(event.customTasks || [])];
     return calculateTaskProgress(tasks).progress;
   };
 
-  // Phase 2: Events derive cost from tasks only
   const eventCost = (event) => {
     const tasks = [...(event.tasks || []), ...(event.customTasks || [])];
     return tasks.reduce((sum, t) => sum + getEffectiveCost(t), 0);
   };
 
-  const events = useMemo(() => {
-    let filtered = [...(data.events || [])];
-    if (filterType !== 'all') {
-      filtered = filtered.filter(e => e.type === filterType);
-    }
-    filtered.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      // Phase 2: Sort by task cost instead of event cost
-      if (sortBy === 'estimatedCost') { valA = eventCost(a); valB = eventCost(b); }
-      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
-      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
-    });
-    return filtered;
-  }, [data.events, sortBy, sortDir, filterType]);
-
   const handleAddEvent = async () => {
-    const newEvent = await actions.addEvent({ title: 'New Event', date: new Date().toISOString().split('T')[0], type: 'Standalone Event' }, false);
+    const newEvent = await actions.addEvent({ 
+      title: 'New Event', 
+      date: new Date().toISOString().split('T')[0], 
+      type: 'Standalone Event' 
+    }, false);
     if (onSelectEvent) onSelectEvent(newEvent);
   };
 
@@ -5104,78 +4839,55 @@ export const EventsListView = ({ onSelectEvent }) => {
     return Array.from(types);
   }, [data.events]);
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Events</h2>
-        <div className="flex flex-wrap gap-2">
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <select value={filterType} onChange={e => setFilterType(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Types</option>
-            {eventTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <button onClick={handleAddEvent} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Event</button>
-        </div>
+  // Column definitions
+  const columns = [
+    { field: 'title', label: 'Title', sortable: true, render: (item) => <span className="font-bold">{item.title}</span> },
+    { field: 'type', label: 'Type', sortable: true },
+    { field: 'date', label: 'Date', sortable: true },
+    { field: 'time', label: 'Time' },
+    { field: 'location', label: 'Location' },
+    { field: 'progress', label: 'Progress', align: 'right', render: (item) => `${eventProgress(item)}%` },
+    { field: 'estimatedCost', label: 'Task Cost', sortable: true, align: 'right', render: (item) => formatMoney(eventCost(item)) }
+  ];
+
+  // Filter options
+  const filterOptions = [
+    { 
+      field: 'type', 
+      label: 'All Types', 
+      options: eventTypes.map(t => ({ value: t, label: t })) 
+    }
+  ];
+
+  // Render grid card
+  const renderGridCard = (event) => (
+    <div key={event.id} onClick={() => onSelectEvent?.(event)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
+      <div className="font-bold text-lg mb-2">{event.title}</div>
+      <div className="text-xs space-y-1">
+        <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{event.type || 'Event'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{event.date || 'TBD'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Location:</span><span className="font-bold">{event.location || '-'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{eventProgress(event)}%</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Task Cost:</span><span className="font-bold">{formatMoney(eventCost(event))}</span></div>
       </div>
-      
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {events.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No events yet. Click Add Event to create one.</div>
-          ) : (
-            events.map(event => (
-              <div key={event.id} onClick={() => onSelectEvent && onSelectEvent(event)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
-                <div className="font-bold text-lg mb-2">{event.title}</div>
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{event.type || 'Event'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{event.date || 'TBD'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Location:</span><span className="font-bold">{event.location || '-'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{eventProgress(event)}%</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Task Cost:</span><span className="font-bold">{formatMoney(eventCost(event))}</span></div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('type')}>Type <SortIcon field="type" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('date')}>Date <SortIcon field="date" /></th>
-                <th className="p-3 text-left">Time</th>
-                <th className="p-3 text-left">Location</th>
-                <th className="p-3 text-right">Progress</th>
-                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Task Cost <SortIcon field="estimatedCost" /></th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.length === 0 ? (
-                <tr><td colSpan="7" className="p-10 text-center opacity-50">No events yet. Click Add Event to create one.</td></tr>
-              ) : (
-                events.map(event => (
-                  <tr key={event.id} onClick={() => onSelectEvent && onSelectEvent(event)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                    <td className="p-3 font-bold">{event.title}</td>
-                    <td className="p-3">{event.type || '-'}</td>
-                    <td className="p-3">{event.date || '-'}</td>
-                    <td className="p-3">{event.time || '-'}</td>
-                    <td className="p-3">{event.location || '-'}</td>
-                    <td className="p-3 text-right">{eventProgress(event)}%</td>
-                    <td className="p-3 text-right">{formatMoney(eventCost(event))}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
+  );
+
+  return (
+    <StandardListPage
+      title="Events"
+      items={data.events || []}
+      onSelectItem={onSelectEvent}
+      onAddItem={handleAddEvent}
+      columns={columns}
+      filterOptions={filterOptions}
+      renderGridCard={renderGridCard}
+      emptyMessage="No events yet. Click + Add Event to create one."
+    />
   );
 };
 
-// Event Detail View - Following same pattern as SongDetailView and ReleaseDetailView
+// Event Detail View - Using StandardDetailPage pattern
 export const EventDetailView = ({ event, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...event });
@@ -5188,8 +4900,8 @@ export const EventDetailView = ({ event, onBack }) => {
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
-  const handleSave = async () => { await actions.updateEvent(event.id, form); };
-  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+  const handleSave = useCallback(async () => { await actions.updateEvent(event.id, form); }, [actions, event.id, form]);
+  const handleFieldChange = useCallback((field, value) => { setForm(prev => ({ ...prev, [field]: value })); }, []);
 
   // Handle opening the Task Edit Modal - Unified Task Handling Architecture
   const handleOpenTaskEdit = (task, context) => {
@@ -5229,10 +4941,6 @@ export const EventDetailView = ({ event, onBack }) => {
     
     setEditingTask(null);
     setEditingTaskContext(null);
-  };
-
-  const handleDeleteEvent = async () => {
-    if (confirm('Delete this event?')) { await actions.deleteEvent(event.id); onBack(); }
   };
 
   const currentEvent = useMemo(() => data.events.find(e => e.id === event.id) || event, [data.events, event]);
@@ -5277,106 +4985,42 @@ export const EventDetailView = ({ event, onBack }) => {
     return filtered;
   }, [eventTasks, eventCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex justify-between items-center mb-6">
-        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
-          <Icon name="ChevronLeft" size={16} /> Back to Events
-        </button>
-        <button onClick={handleDeleteEvent} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}>
-          <Icon name="Trash2" size={16} />
-        </button>
-      </div>
-
-      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        
-        {/* Event Title - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentEvent.title || 'Untitled Event'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Task Progress */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{eventProgressValue}%</div>
-          </div>
-          
-          {/* Event Date/Time */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Event Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {currentEvent.date || 'Not Set'} {currentEvent.time && `@ ${currentEvent.time}`}
-            </div>
-          </div>
-          
-          {/* Location */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Location</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-              {currentEvent.location || 'TBD'}
-            </div>
-          </div>
-          
-          {/* Number of Open Tasks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {openTasks.length}
-            </div>
-          </div>
-          
-          {/* Overdue Task Indicator */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
-              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
-            )}>
-              {overdueTasks.length}
-            </div>
-          </div>
-          
-          {/* Entry Cost */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Entry Cost</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
-              {formatMoney(currentEvent.entryCost || 0)}
-            </div>
-          </div>
-          
-          {/* Phase 2: Cost from Tasks - derived, not direct input */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Task Cost Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(costPaid)}
-            </div>
-          </div>
-          
-          {/* Phase 2: Total cost derived from tasks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Total Task Cost</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
-              {formatMoney(estimatedCost)}
-            </div>
-          </div>
-          
-          {/* Team Members */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
+  // Display Section - using DisplayInfoSection for consistency
+  const displaySection = (
+    <DisplayInfoSection
+      item={{ ...currentEvent, name: currentEvent.title }}
+      fields={[
+        { key: 'progress', label: 'Task Progress', bgClass: 'bg-yellow-100', render: () => `${eventProgressValue}%` },
+        { key: 'date', label: 'Event Date', bgClass: 'bg-blue-100', render: (item) => `${item.date || 'Not Set'}${item.time ? ` @ ${item.time}` : ''}` },
+        { key: 'location', label: 'Location', bgClass: 'bg-gray-100', default: 'TBD' },
+        { key: 'openTasks', label: 'Open Tasks', bgClass: 'bg-gray-100', render: () => openTasks.length },
+        { key: 'overdueTasks', label: 'Overdue Tasks', bgClass: overdueTasks.length > 0 ? 'bg-red-200' : 'bg-green-100', render: () => overdueTasks.length },
+        { key: 'entryCost', label: 'Entry Cost', bgClass: 'bg-purple-100', render: (item) => formatMoney(item.entryCost || 0) },
+        { key: 'costPaid', label: 'Task Cost Paid', bgClass: 'bg-green-100', render: () => formatMoney(costPaid) },
+        { key: 'estimatedCost', label: 'Total Task Cost', bgClass: 'bg-yellow-100', render: () => formatMoney(estimatedCost) },
+        { 
+          key: 'teamMembers',
+          label: 'Team Members on Tasks',
+          colSpan: 4,
+          render: () => assignedTeamMembers.length === 0 ? (
+            <span className="opacity-50">No team members assigned</span>
+          ) : (
             <div className="flex flex-wrap gap-2">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+              {assignedTeamMembers.map(m => (
+                <span key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
                   {m.name} {m.isMusician && '🎵'}
-                </div>
+                </span>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
+          )
+        }
+      ]}
+    />
+  );
 
-      {/* SECTION B: Basic Information (editable) */}
+  // Edit Section - Event Information and Attendees
+  const editSection = (
+    <>
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Event Information</h3>
         <div className="grid md:grid-cols-2 gap-4">
@@ -5400,7 +5044,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Location</label>
             <div className="flex gap-2">
               <input value={form.location || ''} onChange={e => handleFieldChange('location', e.target.value)} onBlur={handleSave} placeholder="Venue, City" className={cn("flex-1", THEME.punk.input)} />
-              {/* Phase 2.4: Map Button */}
               {form.location && (
                 <button 
                   onClick={() => {
@@ -5419,7 +5062,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Entry Cost</label>
             <input type="number" value={form.entryCost || 0} onChange={e => handleFieldChange('entryCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
           </div>
-          {/* Phase 2.3: Stage/Era/Tags for Events */}
           <div className="md:col-span-2">
             <EraStageTagsPicker
               value={{
@@ -5444,7 +5086,7 @@ export const EventDetailView = ({ event, onBack }) => {
         </div>
       </div>
 
-      {/* Phase 2.1: Attendees Module - Simple name-only list */}
+      {/* Attendees Module */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Attendees</h3>
         <div className="space-y-2">
@@ -5643,8 +5285,12 @@ export const EventDetailView = ({ event, onBack }) => {
           </div>
         </div>
       </div>
+    </>
+  );
 
-      {/* Unified Tasks Module - combines auto-generated and custom tasks */}
+  // Tasks Section - Unified Tasks Module
+  const tasksSection = (
+    <>
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <div className="flex flex-wrap justify-between items-center mb-4 border-b-4 border-black pb-2 gap-2">
           <h3 className="font-black uppercase">Tasks</h3>
@@ -5661,7 +5307,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <button onClick={() => setTaskSortDir(taskSortDir === 'asc' ? 'desc' : 'asc')} className={cn("px-2 py-1 text-xs", THEME.punk.btn)}>
               {taskSortDir === 'asc' ? '↑' : '↓'}
             </button>
-            {/* Phase 2.7: Recalculate auto-tasks for event */}
             <button 
               onClick={async () => {
                 if (currentEvent.date) {
@@ -5921,456 +5566,363 @@ export const EventDetailView = ({ event, onBack }) => {
           </div>
         </div>
       )}
-    </div>
+    </>
+  );
+
+  return (
+    <StandardDetailPage
+      item={currentEvent}
+      onBack={onBack}
+      backText="Back to Events"
+      onDelete={async () => { await actions.deleteEvent(event.id); onBack(); }}
+      displaySection={displaySection}
+      editSection={editSection}
+      tasksSection={tasksSection}
+    />
   );
 };
 
-// Expenses List View - Following same pattern as Songs and Releases
+// Expenses List View - Standardized Architecture
 export const ExpensesListView = ({ onSelectExpense }) => {
   const { data, actions } = useStore();
-  const [sortBy, setSortBy] = useState('date');
-  const [sortDir, setSortDir] = useState('desc');
-  const [filterCategory, setFilterCategory] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
-  const [viewMode, setViewMode] = useState('list');
-
-  const toggleSort = (field) => {
-    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
-  );
-
-  const expenses = useMemo(() => {
-    let filtered = [...(data.expenses || [])];
-    if (!showArchived) filtered = filtered.filter(e => !e.isArchived);
-    if (filterCategory !== 'all') filtered = filtered.filter(e => e.category === filterCategory);
-    filtered.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      if (sortBy === 'paidCost') { valA = getEffectiveCost(a); valB = getEffectiveCost(b); }
-      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
-      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
-    });
-    return filtered;
-  }, [data.expenses, sortBy, sortDir, filterCategory, showArchived]);
 
   const handleAddExpense = async () => {
-    const newExpense = await actions.addExpense({ name: 'New Expense', date: new Date().toISOString().split('T')[0], category: 'General' });
+    const newExpense = await actions.addExpense({ 
+      name: 'New Expense', 
+      date: new Date().toISOString().split('T')[0], 
+      category: 'General' 
+    });
     if (onSelectExpense) onSelectExpense(newExpense);
   };
 
+  // Get expense categories for filter
   const expenseCategories = useMemo(() => {
     const categories = new Set();
     (data.expenses || []).forEach(e => e.category && categories.add(e.category));
     return Array.from(categories);
   }, [data.expenses]);
 
-  const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + getEffectiveCost(e), 0), [expenses]);
+  // Filter expenses based on archived toggle
+  const filteredExpenses = useMemo(() => {
+    let expenses = [...(data.expenses || [])];
+    if (!showArchived) {
+      expenses = expenses.filter(e => !e.isArchived);
+    }
+    return expenses;
+  }, [data.expenses, showArchived]);
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Expenses</h2>
-        <div className="flex flex-wrap gap-2 items-center">
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Categories</option>
-            {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <label className="flex items-center gap-2 text-xs font-bold">
-            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="w-4 h-4" />
-            Show Archived
-          </label>
-          <button onClick={handleAddExpense} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Expense</button>
-        </div>
+  // Calculate total
+  const totalExpenses = useMemo(() => 
+    filteredExpenses.reduce((sum, e) => sum + getEffectiveCost(e), 0), 
+    [filteredExpenses]
+  );
+
+  // Column definitions
+  const columns = [
+    { field: 'name', label: 'Name', sortable: true, render: (item) => <span className="font-bold">{item.name}</span> },
+    { field: 'category', label: 'Category', sortable: true },
+    { field: 'date', label: 'Date', sortable: true },
+    { field: 'status', label: 'Status' },
+    { field: 'paidCost', label: 'Amount', sortable: true, align: 'right', render: (item) => (
+      <span className="font-bold text-green-600">{formatMoney(getEffectiveCost(item))}</span>
+    )}
+  ];
+
+  // Filter options
+  const filterOptions = [
+    { 
+      field: 'category', 
+      label: 'All Categories', 
+      options: expenseCategories.map(c => ({ value: c, label: c })) 
+    }
+  ];
+
+  // Render grid card
+  const renderGridCard = (expense) => (
+    <div 
+      key={expense.id} 
+      onClick={() => onSelectExpense?.(expense)} 
+      className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card, expense.isArchived && "opacity-50")}
+    >
+      <div className="font-bold text-lg mb-2">{expense.name}</div>
+      <div className="text-xs space-y-1">
+        <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{expense.category || '-'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{expense.date || '-'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Amount:</span><span className="font-bold text-green-600">{formatMoney(getEffectiveCost(expense))}</span></div>
       </div>
+      {expense.isArchived && <span className="mt-2 block text-xs text-orange-600 font-bold">ARCHIVED</span>}
+    </div>
+  );
 
+  // Render row actions
+  const renderActions = (expense) => (
+    <div className="flex gap-2 justify-center">
+      {!expense.isArchived ? (
+        <button onClick={(e) => { e.stopPropagation(); actions.archiveExpense(expense.id); }} className="text-orange-500 p-1 hover:bg-orange-50" title="Archive">
+          <Icon name="Archive" size={14} />
+        </button>
+      ) : (
+        <button onClick={(e) => { e.stopPropagation(); actions.updateExpense(expense.id, { isArchived: false }); }} className="text-green-500 p-1 hover:bg-green-50" title="Restore">↩</button>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete?')) actions.deleteExpense(expense.id); }} className="text-red-500 p-1 hover:bg-red-50" title="Delete">
+        <Icon name="Trash2" size={14} />
+      </button>
+    </div>
+  );
+
+  // Header extra content (totals and archive toggle)
+  const headerExtra = (
+    <>
+      <div className="flex items-center gap-4 mb-4">
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} className="w-4 h-4" />
+          Show Archived
+        </label>
+      </div>
       <div className={cn("p-4 mb-6", THEME.punk.card, "bg-green-50")}>
         <div className="flex justify-between items-center">
           <span className="font-bold">Total Expenses:</span>
           <span className="text-2xl font-black text-green-600">{formatMoney(totalExpenses)}</span>
         </div>
       </div>
-      
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {expenses.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No expenses yet.</div>
-          ) : expenses.map(expense => (
-            <div key={expense.id} onClick={() => onSelectExpense && onSelectExpense(expense)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card, expense.isArchived && "opacity-50")}>
-              <div className="font-bold text-lg mb-2">{expense.name}</div>
-              <div className="text-xs space-y-1">
-                <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{expense.category || '-'}</span></div>
-                <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{expense.date || '-'}</span></div>
-                <div className="flex justify-between"><span className="opacity-60">Amount:</span><span className="font-bold text-green-600">{formatMoney(getEffectiveCost(expense))}</span></div>
-              </div>
-              {expense.isArchived && <span className="mt-2 block text-xs text-orange-600 font-bold">ARCHIVED</span>}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('name')}>Name <SortIcon field="name" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('date')}>Date <SortIcon field="date" /></th>
-                <th className="p-3 text-left">Status</th>
-                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('paidCost')}>Amount <SortIcon field="paidCost" /></th>
-                <th className="p-3 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {expenses.length === 0 ? (
-                <tr><td colSpan="6" className="p-10 text-center opacity-50">No expenses yet.</td></tr>
-              ) : expenses.map(expense => (
-                <tr key={expense.id} className={cn("border-b border-gray-200 hover:bg-yellow-50", expense.isArchived && "opacity-50")}>
-                  <td className="p-3 font-bold cursor-pointer" onClick={() => onSelectExpense && onSelectExpense(expense)}>{expense.name}</td>
-                  <td className="p-3">{expense.category || '-'}</td>
-                  <td className="p-3">{expense.date || '-'}</td>
-                  <td className="p-3">{expense.status || '-'}</td>
-                  <td className="p-3 text-right font-bold text-green-600">{formatMoney(getEffectiveCost(expense))}</td>
-                  <td className="p-3 text-center">
-                    <div className="flex gap-2 justify-center">
-                      {!expense.isArchived ? (
-                        <button onClick={(e) => { e.stopPropagation(); actions.archiveExpense(expense.id); }} className="text-orange-500 p-1 hover:bg-orange-50" title="Archive"><Icon name="Archive" size={14} /></button>
-                      ) : (
-                        <button onClick={(e) => { e.stopPropagation(); actions.updateExpense(expense.id, { isArchived: false }); }} className="text-green-500 p-1 hover:bg-green-50" title="Restore">↩</button>
-                      )}
-                      <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete?')) actions.deleteExpense(expense.id); }} className="text-red-500 p-1 hover:bg-red-50" title="Delete"><Icon name="Trash2" size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+    </>
+  );
+
+  return (
+    <StandardListPage
+      title="Expenses"
+      items={filteredExpenses}
+      onSelectItem={onSelectExpense}
+      onAddItem={handleAddExpense}
+      columns={columns}
+      filterOptions={filterOptions}
+      renderGridCard={renderGridCard}
+      renderActions={renderActions}
+      headerExtra={headerExtra}
+      emptyMessage="No expenses yet."
+    />
   );
 };
 
-// Expense Detail View - SPECIAL CASE: Has validation for Complete status requiring paidCost > 0
+// Expense Detail View - Standardized Architecture
+// SPECIAL CASE: Has validation for Complete status requiring paidCost > 0
 export const ExpenseDetailView = ({ expense, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...expense });
   const [statusWarning, setStatusWarning] = useState('');
 
-  const handleSave = async () => { await actions.updateExpense(expense.id, form); };
-  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+  const handleSave = useCallback(async () => { 
+    await actions.updateExpense(expense.id, form); 
+  }, [actions, expense.id, form]);
+  
+  const handleFieldChange = useCallback((field, value) => { 
+    setForm(prev => ({ ...prev, [field]: value })); 
+  }, []);
 
   // SPECIAL VALIDATION: When status changes to Complete, check if paidCost > 0
   const handleStatusChange = (newStatus) => {
     if (newStatus === 'Complete' && (!form.paidCost || form.paidCost <= 0)) {
       setStatusWarning('Cannot set status to Complete without a Paid Amount greater than 0.');
-      return; // Don't change the status
+      return;
     }
     setStatusWarning('');
     handleFieldChange('status', newStatus);
     setTimeout(handleSave, 0);
   };
 
-  const handleDeleteExpense = async () => {
-    if (confirm('Delete this expense?')) { await actions.deleteExpense(expense.id); onBack(); }
-  };
+  const currentExpense = useMemo(() => 
+    data.expenses?.find(e => e.id === expense.id) || expense, 
+    [data.expenses, expense]
+  );
 
-  const currentExpense = useMemo(() => data.expenses?.find(e => e.id === expense.id) || expense, [data.expenses, expense]);
-
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex justify-between items-center mb-6">
-        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
-          <Icon name="ChevronLeft" size={16} /> Back to Expenses
-        </button>
-        <div className="flex gap-2">
-          {!currentExpense.isArchived ? (
-            <button onClick={() => { actions.archiveExpense(expense.id); onBack(); }} className={cn("px-4 py-2", THEME.punk.btn, "bg-orange-500 text-white")}><Icon name="Archive" size={16} /></button>
-          ) : (
-            <button onClick={() => actions.updateExpense(expense.id, { isArchived: false })} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Restore</button>
-          )}
-          <button onClick={handleDeleteExpense} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
-        </div>
-      </div>
-
-      {currentExpense.isArchived && (
-        <div className={cn("p-4 mb-6 bg-orange-100 border-4 border-orange-500", THEME.punk.card)}>
-          <span className="font-bold text-orange-800">⚠️ This expense is archived</span>
-        </div>
-      )}
-
-      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        
-        {/* Expense Name - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentExpense.name || 'Untitled Expense'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Status */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Status</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold",
-              currentExpense.status === 'Complete' ? "bg-green-100" : 
-              currentExpense.status === 'In Progress' ? "bg-yellow-100" : "bg-gray-100"
-            )}>
-              {currentExpense.status || 'Not Started'}
-            </div>
-          </div>
-          
-          {/* Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {currentExpense.date || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Amount Paid */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Amount Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(currentExpense.paidCost || 0)}
-            </div>
-          </div>
-          
-          {/* Category */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Category</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
-              {currentExpense.category || 'General'}
-            </div>
-          </div>
-          
-          {/* Phase 4.2: Vendor - show text or team members based on mode */}
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-2">Vendor/Payee</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-              {currentExpense.vendorMode === 'teamMember' && (currentExpense.teamMemberIds || []).length > 0 ? (
+  // Display Section
+  const displaySection = (
+    <DisplayInfoSection
+      item={currentExpense}
+      fields={[
+        { 
+          key: 'status', 
+          label: 'Status', 
+          bgClass: currentExpense.status === 'Complete' ? 'bg-green-100' : 
+                   currentExpense.status === 'In Progress' ? 'bg-yellow-100' : 'bg-gray-100',
+          default: 'Not Started'
+        },
+        { key: 'date', label: 'Date', bgClass: 'bg-blue-100', default: 'Not Set' },
+        { 
+          key: 'paidCost', 
+          label: 'Amount Paid', 
+          bgClass: 'bg-green-100',
+          render: (item) => formatMoney(item.paidCost || 0)
+        },
+        { key: 'category', label: 'Category', bgClass: 'bg-purple-100', default: 'General' },
+        { 
+          key: 'vendor', 
+          label: 'Vendor/Payee', 
+          colSpan: 2,
+          render: (item) => {
+            if (item.vendorMode === 'teamMember' && (item.teamMemberIds || []).length > 0) {
+              return (
                 <div className="flex flex-wrap gap-1">
-                  {(currentExpense.teamMemberIds || []).map(id => {
+                  {(item.teamMemberIds || []).map(id => {
                     const member = (data.teamMembers || []).find(m => m.id === id);
                     return member ? <span key={id} className="px-2 py-1 bg-blue-100 border border-blue-300 text-xs">{member.name}</span> : null;
                   })}
                 </div>
-              ) : currentExpense.vendorText ? (
-                currentExpense.vendorText
-              ) : currentExpense.vendorId ? (
-                (data.vendors || []).find(v => v.id === currentExpense.vendorId)?.name || 'Unknown Vendor'
-              ) : (
-                <span className="opacity-50">Not specified</span>
-              )}
-            </div>
-          </div>
-          
-          {/* Phase 4.4: Receipt Location */}
-          {currentExpense.receiptLocation && (
-            <div className="md:col-span-2">
-              <label className="block text-xs font-bold uppercase mb-2">Receipt Location</label>
-              <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-                {currentExpense.receiptLocation}
-              </div>
-            </div>
+              );
+            }
+            return item.vendorText || '-';
+          }
+        },
+        { key: 'receiptLocation', label: 'Receipt Location', colSpan: 2 }
+      ]}
+    />
+  );
+
+  // Edit Section
+  const editSection = (
+    <div className={cn("p-6 mb-6", THEME.punk.card)}>
+      <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Expense Information</h3>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Name</label>
+          <input value={form.name || ''} onChange={e => handleFieldChange('name', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Category</label>
+          <input value={form.category || ''} onChange={e => handleFieldChange('category', e.target.value)} onBlur={handleSave} placeholder="General, Marketing, Production" className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Date</label>
+          <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Status</label>
+          <select 
+            value={form.status || 'Not Started'} 
+            onChange={e => handleStatusChange(e.target.value)} 
+            className={cn("w-full", THEME.punk.input, statusWarning && "border-red-500")}
+          >
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {statusWarning && (
+            <div className="text-xs text-red-600 font-bold mt-1">⚠️ {statusWarning}</div>
           )}
-          
-          {/* Phase 4.5: Team Members */}
-          {(currentExpense.teamMemberIds || []).length > 0 && currentExpense.vendorMode !== 'teamMember' && (
-            <div className="md:col-span-4">
-              <label className="block text-xs font-bold uppercase mb-2">Team Members</label>
-              <div className="flex flex-wrap gap-2">
-                {(currentExpense.teamMemberIds || []).map(id => {
-                  const member = (data.teamMembers || []).find(m => m.id === id);
-                  return member ? (
-                    <span key={id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
-                      {member.name} {member.isMusician && '🎵'}
-                    </span>
-                  ) : null;
-                })}
-              </div>
+          <div className="text-[10px] text-gray-500 mt-1">Note: Setting to Complete requires Paid Amount &gt; 0</div>
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+          <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+          <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Paid Amount</label>
+          <input type="number" value={form.paidCost || 0} onChange={e => { handleFieldChange('paidCost', parseFloat(e.target.value) || 0); setStatusWarning(''); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Receipt Location</label>
+          <input value={form.receiptLocation || ''} onChange={e => handleFieldChange('receiptLocation', e.target.value)} onBlur={handleSave} placeholder="URL, file path, or note" className={cn("w-full", THEME.punk.input)} />
+        </div>
+        
+        {/* Vendor Mode Toggle */}
+        <div className="md:col-span-2">
+          <label className="block text-xs font-bold uppercase mb-1">Vendor/Payee</label>
+          <div className="flex gap-2 mb-2">
+            <button 
+              onClick={() => { handleFieldChange('vendorMode', 'text'); setTimeout(handleSave, 0); }}
+              className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode !== 'teamMember' ? "bg-black text-white" : "bg-white")}
+            >
+              Text Input
+            </button>
+            <button 
+              onClick={() => { handleFieldChange('vendorMode', 'teamMember'); setTimeout(handleSave, 0); }}
+              className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode === 'teamMember' ? "bg-black text-white" : "bg-white")}
+            >
+              Team Members
+            </button>
+          </div>
+          {form.vendorMode === 'teamMember' ? (
+            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
+              {(data.teamMembers || []).map(member => (
+                <label key={member.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={(form.teamMemberIds || []).includes(member.id)} 
+                    onChange={e => {
+                      const newIds = e.target.checked 
+                        ? [...(form.teamMemberIds || []), member.id]
+                        : (form.teamMemberIds || []).filter(id => id !== member.id);
+                      handleFieldChange('teamMemberIds', newIds);
+                      setTimeout(handleSave, 0);
+                    }}
+                    className="w-3 h-3" 
+                  />
+                  {member.name}
+                </label>
+              ))}
+              {(data.teamMembers || []).length === 0 && <span className="text-xs opacity-50">No team members available</span>}
             </div>
+          ) : (
+            <input 
+              value={form.vendorText || ''} 
+              onChange={e => handleFieldChange('vendorText', e.target.value)} 
+              onBlur={handleSave} 
+              placeholder="Vendor name or company" 
+              className={cn("w-full", THEME.punk.input)} 
+            />
           )}
         </div>
-      </div>
-
-      {/* SECTION B: Basic Information (editable) */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Expense Information</h3>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Name</label>
-            <input value={form.name || ''} onChange={e => handleFieldChange('name', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Category</label>
-            <input value={form.category || ''} onChange={e => handleFieldChange('category', e.target.value)} onBlur={handleSave} placeholder="General, Marketing, Production" className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Date</label>
-            <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Status</label>
-            <select 
-              value={form.status || 'Not Started'} 
-              onChange={e => handleStatusChange(e.target.value)} 
-              className={cn("w-full", THEME.punk.input, statusWarning && "border-red-500")}
-            >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {statusWarning && (
-              <div className="text-xs text-red-600 font-bold mt-1">⚠️ {statusWarning}</div>
-            )}
-            <div className="text-[10px] text-gray-500 mt-1">Note: Setting to Complete requires Paid Amount greater than 0</div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
-            <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
-            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Paid Amount</label>
-            <input type="number" value={form.paidCost || 0} onChange={e => { handleFieldChange('paidCost', parseFloat(e.target.value) || 0); setStatusWarning(''); }} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          {/* Phase 4.4: Receipt Location */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Receipt Location</label>
-            <input value={form.receiptLocation || ''} onChange={e => handleFieldChange('receiptLocation', e.target.value)} onBlur={handleSave} placeholder="URL, file path, or note" className={cn("w-full", THEME.punk.input)} />
-          </div>
-          
-          {/* Phase 4.2: Vendor Mode Toggle */}
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Vendor/Payee</label>
-            <div className="flex gap-2 mb-2">
-              <button 
-                onClick={() => { handleFieldChange('vendorMode', 'text'); setTimeout(handleSave, 0); }}
-                className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode !== 'teamMember' ? "bg-black text-white" : "bg-white")}
-              >
-                Text Input
-              </button>
-              <button 
-                onClick={() => { handleFieldChange('vendorMode', 'teamMember'); setTimeout(handleSave, 0); }}
-                className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode === 'teamMember' ? "bg-black text-white" : "bg-white")}
-              >
-                Team Members
-              </button>
-            </div>
-            {form.vendorMode === 'teamMember' ? (
-              <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px]">
-                {(data.teamMembers || []).map(member => (
-                  <label key={member.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={(form.teamMemberIds || []).includes(member.id)} 
-                      onChange={e => {
-                        const newIds = e.target.checked 
-                          ? [...(form.teamMemberIds || []), member.id]
-                          : (form.teamMemberIds || []).filter(id => id !== member.id);
-                        handleFieldChange('teamMemberIds', newIds);
-                        setTimeout(handleSave, 0);
-                      }}
-                      className="w-3 h-3" 
-                    />
-                    {member.name}
-                  </label>
-                ))}
-                {(data.teamMembers || []).length === 0 && <span className="text-xs opacity-50">No team members available</span>}
-              </div>
-            ) : (
-              <input 
-                value={form.vendorText || ''} 
-                onChange={e => handleFieldChange('vendorText', e.target.value)} 
-                onBlur={handleSave} 
-                placeholder="Vendor name or company" 
-                className={cn("w-full", THEME.punk.input)} 
-              />
-            )}
-          </div>
-          
-          {/* Phase 4.3: Stage/Era/Tags */}
-          <div className="md:col-span-2">
-            <EraStageTagsPicker
-              value={{
-                eraIds: form.eraIds || [],
-                stageIds: form.stageIds || [],
-                tagIds: form.tagIds || []
-              }}
-              onChange={({ eraIds, stageIds, tagIds }) => {
-                handleFieldChange('eraIds', eraIds);
-                handleFieldChange('stageIds', stageIds);
-                handleFieldChange('tagIds', tagIds);
-                setTimeout(handleSave, 0);
-              }}
-            />
-          </div>
-          
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
-            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
-          </div>
+        
+        {/* Era/Stage/Tags */}
+        <div className="md:col-span-2">
+          <EraStageTagsPicker
+            value={{
+              eraIds: form.eraIds || [],
+              stageIds: form.stageIds || [],
+              tagIds: form.tagIds || []
+            }}
+            onChange={({ eraIds, stageIds, tagIds }) => {
+              handleFieldChange('eraIds', eraIds);
+              handleFieldChange('stageIds', stageIds);
+              handleFieldChange('tagIds', tagIds);
+              setTimeout(handleSave, 0);
+            }}
+          />
+        </div>
+        
+        <div className="md:col-span-2">
+          <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+          <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Additional notes..." />
         </div>
       </div>
     </div>
   );
+
+  return (
+    <StandardDetailPage
+      item={currentExpense}
+      onBack={onBack}
+      backText="Back to Expenses"
+      onDelete={async () => { await actions.deleteExpense(expense.id); onBack(); }}
+      onArchive={!currentExpense.isArchived ? async () => { await actions.archiveExpense(expense.id); onBack(); } : undefined}
+      onRestore={currentExpense.isArchived ? () => actions.updateExpense(expense.id, { isArchived: false }) : undefined}
+      isArchived={currentExpense.isArchived}
+      displaySection={displaySection}
+      editSection={editSection}
+    />
+  );
 };
 
 
-// Videos List View - Phase 1 Video System Overhaul
-// Following unified Item/Page architecture (same template as Songs/Releases)
+// Videos List View - Standardized Architecture
 export const VideosListView = ({ onSelectVideo }) => {
   const { data, actions } = useStore();
-  const [sortBy, setSortBy] = useState('releaseDate');
-  const [sortDir, setSortDir] = useState('asc');
-  const [filterType, setFilterType] = useState('all');
-  const [viewMode, setViewMode] = useState('list');
-  // Phase 1.2: State for adding new video with type selection
   const [showAddVideoModal, setShowAddVideoModal] = useState(false);
   const [newVideoType, setNewVideoType] = useState('');
 
-  const toggleSort = (field) => {
-    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
-  );
-
-  const videoProgress = (video) => {
-    const tasks = [...(video.tasks || []), ...(video.customTasks || [])];
-    return calculateTaskProgress(tasks).progress;
-  };
-
-  // Collect all videos from songs and standalone
-  const allVideos = useMemo(() => {
-    const videos = [];
-    // Song videos
-    (data.songs || []).forEach(song => {
-      (song.videos || []).forEach(video => {
-        videos.push({
-          ...video,
-          _songId: song.id,
-          _songTitle: song.title,
-          _source: 'song'
-        });
-      });
-    });
-    // Standalone videos
-    (data.standaloneVideos || []).forEach(video => {
-      videos.push({
-        ...video,
-        _source: 'standalone'
-      });
-    });
-    return videos;
-  }, [data.songs, data.standaloneVideos]);
-
-  // Phase 1.1: Extended video types list
   const videoTypeOptions = [
     { key: 'lyric', label: 'Lyric Video' },
     { key: 'enhancedLyric', label: 'Enhanced Lyric' },
@@ -6381,37 +5933,36 @@ export const VideosListView = ({ onSelectVideo }) => {
     { key: 'custom', label: 'Custom' }
   ];
 
-  // Phase 1.1: Get video type label (supports both new single type and legacy types object)
   const getVideoTypeLabel = (video) => {
-    // New schema: videoType field
     if (video.videoType) {
       const found = videoTypeOptions.find(t => t.key === video.videoType);
       return found ? found.label : video.videoType;
     }
-    // Legacy support: extract from types object
     const labels = videoTypeOptions.filter(t => video.types?.[t.key]).map(t => t.label);
     return labels.length > 0 ? labels.join(', ') : 'None';
   };
 
-  const videos = useMemo(() => {
-    let filtered = [...allVideos];
-    if (filterType !== 'all') {
-      filtered = filtered.filter(v => v.types?.[filterType] || v.videoType === filterType);
-    }
-    filtered.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      if (sortBy === 'budgetedCost') { valA = a.budgetedCost || 0; valB = b.budgetedCost || 0; }
-      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
-      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
-    });
-    return filtered;
-  }, [allVideos, sortBy, sortDir, filterType]);
+  const videoProgress = (video) => {
+    const tasks = [...(video.tasks || []), ...(video.customTasks || [])];
+    return calculateTaskProgress(tasks).progress;
+  };
 
-  // Phase 1.2: Handle adding standalone video with type selection
+  // Collect all videos from songs and standalone
+  const allVideos = useMemo(() => {
+    const videos = [];
+    (data.songs || []).forEach(song => {
+      (song.videos || []).forEach(video => {
+        videos.push({ ...video, _songId: song.id, _songTitle: song.title, _source: 'song' });
+      });
+    });
+    (data.standaloneVideos || []).forEach(video => {
+      videos.push({ ...video, _source: 'standalone' });
+    });
+    return videos;
+  }, [data.songs, data.standaloneVideos]);
+
   const handleAddVideo = async () => {
     if (!newVideoType) return;
-    
     const typeLabel = videoTypeOptions.find(t => t.key === newVideoType)?.label || newVideoType;
     const newVideo = await actions.addStandaloneVideo({
       title: `New ${typeLabel}`,
@@ -6424,143 +5975,84 @@ export const VideosListView = ({ onSelectVideo }) => {
     if (onSelectVideo) onSelectVideo(newVideo);
   };
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Videos</h2>
-        <div className="flex flex-wrap gap-2">
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <select value={filterType} onChange={e => setFilterType(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Types</option>
-            {videoTypeOptions.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
-          {/* Phase 1.2: Opens modal to select type first */}
-          <button onClick={() => setShowAddVideoModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Video</button>
+  // Column definitions
+  const columns = [
+    { field: 'title', label: 'Title', sortable: true, render: (item) => (
+      <>
+        <span className="font-bold">{item.title}</span>
+        {item.timedExclusive && <span className="ml-2 px-1 py-0.5 bg-orange-100 border border-orange-500 text-[10px] font-bold text-orange-800">EXCL</span>}
+      </>
+    )},
+    { field: 'videoType', label: 'Type', render: (item) => <span className="px-2 py-1 bg-purple-100 text-[10px] font-bold border border-purple-500">{getVideoTypeLabel(item)}</span> },
+    { field: '_source', label: 'Source', render: (item) => item._source === 'song' ? item._songTitle : 'Standalone' },
+    { field: 'releaseDate', label: 'Date', sortable: true, render: (item) => item.releaseDate || '-' },
+    { field: 'progress', label: 'Progress', align: 'right', render: (item) => `${videoProgress(item)}%` },
+    { field: 'budgetedCost', label: 'Budget', sortable: true, align: 'right', render: (item) => formatMoney(item.budgetedCost || 0) }
+  ];
+
+  // Filter options
+  const filterOptions = [
+    { field: 'videoType', label: 'All Types', options: videoTypeOptions.map(t => ({ value: t.key, label: t.label })) }
+  ];
+
+  // Render grid card
+  const renderGridCard = (video) => (
+    <div key={video.id} onClick={() => onSelectVideo?.(video)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
+      <div className="font-bold text-lg mb-2">{video.title}</div>
+      <div className="text-xs space-y-1">
+        <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{getVideoTypeLabel(video)}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Source:</span><span className="font-bold">{video._source === 'song' ? video._songTitle : 'Standalone'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{video.releaseDate || 'TBD'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{videoProgress(video)}%</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Budget:</span><span className="font-bold">{formatMoney(video.budgetedCost || 0)}</span></div>
+      </div>
+      {video.timedExclusive && <div className="mt-2 px-2 py-1 bg-orange-100 border border-orange-500 text-[10px] font-bold text-orange-800">TIMED EXCLUSIVE</div>}
+    </div>
+  );
+
+  // Add Video Modal
+  const addVideoModal = showAddVideoModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className={cn("bg-white p-6 max-w-md w-full", THEME.punk.card)}>
+        <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+          <h3 className="font-black uppercase">Add New Video</h3>
+          <button onClick={() => { setShowAddVideoModal(false); setNewVideoType(''); }} className="text-2xl font-bold">×</button>
+        </div>
+        <div className="mb-4">
+          <label className="block text-xs font-bold uppercase mb-2">Select Video Type *</label>
+          <div className="grid grid-cols-2 gap-2">
+            {videoTypeOptions.map(type => (
+              <label key={type.key} className={cn("flex items-center gap-2 p-3 border-2 cursor-pointer font-bold text-sm", newVideoType === type.key ? "border-purple-500 bg-purple-100" : "border-black hover:bg-gray-50")}>
+                <input type="radio" name="videoType" value={type.key} checked={newVideoType === type.key} onChange={e => setNewVideoType(e.target.value)} className="w-4 h-4" />
+                {type.label}
+              </label>
+            ))}
+          </div>
+          <div className="text-xs text-gray-500 mt-2">Videos can only have one type. Choose the type before creating.</div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4 pt-4 border-t-2 border-gray-200">
+          <button onClick={() => { setShowAddVideoModal(false); setNewVideoType(''); }} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
+          <button onClick={handleAddVideo} disabled={!newVideoType} className={cn("px-4 py-2", THEME.punk.btn, newVideoType ? "bg-green-600 text-white" : "bg-gray-300 text-gray-500 cursor-not-allowed")}>Create Video</button>
         </div>
       </div>
-
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {videos.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No videos yet. Click Add Video to create one.</div>
-          ) : (
-            videos.map(video => (
-              <div key={video.id} onClick={() => onSelectVideo && onSelectVideo(video)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
-                <div className="font-bold text-lg mb-2">{video.title}</div>
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between"><span className="opacity-60">Type:</span><span className="font-bold">{getVideoTypeLabel(video)}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Source:</span><span className="font-bold">{video._source === 'song' ? video._songTitle : 'Standalone'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{video.releaseDate || 'TBD'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{videoProgress(video)}%</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Budget:</span><span className="font-bold">{formatMoney(video.budgetedCost || 0)}</span></div>
-                </div>
-                {video.timedExclusive && (
-                  <div className="mt-2 px-2 py-1 bg-orange-100 border border-orange-500 text-[10px] font-bold text-orange-800">TIMED EXCLUSIVE</div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
-                <th className="p-3 text-left">Type</th>
-                <th className="p-3 text-left">Source</th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('releaseDate')}>Date <SortIcon field="releaseDate" /></th>
-                <th className="p-3 text-right">Progress</th>
-                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('budgetedCost')}>Budget <SortIcon field="budgetedCost" /></th>
-              </tr>
-            </thead>
-            <tbody>
-              {videos.length === 0 ? (
-                <tr><td colSpan="6" className="p-10 text-center opacity-50">No videos yet. Click Add Video to create one.</td></tr>
-              ) : (
-                videos.map(video => (
-                  <tr key={video.id} onClick={() => onSelectVideo && onSelectVideo(video)} className="border-b border-gray-200 hover:bg-yellow-50 cursor-pointer">
-                    <td className="p-3 font-bold">
-                      {video.title}
-                      {video.timedExclusive && <span className="ml-2 px-1 py-0.5 bg-orange-100 border border-orange-500 text-[10px] font-bold text-orange-800">EXCL</span>}
-                    </td>
-                    <td className="p-3">
-                      <span className="px-2 py-1 bg-purple-100 text-[10px] font-bold border border-purple-500">{getVideoTypeLabel(video)}</span>
-                    </td>
-                    <td className="p-3">{video._source === 'song' ? video._songTitle : 'Standalone'}</td>
-                    <td className="p-3">{video.releaseDate || '-'}</td>
-                    <td className="p-3 text-right">{videoProgress(video)}%</td>
-                    <td className="p-3 text-right">{formatMoney(video.budgetedCost || 0)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Phase 1.2: Add Video Modal - Must pick a Type first */}
-      {showAddVideoModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={cn("bg-white p-6 max-w-md w-full", THEME.punk.card)}>
-            <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
-              <h3 className="font-black uppercase">Add New Video</h3>
-              <button onClick={() => { setShowAddVideoModal(false); setNewVideoType(''); }} className="text-2xl font-bold">×</button>
-            </div>
-            
-            <div className="mb-4">
-              <label className="block text-xs font-bold uppercase mb-2">Select Video Type *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {videoTypeOptions.map(type => (
-                  <label 
-                    key={type.key} 
-                    className={cn(
-                      "flex items-center gap-2 p-3 border-2 cursor-pointer font-bold text-sm",
-                      newVideoType === type.key 
-                        ? "border-purple-500 bg-purple-100" 
-                        : "border-black hover:bg-gray-50"
-                    )}
-                  >
-                    <input 
-                      type="radio" 
-                      name="videoType" 
-                      value={type.key}
-                      checked={newVideoType === type.key}
-                      onChange={e => setNewVideoType(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    {type.label}
-                  </label>
-                ))}
-              </div>
-              <div className="text-xs text-gray-500 mt-2">
-                Videos can only have one type. Choose the type before creating.
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-2 mt-4 pt-4 border-t-2 border-gray-200">
-              <button 
-                onClick={() => { setShowAddVideoModal(false); setNewVideoType(''); }} 
-                className={cn("px-4 py-2", THEME.punk.btn)}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleAddVideo} 
-                disabled={!newVideoType}
-                className={cn(
-                  "px-4 py-2", 
-                  THEME.punk.btn, 
-                  newVideoType ? "bg-green-600 text-white" : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                )}
-              >
-                Create Video
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
+  );
+
+  return (
+    <>
+      <StandardListPage
+        title="Videos"
+        items={allVideos}
+        onSelectItem={onSelectVideo}
+        onAddItem={() => setShowAddVideoModal(true)}
+        addButtonText="+ Add Video"
+        columns={columns}
+        filterOptions={filterOptions}
+        renderGridCard={renderGridCard}
+        emptyMessage="No videos yet. Click + Add Video to create one."
+      />
+      {addVideoModal}
+    </>
   );
 };
 
@@ -6742,6 +6234,50 @@ export const VideoDetailView = ({ video, onBack }) => {
     return filtered;
   }, [videoTasks, videoCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
+  // Display Section - using DisplayInfoSection for consistency
+  const displaySection = (
+    <DisplayInfoSection
+      item={{ ...currentVideo, name: currentVideo.title }}
+      fields={[
+        { key: 'progress', label: 'Task Progress', bgClass: 'bg-yellow-100', render: () => `${videoProgressValue}%` },
+        { key: 'releaseDate', label: 'Release Date', bgClass: 'bg-blue-100', default: 'Not Set' },
+        { key: 'videoType', label: 'Video Type', bgClass: 'bg-purple-100', render: () => (
+          <>
+            {getVideoTypeLabel(getCurrentVideoType)}
+            {currentVideo.isAutogenerated && <span className="ml-2 text-[10px] text-gray-500">(Auto)</span>}
+          </>
+        )},
+        { key: 'openTasks', label: 'Open Tasks', bgClass: 'bg-gray-100', render: () => openTasks.length },
+        { key: 'overdueTasks', label: 'Overdue Tasks', bgClass: overdueTasks.length > 0 ? 'bg-red-200' : 'bg-green-100', render: () => overdueTasks.length },
+        { key: 'estimatedCost', label: 'Est. Cost (Tasks)', bgClass: isOverBudget ? 'bg-red-200' : 'bg-yellow-100', render: () => (
+          <>
+            {formatMoney(totalEstimatedCost)}
+            {isOverBudget && <span className="ml-1 text-red-600 text-[10px] font-bold">OVER</span>}
+          </>
+        )},
+        { key: 'budgetedCost', label: 'Budgeted Cost', bgClass: 'bg-blue-100', render: () => formatMoney(budgetedCost) },
+        { key: 'costPaid', label: 'Cost Paid', bgClass: 'bg-green-100', render: () => formatMoney(costPaid) },
+        { key: 'source', label: 'Source', bgClass: 'bg-gray-100', render: () => video._source === 'song' ? video._songTitle : 'Standalone' },
+        { 
+          key: 'teamMembers',
+          label: 'Team Members on Tasks',
+          colSpan: 4,
+          render: () => assignedTeamMembers.length === 0 ? (
+            <span className="opacity-50">No team members assigned</span>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {assignedTeamMembers.map(m => (
+                <span key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+                  {m.name} {m.isMusician && '🎵'}
+                </span>
+              ))}
+            </div>
+          )
+        }
+      ]}
+    />
+  );
+
   return (
     <div className="p-6 pb-24">
       <div className="flex justify-between items-center mb-6">
@@ -6753,103 +6289,8 @@ export const VideoDetailView = ({ video, onBack }) => {
         </button>
       </div>
 
-      {/* SECTION A: Display Information (read-only) - Following SongDetailView pattern */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Display Information</h3>
-        
-        {/* Video Title - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentVideo.title || 'Untitled Video'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Task Progress */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Task Progress</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-lg font-black">{videoProgressValue}%</div>
-          </div>
-          
-          {/* Release Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Release Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {currentVideo.releaseDate || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Phase 1.1: Video Type (single type) */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Video Type</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
-              {getVideoTypeLabel(getCurrentVideoType)}
-              {currentVideo.isAutogenerated && <span className="ml-2 text-[10px] text-gray-500">(Auto)</span>}
-            </div>
-          </div>
-          
-          {/* Number of Open Tasks */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Open Tasks</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-lg font-black">
-              {openTasks.length}
-            </div>
-          </div>
-          
-          {/* Overdue Task Indicator */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Overdue Tasks</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-lg font-black", 
-              overdueTasks.length > 0 ? "bg-red-200" : "bg-green-100"
-            )}>
-              {overdueTasks.length}
-            </div>
-          </div>
-          
-          {/* Phase 1.5: Total Estimated Cost (from tasks) with Over Budget indicator */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Est. Cost (Tasks)</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold", isOverBudget ? "bg-red-200" : "bg-yellow-100")}>
-              {formatMoney(totalEstimatedCost)}
-              {isOverBudget && <span className="ml-1 text-red-600 text-[10px] font-bold">OVER</span>}
-            </div>
-          </div>
-          
-          {/* Phase 1.5: Budgeted Cost */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Budgeted Cost</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {formatMoney(budgetedCost)}
-            </div>
-          </div>
-          
-          {/* Cost Paid */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(costPaid)}
-            </div>
-          </div>
-          
-          {/* Source */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Source</label>
-            <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-              {video._source === 'song' ? video._songTitle : 'Standalone'}
-            </div>
-          </div>
-          
-          {/* Team Members */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase mb-2">Team Members on Tasks</label>
-            <div className="flex flex-wrap gap-2">
-              {assignedTeamMembers.length === 0 ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
-                  {m.name} {m.isMusician && '🎵'}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Display Section */}
+      {displaySection}
 
       {/* SECTION B: Video Information (editable) - Phase 1 Updates */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
@@ -7293,60 +6734,31 @@ export const VideoDetailView = ({ video, onBack }) => {
   );
 };
 
-// Global Tasks List View - Following unified Item/Page architecture (same template as Songs/Releases)
+// Global Tasks List View - Standardized Architecture
 // Phase 5: Enhanced with Category management
 export const GlobalTasksListView = ({ onSelectTask }) => {
   const { data, actions } = useStore();
-  const [sortBy, setSortBy] = useState('date');
-  const [sortDir, setSortDir] = useState('asc');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
   const [filterArchived, setFilterArchived] = useState('active');
-  const [viewMode, setViewMode] = useState('list');
   const [newCategoryName, setNewCategoryName] = useState('');
-  // Phase 5.1: Manage categories modal
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
 
-  const toggleSort = (field) => {
-    if (sortBy === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => (
-    <span>{sortBy === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}</span>
-  );
-
-  // Phase 5.1: Categories as Items - user-created only, no prefilled categories
+  // Phase 5.1: Categories as Items
   const allCategories = useMemo(() => {
-    // Only show user-created categories (taskCategories collection)
-    // Phase 5.1: No prefilled categories - users create their own
     return (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
   }, [data.taskCategories]);
 
-  const tasks = useMemo(() => {
-    let filtered = [...(data.globalTasks || [])];
+  // Filter tasks based on archived state
+  const filteredTasks = useMemo(() => {
+    let tasks = [...(data.globalTasks || [])];
     if (filterArchived === 'active') {
-      filtered = filtered.filter(t => !t.isArchived && t.status !== 'Done');
+      tasks = tasks.filter(t => !t.isArchived && t.status !== 'Done');
     } else if (filterArchived === 'archived') {
-      filtered = filtered.filter(t => t.isArchived);
+      tasks = tasks.filter(t => t.isArchived);
     } else if (filterArchived === 'done') {
-      filtered = filtered.filter(t => t.status === 'Done');
+      tasks = tasks.filter(t => t.status === 'Done');
     }
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(t => t.category === filterCategory);
-    }
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(t => t.status === filterStatus);
-    }
-    filtered.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      if (sortBy === 'estimatedCost') { valA = getEffectiveCost(a); valB = getEffectiveCost(b); }
-      if (sortDir === 'asc') { return valA < valB ? -1 : valA > valB ? 1 : 0; }
-      else { return valA > valB ? -1 : valA < valB ? 1 : 0; }
-    });
-    return filtered;
-  }, [data.globalTasks, sortBy, sortDir, filterCategory, filterStatus, filterArchived]);
+    return tasks;
+  }, [data.globalTasks, filterArchived]);
 
   const handleAddTask = async () => {
     const newTask = await actions.addGlobalTask({
@@ -7359,44 +6771,83 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     if (onSelectTask) onSelectTask(newTask);
   };
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-        <h2 className={THEME.punk.textStyle}>Global Tasks</h2>
-        <div className="flex flex-wrap gap-2">
-          <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Categories</option>
-            {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All Status</option>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="done">Done</option>
-            <option value="archived">Archived</option>
-          </select>
-          {/* Phase 5.1 & 5.3: Manage Categories button */}
-          <button onClick={() => setShowManageCategoriesModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
-            <Icon name="Folder" size={16} className="inline mr-1" /> Categories
-          </button>
-          <button onClick={handleAddTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Task</button>
-        </div>
-      </div>
+  // Column definitions
+  const columns = [
+    { field: 'taskName', label: 'Task Name', sortable: true, render: (item) => <span className="font-bold">{item.taskName}</span> },
+    { field: 'category', label: 'Category', sortable: true },
+    { field: 'date', label: 'Date', sortable: true },
+    { field: 'status', label: 'Status', sortable: true },
+    { field: 'estimatedCost', label: 'Est. Cost', sortable: true, align: 'right', render: (item) => formatMoney(getEffectiveCost(item)) }
+  ];
 
-      {/* Phase 5.1: Manage Categories Modal */}
+  // Filter options
+  const filterOptions = [
+    { 
+      field: 'category', 
+      label: 'All Categories', 
+      options: allCategories.map(c => ({ value: c.name, label: c.name })) 
+    },
+    {
+      field: 'status',
+      label: 'All Status',
+      options: STATUS_OPTIONS.map(s => ({ value: s, label: s }))
+    }
+  ];
+
+  // Render grid card
+  const renderGridCard = (task) => (
+    <div key={task.id} onClick={() => onSelectTask?.(task)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card, task.isArchived && "opacity-50")}>
+      <div className="font-bold text-lg mb-2">{task.taskName}</div>
+      <div className="text-xs space-y-1">
+        <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{task.category || '-'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{task.date || 'TBD'}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Status:</span><span className="font-bold">{task.status}</span></div>
+        <div className="flex justify-between"><span className="opacity-60">Est. Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(task))}</span></div>
+      </div>
+      {task.isArchived && <span className="mt-2 block text-xs text-orange-600 font-bold">ARCHIVED</span>}
+    </div>
+  );
+
+  // Render row actions
+  const renderActions = (task) => (
+    <div className="flex gap-2 justify-center">
+      {!task.isArchived ? (
+        <button onClick={(e) => { e.stopPropagation(); actions.archiveGlobalTask(task.id); }} className="text-orange-500 p-1 hover:bg-orange-50" title="Archive">
+          <Icon name="Archive" size={14} />
+        </button>
+      ) : (
+        <button onClick={(e) => { e.stopPropagation(); actions.updateGlobalTask(task.id, { isArchived: false }); }} className="text-green-500 p-1 hover:bg-green-50" title="Restore">↩</button>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete?')) actions.deleteGlobalTask(task.id); }} className="text-red-500 p-1 hover:bg-red-50" title="Delete">
+        <Icon name="Trash2" size={14} />
+      </button>
+    </div>
+  );
+
+  // Header extra content
+  const headerExtra = (
+    <>
+      <div className="flex items-center gap-4 mb-4">
+        <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="done">Done</option>
+          <option value="archived">Archived</option>
+        </select>
+        <button onClick={() => setShowManageCategoriesModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
+          <Icon name="Folder" size={16} className="inline mr-1" /> Categories
+        </button>
+      </div>
+      
+      {/* Manage Categories Modal */}
       {showManageCategoriesModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={cn("bg-white p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto", THEME.punk.card)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowManageCategoriesModal(false)}>
+          <div className={cn("bg-white p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
               <h3 className="font-black uppercase">Manage Categories</h3>
               <button onClick={() => setShowManageCategoriesModal(false)} className="text-2xl font-bold">×</button>
             </div>
             
-            {/* Phase 5.3: Add Category Form */}
             <div className="mb-4 p-3 bg-gray-50 border-2 border-black">
               <div className="flex gap-2">
                 <input 
@@ -7419,7 +6870,6 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
               </div>
             </div>
             
-            {/* Phase 5.1: List of Category Items */}
             <div className="space-y-2">
               {(data.taskCategories || []).length === 0 ? (
                 <div className="p-4 text-center text-sm opacity-50">
@@ -7452,108 +6902,51 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
                 })
               )}
             </div>
-            
-            <div className="mt-4 pt-4 border-t-2 border-gray-200 text-xs text-gray-500">
-              <p>💡 Categories help organize your global tasks. Tasks without a category belong to an invisible default.</p>
-            </div>
           </div>
         </div>
       )}
+    </>
+  );
 
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {tasks.length === 0 ? (
-            <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No tasks yet. Click Add Task to create one.</div>
-          ) : (
-            tasks.map(task => (
-              <div key={task.id} onClick={() => onSelectTask && onSelectTask(task)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card, task.isArchived && "opacity-50")}>
-                <div className="font-bold text-lg mb-2">{task.taskName}</div>
-                <div className="text-xs space-y-1">
-                  <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{task.category || '-'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Date:</span><span className="font-bold">{task.date || 'TBD'}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Status:</span><span className="font-bold">{task.status}</span></div>
-                  <div className="flex justify-between"><span className="opacity-60">Est. Cost:</span><span className="font-bold">{formatMoney(getEffectiveCost(task))}</span></div>
-                </div>
-                {task.isArchived && <span className="mt-2 block text-xs text-orange-600 font-bold">ARCHIVED</span>}
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
-        <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-black text-white">
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('taskName')}>Task Name <SortIcon field="taskName" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('category')}>Category <SortIcon field="category" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('date')}>Date <SortIcon field="date" /></th>
-                <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('status')}>Status <SortIcon field="status" /></th>
-                <th className="p-3 text-right cursor-pointer" onClick={() => toggleSort('estimatedCost')}>Est. Cost <SortIcon field="estimatedCost" /></th>
-                <th className="p-3 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.length === 0 ? (
-                <tr><td colSpan="6" className="p-10 text-center opacity-50">No tasks yet. Click Add Task to create one.</td></tr>
-              ) : (
-                tasks.map(task => (
-                  <tr key={task.id} className={cn("border-b border-gray-200 hover:bg-yellow-50 cursor-pointer", task.isArchived && "opacity-50")} onClick={() => onSelectTask && onSelectTask(task)}>
-                    <td className="p-3 font-bold">{task.taskName}</td>
-                    <td className="p-3">{task.category || '-'}</td>
-                    <td className="p-3">{task.date || '-'}</td>
-                    <td className="p-3">{task.status}</td>
-                    <td className="p-3 text-right">{formatMoney(getEffectiveCost(task))}</td>
-                    <td className="p-3 text-center">
-                      <div className="flex gap-2 justify-center">
-                        {!task.isArchived ? (
-                          <button onClick={(e) => { e.stopPropagation(); actions.archiveGlobalTask(task.id); }} className="text-orange-500 p-1 hover:bg-orange-50" title="Archive"><Icon name="Archive" size={14} /></button>
-                        ) : (
-                          <button onClick={(e) => { e.stopPropagation(); actions.updateGlobalTask(task.id, { isArchived: false }); }} className="text-green-500 p-1 hover:bg-green-50" title="Restore">↩</button>
-                        )}
-                        <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete?')) actions.deleteGlobalTask(task.id); }} className="text-red-500 p-1 hover:bg-red-50" title="Delete"><Icon name="Trash2" size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+  return (
+    <StandardListPage
+      title="Global Tasks"
+      items={filteredTasks}
+      onSelectItem={onSelectTask}
+      onAddItem={handleAddTask}
+      addButtonText="+ Add Task"
+      columns={columns}
+      filterOptions={filterOptions}
+      renderGridCard={renderGridCard}
+      renderActions={renderActions}
+      headerExtra={headerExtra}
+      emptyMessage="No tasks yet. Click + Add Task to create one."
+    />
   );
 };
 
-// Global Task Detail View - Phase 5.2: Uses Task More/Edit Info Page, NOT an Item Edit/More Info Page
-// This focuses on task-specific editing rather than full item management
+// Global Task Detail View - Standardized Architecture
+// Phase 5.2: Uses Task More/Edit Info Page, NOT an Item Edit/More Info Page
 export const GlobalTaskDetailView = ({ task, onBack }) => {
   const { data, actions } = useStore();
   const [form, setForm] = useState({ ...task });
   const [newAssignments, setNewAssignments] = useState({ memberId: '', cost: 0 });
-  // Phase 5.3: State for adding new category inline
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
-  // Phase 5.1: Categories as Items - show only user-created categories, no prefilled
   const allCategories = useMemo(() => {
-    // Phase 5.1: No prefilled categories - users create their own
     return (data.taskCategories || []).map(c => ({ ...c, isLegacy: false }));
   }, [data.taskCategories]);
 
-  const handleSave = async () => { await actions.updateGlobalTask(task.id, form); };
-  const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
+  const handleSave = useCallback(async () => { 
+    await actions.updateGlobalTask(task.id, form); 
+  }, [actions, task.id, form]);
+  
+  const handleFieldChange = useCallback((field, value) => { 
+    setForm(prev => ({ ...prev, [field]: value })); 
+  }, []);
 
-  const handleDeleteTask = async () => {
-    if (confirm('Delete this task?')) { await actions.deleteGlobalTask(task.id); onBack(); }
-  };
-
-  const handleArchive = async () => {
-    await actions.archiveGlobalTask(task.id);
-    onBack();
-  };
-
-  // Phase 5.3: Add new category and assign this task to it
   const handleAddCategoryAndAssign = async () => {
     if (newCategoryName.trim()) {
       const newCategory = await actions.addTaskCategory({ name: newCategoryName.trim() });
@@ -7581,246 +6974,208 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
     setTimeout(handleSave, 0);
   };
 
-  const currentTask = useMemo(() => (data.globalTasks || []).find(t => t.id === task.id) || task, [data.globalTasks, task]);
+  const currentTask = useMemo(() => 
+    (data.globalTasks || []).find(t => t.id === task.id) || task, 
+    [data.globalTasks, task]
+  );
   
-  // Get assigned members list
   const assignedTeamMembers = useMemo(() => {
     const memberIds = new Set();
     (currentTask.assignedMembers || []).forEach(m => memberIds.add(m.memberId));
     return teamMembers.filter(m => memberIds.has(m.id));
   }, [currentTask, teamMembers]);
 
-  return (
-    <div className="p-6 pb-24">
-      <div className="flex justify-between items-center mb-6">
-        <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
-          <Icon name="ChevronLeft" size={16} /> Back to Tasks
-        </button>
-        <div className="flex gap-2">
-          {!currentTask.isArchived ? (
-            <button onClick={handleArchive} className={cn("px-4 py-2", THEME.punk.btn, "bg-orange-500 text-white")}><Icon name="Archive" size={16} /></button>
+  // Display Section
+  const displaySection = (
+    <DisplayInfoSection
+      item={{ ...currentTask, name: currentTask.taskName }}
+      fields={[
+        { 
+          key: 'status', 
+          label: 'Status', 
+          bgClass: currentTask.status === 'Complete' || currentTask.status === 'Done' ? 'bg-green-100' : 
+                   currentTask.status === 'In Progress' || currentTask.status === 'In-Progress' ? 'bg-yellow-100' : 'bg-gray-100',
+          default: 'Not Started'
+        },
+        { key: 'date', label: 'Due Date', bgClass: 'bg-blue-100', default: 'Not Set' },
+        { key: 'category', label: 'Category', bgClass: 'bg-purple-100', default: 'Other' },
+        { 
+          key: 'paidCost', 
+          label: 'Cost Paid', 
+          bgClass: 'bg-green-100',
+          render: (item) => formatMoney(item.paidCost || 0)
+        },
+        { 
+          key: 'estimatedCost', 
+          label: 'Estimated Cost', 
+          bgClass: 'bg-yellow-100',
+          render: (item) => formatMoney(item.estimatedCost || 0)
+        },
+        ...(currentTask.assignedTo ? [{ key: 'assignedTo', label: 'Assigned To' }] : []),
+        { 
+          key: 'teamMembers',
+          label: 'Assigned Members',
+          colSpan: 4,
+          render: () => assignedTeamMembers.length === 0 && !currentTask.assignedTo ? (
+            <span className="opacity-50">No team members assigned</span>
           ) : (
-            <button onClick={() => { actions.updateGlobalTask(task.id, { isArchived: false }); }} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-500 text-white")}>Restore</button>
-          )}
-          <button onClick={handleDeleteTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
-        </div>
-      </div>
-
-      {currentTask.isArchived && (
-        <div className={cn("p-4 mb-6 bg-orange-100 border-4 border-orange-500", THEME.punk.card)}>
-          <span className="font-bold text-orange-800">⚠️ This task is archived</span>
-        </div>
-      )}
-
-      {/* Phase 5.2: SECTION A - Task Display Information (read-only summary) */}
-      <div className={cn("p-6 mb-6 bg-gray-50", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Summary</h3>
-        
-        {/* Task Name - prominent at top */}
-        <div className="text-2xl font-black mb-4 pb-2 border-b-2 border-gray-300">{currentTask.taskName || 'Untitled Task'}</div>
-        
-        <div className="grid md:grid-cols-4 gap-4">
-          {/* Status */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Status</label>
-            <div className={cn("px-3 py-2 border-2 border-black text-sm font-bold",
-              currentTask.status === 'Complete' || currentTask.status === 'Done' ? "bg-green-100" : 
-              currentTask.status === 'In Progress' ? "bg-yellow-100" : "bg-gray-100"
-            )}>
-              {currentTask.status || 'Not Started'}
-            </div>
-          </div>
-          
-          {/* Due Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Due Date</label>
-            <div className="px-3 py-2 bg-blue-100 border-2 border-black text-sm font-bold">
-              {currentTask.date || 'Not Set'}
-            </div>
-          </div>
-          
-          {/* Category */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Category</label>
-            <div className="px-3 py-2 bg-purple-100 border-2 border-black text-sm font-bold">
-              {currentTask.category || 'Other'}
-            </div>
-          </div>
-          
-          {/* Cost Paid */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Cost Paid</label>
-            <div className="px-3 py-2 bg-green-100 border-2 border-black text-sm font-bold">
-              {formatMoney(currentTask.paidCost || 0)}
-            </div>
-          </div>
-          
-          {/* Estimated Cost */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-2">Estimated Cost</label>
-            <div className="px-3 py-2 bg-yellow-100 border-2 border-black text-sm font-bold">
-              {formatMoney(currentTask.estimatedCost || 0)}
-            </div>
-          </div>
-          
-          {/* Assigned To (legacy field) */}
-          {currentTask.assignedTo && (
-            <div>
-              <label className="block text-xs font-bold uppercase mb-2">Assigned To</label>
-              <div className="px-3 py-2 bg-gray-100 border-2 border-black text-sm font-bold">
-                {currentTask.assignedTo}
-              </div>
-            </div>
-          )}
-          
-          {/* Team Members */}
-          <div className="md:col-span-4">
-            <label className="block text-xs font-bold uppercase mb-2">Assigned Members</label>
             <div className="flex flex-wrap gap-2">
-              {assignedTeamMembers.length === 0 && !currentTask.assignedTo ? (
-                <span className="text-xs opacity-50">No team members assigned</span>
-              ) : assignedTeamMembers.map(m => (
-                <div key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
+              {assignedTeamMembers.map(m => (
+                <span key={m.id} className="px-2 py-1 bg-purple-100 border-2 border-black text-xs font-bold">
                   {m.name} {m.isMusician && '🎵'}
-                </div>
+                </span>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
+          )
+        }
+      ]}
+    />
+  );
 
-      {/* Phase 5.2: SECTION B - Task Information (editable) - Task-focused editing */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Information</h3>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
-            <input value={form.taskName || ''} onChange={e => handleFieldChange('taskName', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+  // Edit Section
+  const editSection = (
+    <div className={cn("p-6 mb-6", THEME.punk.card)}>
+      <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Task Information</h3>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
+          <input value={form.taskName || ''} onChange={e => handleFieldChange('taskName', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Category</label>
+          <div className="flex gap-2">
+            <select 
+              value={form.category || ''} 
+              onChange={e => { 
+                handleFieldChange('category', e.target.value); 
+                const cat = allCategories.find(c => c.name === e.target.value);
+                if (cat && !cat.isLegacy) {
+                  handleFieldChange('categoryId', cat.id);
+                }
+                setTimeout(handleSave, 0); 
+              }} 
+              className={cn("flex-1", THEME.punk.input)}
+            >
+              <option value="">No Category</option>
+              {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+            <button 
+              onClick={() => setShowAddCategory(!showAddCategory)}
+              className={cn("px-3 py-2 text-xs", THEME.punk.btn, showAddCategory ? "bg-gray-500 text-white" : "bg-purple-600 text-white")}
+              title="Add New Category"
+            >
+              {showAddCategory ? '×' : '+'}
+            </button>
           </div>
-          {/* Phase 5.1 & 5.3: Category with Add Category option */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Category</label>
-            <div className="flex gap-2">
-              <select 
-                value={form.category || ''} 
-                onChange={e => { 
-                  handleFieldChange('category', e.target.value); 
-                  // Find matching category ID
-                  const cat = allCategories.find(c => c.name === e.target.value);
-                  if (cat && !cat.isLegacy) {
-                    handleFieldChange('categoryId', cat.id);
-                  }
-                  setTimeout(handleSave, 0); 
-                }} 
-                className={cn("flex-1", THEME.punk.input)}
-              >
-                <option value="">No Category</option>
-                {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-              {/* Phase 5.3: Add Category button */}
-              <button 
-                onClick={() => setShowAddCategory(!showAddCategory)}
-                className={cn("px-3 py-2 text-xs", THEME.punk.btn, showAddCategory ? "bg-gray-500 text-white" : "bg-purple-600 text-white")}
-                title="Add New Category"
-              >
-                {showAddCategory ? '×' : '+'}
+          {showAddCategory && (
+            <div className="flex gap-2 mt-2">
+              <input 
+                value={newCategoryName} 
+                onChange={e => setNewCategoryName(e.target.value)} 
+                placeholder="New category name"
+                className={cn("flex-1 text-xs", THEME.punk.input)}
+                onKeyDown={e => e.key === 'Enter' && handleAddCategoryAndAssign()}
+              />
+              <button onClick={handleAddCategoryAndAssign} className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>
+                Add &amp; Assign
               </button>
             </div>
-            {/* Phase 5.3: Inline Add Category form */}
-            {showAddCategory && (
-              <div className="flex gap-2 mt-2">
-                <input 
-                  value={newCategoryName} 
-                  onChange={e => setNewCategoryName(e.target.value)} 
-                  placeholder="New category name"
-                  className={cn("flex-1 text-xs", THEME.punk.input)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddCategoryAndAssign()}
-                />
-                <button 
-                  onClick={handleAddCategoryAndAssign}
-                  className={cn("px-3 py-1 text-xs", THEME.punk.btn, "bg-green-600 text-white")}
-                >
-                  Add & Assign
-                </button>
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
-            <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Status</label>
-            <select value={form.status || 'Not Started'} onChange={e => { handleFieldChange('status', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
-            <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
-            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
-            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text)</span></label>
-            <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
-            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Task notes and details..." />
-          </div>
-          {/* Era/Stage/Tags */}
-          <div className="md:col-span-2">
-            <EraStageTagsPicker
-              value={{
-                eraIds: form.eraIds || [],
-                stageIds: form.stageIds || [],
-                tagIds: form.tagIds || []
-              }}
-              onChange={({ eraIds, stageIds, tagIds }) => {
-                handleFieldChange('eraIds', eraIds);
-                handleFieldChange('stageIds', stageIds);
-                handleFieldChange('tagIds', tagIds);
-                setTimeout(handleSave, 0);
-              }}
-            />
-          </div>
+          )}
         </div>
-      </div>
-
-      {/* Team Member Assignments */}
-      <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Team Member Assignments</h3>
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2 mb-3">
-            {(form.assignedMembers || []).length === 0 ? (
-              <span className="text-xs opacity-50">No team members assigned yet</span>
-            ) : (form.assignedMembers || []).map((m, index) => {
-              const member = teamMembers.find(tm => tm.id === m.memberId);
-              return (
-                <div key={index} className="flex items-center gap-2 px-3 py-2 bg-purple-100 border-2 border-black">
-                  <span className="text-sm font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>
-                  <button onClick={() => removeAssignment(index)} className="text-red-500 text-sm font-bold">✕</button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex gap-2">
-            <select value={newAssignments.memberId} onChange={e => setNewAssignments(prev => ({ ...prev, memberId: e.target.value }))} className={cn("flex-1 text-sm", THEME.punk.input)}>
-              <option value="">Select team member...</option>
-              {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-            <input type="number" value={newAssignments.cost} onChange={e => setNewAssignments(prev => ({ ...prev, cost: e.target.value }))} placeholder="Cost" className={cn("w-24 text-sm", THEME.punk.input)} />
-            <button onClick={addAssignment} className={cn("px-4 py-2 text-sm", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
-          </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Due Date</label>
+          <input type="date" value={form.date || ''} onChange={e => handleFieldChange('date', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Status</label>
+          <select value={form.status || 'Not Started'} onChange={e => { handleFieldChange('status', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+          <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
+          <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
+          <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+        </div>
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Assigned To <span className="text-gray-400">(Simple text)</span></label>
+          <input value={form.assignedTo || ''} onChange={e => handleFieldChange('assignedTo', e.target.value)} onBlur={handleSave} placeholder="Person name" className={cn("w-full", THEME.punk.input)} />
+        </div>
+        
+        {/* Era/Stage/Tags */}
+        <div className="md:col-span-2">
+          <EraStageTagsPicker
+            value={{
+              eraIds: form.eraIds || [],
+              stageIds: form.stageIds || [],
+              tagIds: form.tagIds || []
+            }}
+            onChange={({ eraIds, stageIds, tagIds }) => {
+              handleFieldChange('eraIds', eraIds);
+              handleFieldChange('stageIds', stageIds);
+              handleFieldChange('tagIds', tagIds);
+              setTimeout(handleSave, 0);
+            }}
+          />
+        </div>
+        
+        <div className="md:col-span-2">
+          <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+          <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Task notes and details..." />
         </div>
       </div>
     </div>
+  );
+
+  // Team Member Assignments Section
+  const teamSection = (
+    <div className={cn("p-6 mb-6", THEME.punk.card)}>
+      <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Team Member Assignments</h3>
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-2 mb-3">
+          {(form.assignedMembers || []).length === 0 ? (
+            <span className="text-xs opacity-50">No team members assigned yet</span>
+          ) : (form.assignedMembers || []).map((m, index) => {
+            const member = teamMembers.find(tm => tm.id === m.memberId);
+            return (
+              <div key={index} className="flex items-center gap-2 px-3 py-2 bg-purple-100 border-2 border-black">
+                <span className="text-sm font-bold">{member?.name || 'Member'} ({formatMoney(m.cost)})</span>
+                <button onClick={() => removeAssignment(index)} className="text-red-500 text-sm font-bold">✕</button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-2">
+          <select value={newAssignments.memberId} onChange={e => setNewAssignments(prev => ({ ...prev, memberId: e.target.value }))} className={cn("flex-1 text-sm", THEME.punk.input)}>
+            <option value="">Select team member...</option>
+            {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <input type="number" value={newAssignments.cost} onChange={e => setNewAssignments(prev => ({ ...prev, cost: e.target.value }))} placeholder="Cost" className={cn("w-24 text-sm", THEME.punk.input)} />
+          <button onClick={addAssignment} className={cn("px-4 py-2 text-sm", THEME.punk.btn, "bg-purple-600 text-white")}>Add</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <StandardDetailPage
+      item={currentTask}
+      onBack={onBack}
+      backText="Back to Tasks"
+      onDelete={async () => { await actions.deleteGlobalTask(task.id); onBack(); }}
+      onArchive={!currentTask.isArchived ? async () => { await actions.archiveGlobalTask(task.id); onBack(); } : undefined}
+      onRestore={currentTask.isArchived ? () => actions.updateGlobalTask(task.id, { isArchived: false }) : undefined}
+      isArchived={currentTask.isArchived}
+      displaySection={displaySection}
+      editSection={editSection}
+      extraSections={teamSection}
+    />
   );
 };
