@@ -416,9 +416,25 @@ export const TaskEditModal = ({
   const { data } = useStore();
   const teamMembers = data.teamMembers || [];
   const [form, setForm] = useState({ ...task });
+  const [newAssignment, setNewAssignment] = useState({ memberId: '', cost: '' });
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addTeamMemberAssignment = () => {
+    if (!newAssignment.memberId) return;
+    const updatedMembers = [
+      ...(form.assignedMembers || []),
+      { memberId: newAssignment.memberId, cost: parseFloat(newAssignment.cost) || 0 }
+    ];
+    handleChange('assignedMembers', updatedMembers);
+    setNewAssignment({ memberId: '', cost: '' });
+  };
+
+  const removeTeamMemberAssignment = (index) => {
+    const updatedMembers = (form.assignedMembers || []).filter((_, i) => i !== index);
+    handleChange('assignedMembers', updatedMembers);
   };
 
   const handleSave = () => {
@@ -536,27 +552,48 @@ export const TaskEditModal = ({
           {/* Placeholder for alignment */}
           <div></div>
 
-          {/* Team Members */}
+          {/* Team Member Assignments with Costs */}
           <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Team Members</label>
-            <div className="flex flex-wrap gap-1 p-2 border-4 border-black bg-white text-xs max-h-24 overflow-y-auto">
-              {teamMembers.length === 0 && <span className="text-xs opacity-50">No team members available</span>}
-              {teamMembers.map(m => (
-                <label key={m.id} className="flex items-center gap-1 cursor-pointer px-2 py-1 hover:bg-gray-100">
-                  <input 
-                    type="checkbox" 
-                    checked={(form.teamMemberIds || []).includes(m.id)}
-                    onChange={e => {
-                      const ids = e.target.checked 
-                        ? [...(form.teamMemberIds || []), m.id]
-                        : (form.teamMemberIds || []).filter(id => id !== m.id);
-                      handleChange('teamMemberIds', ids);
-                    }}
-                    className="w-3 h-3"
-                  />
-                  {m.name}
-                </label>
-              ))}
+            <label className="block text-xs font-bold uppercase mb-1">Team Member Assignments</label>
+            <div className="space-y-3">
+              {/* Current assignments */}
+              <div className="flex flex-wrap gap-2 min-h-[28px]">
+                {(form.assignedMembers || []).length === 0 ? (
+                  <span className="text-xs opacity-50">No team members assigned yet</span>
+                ) : (form.assignedMembers || []).map((m, index) => {
+                  const member = teamMembers.find(tm => tm.id === m.memberId);
+                  return (
+                    <div key={index} className="flex items-center gap-2 px-3 py-2 bg-purple-100 border-2 border-black text-xs font-bold">
+                      <span>{member?.name || 'Member'} (${(m.cost || 0).toFixed(2)})</span>
+                      <button onClick={() => removeTeamMemberAssignment(index)} className="text-red-500 font-bold">✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Add new assignment */}
+              <div className="flex gap-2">
+                <select 
+                  value={newAssignment.memberId} 
+                  onChange={e => setNewAssignment(prev => ({ ...prev, memberId: e.target.value }))} 
+                  className={cn("flex-1 text-sm", THEME.punk.input)}
+                >
+                  <option value="">Select team member...</option>
+                  {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <input 
+                  type="number" 
+                  value={newAssignment.cost} 
+                  onChange={e => setNewAssignment(prev => ({ ...prev, cost: e.target.value }))} 
+                  placeholder="Cost" 
+                  className={cn("w-24 text-sm", THEME.punk.input)} 
+                />
+                <button 
+                  onClick={addTeamMemberAssignment} 
+                  className={cn("px-4 py-2 text-sm", THEME.punk.btn, "bg-purple-600 text-white")}
+                >
+                  Add
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1163,44 +1200,14 @@ export const EraStageTagsModule = ({
     if (onSave) setTimeout(onSave, 0);
   };
 
-  // Get display values for current selections
-  const selectedEras = (data.eras || []).filter(e => (value.eraIds || []).includes(e.id));
-  const selectedStages = (data.stages || []).filter(s => (value.stageIds || []).includes(s.id));
-  const selectedTags = (data.tags || []).filter(t => (value.tagIds || []).includes(t.id));
-
   return (
     <div className={cn("p-6 mb-6", THEME.punk.card)}>
       <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">{title}</h3>
       
-      {/* Current Selections Display */}
-      <div className="mb-4 p-3 bg-gray-50 border-2 border-black">
-        <div className="text-xs font-bold uppercase mb-2 opacity-60">Current Selections</div>
-        <div className="flex flex-wrap gap-2 min-h-[28px]">
-          {selectedEras.map(era => (
-            <span key={era.id} className="px-2 py-1 bg-blue-100 border-2 border-blue-500 text-xs font-bold" style={{ color: era.color || '#000' }}>
-              Era: {era.name}
-            </span>
-          ))}
-          {selectedStages.map(stage => (
-            <span key={stage.id} className="px-2 py-1 bg-purple-100 border-2 border-purple-500 text-xs font-bold">
-              Stage: {stage.name}
-            </span>
-          ))}
-          {selectedTags.map(tag => (
-            <span key={tag.id} className="px-2 py-1 bg-yellow-100 border-2 border-yellow-500 text-xs font-bold" style={{ color: tag.color || '#000' }}>
-              {tag.name}
-            </span>
-          ))}
-          {selectedEras.length === 0 && selectedStages.length === 0 && selectedTags.length === 0 && (
-            <span className="text-xs opacity-50">No era, stage, or tags selected</span>
-          )}
-        </div>
-      </div>
-      
       {/* Selection Controls */}
       <div className="grid md:grid-cols-3 gap-4">
         {/* Era Picker */}
-        <div>
+        <div className="min-w-0">
           <label className="block text-xs font-bold uppercase mb-1">Era</label>
           <UniversalEraPicker
             value={value.eraIds || []}
@@ -1212,7 +1219,7 @@ export const EraStageTagsModule = ({
         </div>
 
         {/* Stage Picker */}
-        <div>
+        <div className="min-w-0">
           <label className="block text-xs font-bold uppercase mb-1">Stage</label>
           <UniversalStagePicker
             value={value.stageIds || []}
@@ -1224,7 +1231,7 @@ export const EraStageTagsModule = ({
         </div>
 
         {/* Tags Picker */}
-        <div>
+        <div className="min-w-0">
           <label className="block text-xs font-bold uppercase mb-1">Tags</label>
           <UniversalTagsPicker
             value={value.tagIds || []}
