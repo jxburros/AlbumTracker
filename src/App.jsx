@@ -119,7 +119,7 @@ function AppInner() {
           
           {/* Releases - Following unified Item/Page architecture */}
           {tab === 'releases' && <ReleasesListView onSelectRelease={handleSelectRelease} />}
-          {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} />}
+          {tab === 'releaseDetail' && selectedRelease && <ReleaseDetailView release={selectedRelease} onBack={() => { setSelectedRelease(null); setTab('releases'); }} onSelectSong={handleSelectSong} />}
           
           {tab === 'timeline' && <CombinedTimelineView />}
           

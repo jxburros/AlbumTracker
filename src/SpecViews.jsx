@@ -2591,23 +2591,6 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
               {(data.tags || []).length === 0 && <span className="text-xs opacity-50">No tags available</span>}
             </div>
           </div>
-          {/* Cost fields */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
-            <input type="number" value={form.estimatedCost || 0} onChange={e => handleFieldChange('estimatedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Quoted Cost</label>
-            <input type="number" value={form.quotedCost || 0} onChange={e => handleFieldChange('quotedCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Paid Cost</label>
-            <input type="number" value={form.paidCost || 0} onChange={e => handleFieldChange('paidCost', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Partial Payment</label>
-            <input type="number" value={form.partially_paid || 0} onChange={e => handleFieldChange('partially_paid', parseFloat(e.target.value) || 0)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-          </div>
           <div className="md:col-span-2">
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} />
@@ -5363,10 +5346,6 @@ export const EventDetailView = ({ event, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
             <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Event notes..." />
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-bold uppercase mb-1">Description</label>
-            <textarea value={form.description || ''} onChange={e => handleFieldChange('description', e.target.value)} onBlur={handleSave} className={cn("w-full h-24", THEME.punk.input)} placeholder="Public description..." />
-          </div>
         </div>
       </div>
 
@@ -5427,94 +5406,146 @@ export const EventDetailView = ({ event, onBack }) => {
         </div>
       </div>
 
-      {/* Phase 2.5: Item Linking - Events can link to Songs, Versions, Releases, Videos, Expenses */}
+      {/* Items Linked to This Event - Simplified UI */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
-        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Linked Items</h3>
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Linked Songs */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Songs</label>
-            <select 
-              multiple 
-              value={form.linkedSongIds || []} 
-              onChange={e => {
-                const selected = Array.from(e.target.selectedOptions).map(o => o.value);
-                handleFieldChange('linkedSongIds', selected);
-              }} 
-              onBlur={handleSave}
-              className={cn("w-full h-24", THEME.punk.input)}
-            >
-              {(data.songs || []).map(song => <option key={song.id} value={song.id}>{song.title}</option>)}
-            </select>
-          </div>
-          {/* Linked Releases */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Releases</label>
-            <select 
-              multiple 
-              value={form.linkedReleaseIds || []} 
-              onChange={e => {
-                const selected = Array.from(e.target.selectedOptions).map(o => o.value);
-                handleFieldChange('linkedReleaseIds', selected);
-              }} 
-              onBlur={handleSave}
-              className={cn("w-full h-24", THEME.punk.input)}
-            >
-              {(data.releases || []).map(release => <option key={release.id} value={release.id}>{release.name}</option>)}
-            </select>
-          </div>
-          {/* Linked Videos (standalone) */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Videos</label>
-            <select 
-              multiple 
-              value={form.linkedVideoIds || []} 
-              onChange={e => {
-                const selected = Array.from(e.target.selectedOptions).map(o => o.value);
-                handleFieldChange('linkedVideoIds', selected);
-              }} 
-              onBlur={handleSave}
-              className={cn("w-full h-24", THEME.punk.input)}
-            >
-              {(data.standaloneVideos || []).map(video => <option key={video.id} value={video.id}>{video.title}</option>)}
-            </select>
-          </div>
-          {/* Linked Expenses */}
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Expenses</label>
-            <select 
-              multiple 
-              value={form.linkedExpenseIds || []} 
-              onChange={e => {
-                const selected = Array.from(e.target.selectedOptions).map(o => o.value);
-                handleFieldChange('linkedExpenseIds', selected);
-              }} 
-              onBlur={handleSave}
-              className={cn("w-full h-24", THEME.punk.input)}
-            >
-              {(data.expenses || []).filter(e => !e.isArchived).map(expense => <option key={expense.id} value={expense.id}>{expense.name}</option>)}
-            </select>
+        <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Items Linked to This Event</h3>
+        
+        {/* Display linked items as pills */}
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-gray-50 border-2 border-black">
+            {/* Songs */}
+            {(form.linkedSongIds || []).map(songId => {
+              const song = (data.songs || []).find(s => s.id === songId);
+              return song ? (
+                <div key={songId} className="flex items-center gap-1 px-2 py-1 bg-blue-100 border-2 border-blue-500 text-xs font-bold">
+                  <span>🎵 {song.title}</span>
+                  <button onClick={() => {
+                    handleFieldChange('linkedSongIds', (form.linkedSongIds || []).filter(id => id !== songId));
+                    setTimeout(handleSave, 0);
+                  }} className="text-blue-800 hover:text-red-600"><Icon name="X" size={12} /></button>
+                </div>
+              ) : null;
+            })}
+            {/* Releases */}
+            {(form.linkedReleaseIds || []).map(releaseId => {
+              const release = (data.releases || []).find(r => r.id === releaseId);
+              return release ? (
+                <div key={releaseId} className="flex items-center gap-1 px-2 py-1 bg-purple-100 border-2 border-purple-500 text-xs font-bold">
+                  <span>📀 {release.name}</span>
+                  <button onClick={() => {
+                    handleFieldChange('linkedReleaseIds', (form.linkedReleaseIds || []).filter(id => id !== releaseId));
+                    setTimeout(handleSave, 0);
+                  }} className="text-purple-800 hover:text-red-600"><Icon name="X" size={12} /></button>
+                </div>
+              ) : null;
+            })}
+            {/* Videos */}
+            {(form.linkedVideoIds || []).map(videoId => {
+              const video = (data.standaloneVideos || []).find(v => v.id === videoId);
+              return video ? (
+                <div key={videoId} className="flex items-center gap-1 px-2 py-1 bg-red-100 border-2 border-red-500 text-xs font-bold">
+                  <span>🎬 {video.title}</span>
+                  <button onClick={() => {
+                    handleFieldChange('linkedVideoIds', (form.linkedVideoIds || []).filter(id => id !== videoId));
+                    setTimeout(handleSave, 0);
+                  }} className="text-red-800 hover:text-red-600"><Icon name="X" size={12} /></button>
+                </div>
+              ) : null;
+            })}
+            {/* Expenses */}
+            {(form.linkedExpenseIds || []).map(expenseId => {
+              const expense = (data.expenses || []).find(e => e.id === expenseId);
+              return expense ? (
+                <div key={expenseId} className="flex items-center gap-1 px-2 py-1 bg-green-100 border-2 border-green-500 text-xs font-bold">
+                  <span>💰 {expense.name}</span>
+                  <button onClick={() => {
+                    handleFieldChange('linkedExpenseIds', (form.linkedExpenseIds || []).filter(id => id !== expenseId));
+                    setTimeout(handleSave, 0);
+                  }} className="text-green-800 hover:text-red-600"><Icon name="X" size={12} /></button>
+                </div>
+              ) : null;
+            })}
+            {/* Empty state */}
+            {!(form.linkedSongIds?.length || form.linkedReleaseIds?.length || form.linkedVideoIds?.length || form.linkedExpenseIds?.length) && (
+              <span className="text-xs opacity-50">No items linked yet. Use the dropdowns below to add links.</span>
+            )}
           </div>
         </div>
-        {/* Phase 2.6: Create Video for this Event */}
-        <div className="mt-4 pt-4 border-t-2 border-black">
-          <button
-            onClick={async () => {
-              const newVideo = await actions.addStandaloneVideo({
-                title: `Video for ${currentEvent.title}`,
-                releaseDate: currentEvent.date || '',
-                attachedEventIds: [currentEvent.id]
-              });
-              // Add the new video to linked videos
-              const updated = [...(form.linkedVideoIds || []), newVideo.id];
-              handleFieldChange('linkedVideoIds', updated);
-              await handleSave();
-              alert(`Created video "${newVideo.title}" and linked to this event.`);
-            }}
-            className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}
-          >
-            <Icon name="Video" size={16} className="inline mr-2" /> Create Video for this Event
-          </button>
+
+        {/* Add new links - simple dropdowns */}
+        <div className="grid md:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Add Song</label>
+            <select 
+              value="" 
+              onChange={e => {
+                if (e.target.value && !(form.linkedSongIds || []).includes(e.target.value)) {
+                  handleFieldChange('linkedSongIds', [...(form.linkedSongIds || []), e.target.value]);
+                  setTimeout(handleSave, 0);
+                }
+              }} 
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">Select song...</option>
+              {(data.songs || []).filter(s => !(form.linkedSongIds || []).includes(s.id)).map(song => (
+                <option key={song.id} value={song.id}>{song.title}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Add Release</label>
+            <select 
+              value="" 
+              onChange={e => {
+                if (e.target.value && !(form.linkedReleaseIds || []).includes(e.target.value)) {
+                  handleFieldChange('linkedReleaseIds', [...(form.linkedReleaseIds || []), e.target.value]);
+                  setTimeout(handleSave, 0);
+                }
+              }} 
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">Select release...</option>
+              {(data.releases || []).filter(r => !(form.linkedReleaseIds || []).includes(r.id)).map(release => (
+                <option key={release.id} value={release.id}>{release.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Add Video</label>
+            <select 
+              value="" 
+              onChange={e => {
+                if (e.target.value && !(form.linkedVideoIds || []).includes(e.target.value)) {
+                  handleFieldChange('linkedVideoIds', [...(form.linkedVideoIds || []), e.target.value]);
+                  setTimeout(handleSave, 0);
+                }
+              }} 
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">Select video...</option>
+              {(data.standaloneVideos || []).filter(v => !(form.linkedVideoIds || []).includes(v.id)).map(video => (
+                <option key={video.id} value={video.id}>{video.title}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Add Expense</label>
+            <select 
+              value="" 
+              onChange={e => {
+                if (e.target.value && !(form.linkedExpenseIds || []).includes(e.target.value)) {
+                  handleFieldChange('linkedExpenseIds', [...(form.linkedExpenseIds || []), e.target.value]);
+                  setTimeout(handleSave, 0);
+                }
+              }} 
+              className={cn("w-full", THEME.punk.input)}
+            >
+              <option value="">Select expense...</option>
+              {(data.expenses || []).filter(e => !e.isArchived && !(form.linkedExpenseIds || []).includes(e.id)).map(expense => (
+                <option key={expense.id} value={expense.id}>{expense.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -6667,6 +6698,20 @@ export const VideoDetailView = ({ video, onBack }) => {
             )}
           </div>
           
+          {/* Custom Video Type Explanation - shows only when type is 'custom' */}
+          {getCurrentVideoType === 'custom' && currentVideo && !currentVideo.isAutogenerated && (
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Explain Custom Video Type</label>
+              <input 
+                value={form.customTypeExplanation || ''} 
+                onChange={e => handleFieldChange('customTypeExplanation', e.target.value)} 
+                onBlur={handleSave} 
+                placeholder="Describe the custom video type..."
+                className={cn("w-full", THEME.punk.input)} 
+              />
+            </div>
+          )}
+          
           {/* Phase 1.5: Budgeted Cost - replaces estimated/quoted/paid at video level */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Budgeted Cost</label>
@@ -6916,13 +6961,11 @@ export const VideoDetailView = ({ video, onBack }) => {
                 <th className="p-2 text-left">Task</th>
                 <th className="p-2 text-left">Date</th>
                 <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-right">Cost</th>
-                <th className="p-2 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredTasks.length === 0 ? (
-                <tr><td colSpan="6" className="p-4 text-center opacity-50">No tasks yet. Add a custom task.</td></tr>
+                <tr><td colSpan="4" className="p-4 text-center opacity-50">No tasks yet. Add a custom task.</td></tr>
               ) : filteredTasks.map(task => {
                 const isOverdue = task.date && new Date(task.date) < new Date() && task.status !== 'Complete' && task.status !== 'Done';
                 return (
@@ -6972,30 +7015,6 @@ export const VideoDetailView = ({ video, onBack }) => {
                       >
                         {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
-                    </td>
-                    <td className="p-2 text-right text-xs">
-                      {formatMoney(getEffectiveCost(task))}
-                    </td>
-                    <td className="p-2 text-center">
-                      <button 
-                        onClick={e => { e.stopPropagation(); handleOpenTaskEdit(task); }} 
-                        className="p-1 text-blue-500 hover:bg-blue-100 mr-1"
-                        title="Edit Task"
-                      >
-                        <Icon name="Edit" size={14} />
-                      </button>
-                      {!task._isAuto && (
-                        <button onClick={e => { 
-                          e.stopPropagation();
-                          if (confirm('Delete this task?')) {
-                            if (video._source === 'standalone') {
-                              actions.deleteStandaloneVideoCustomTask(video.id, task.id);
-                            } else {
-                              actions.deleteSongVideoCustomTask(video._songId, video.id, task.id);
-                            }
-                          }
-                        }} className="p-1 text-red-500 hover:bg-red-100"><Icon name="Trash2" size={14} /></button>
-                      )}
                     </td>
                   </tr>
                 );
@@ -7373,8 +7392,8 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
                 <tr><td colSpan="6" className="p-10 text-center opacity-50">No tasks yet. Click Add Task to create one.</td></tr>
               ) : (
                 tasks.map(task => (
-                  <tr key={task.id} className={cn("border-b border-gray-200 hover:bg-yellow-50", task.isArchived && "opacity-50")}>
-                    <td className="p-3 font-bold cursor-pointer" onClick={() => onSelectTask && onSelectTask(task)}>{task.taskName}</td>
+                  <tr key={task.id} className={cn("border-b border-gray-200 hover:bg-yellow-50 cursor-pointer", task.isArchived && "opacity-50")} onClick={() => onSelectTask && onSelectTask(task)}>
+                    <td className="p-3 font-bold">{task.taskName}</td>
                     <td className="p-3">{task.category || '-'}</td>
                     <td className="p-3">{task.date || '-'}</td>
                     <td className="p-3">{task.status}</td>
