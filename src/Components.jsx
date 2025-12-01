@@ -56,7 +56,7 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
       onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
       className={cn(
         "w-full flex items-center gap-3 px-4 text-left font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5",
-        compact ? "py-2 text-sm" : "py-3",
+        compact ? "py-2 text-sm" : "py-2",
         isDark ? "border-slate-600" : "border-black",
         activeTab === item.id
           ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
@@ -79,7 +79,7 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
         isDark ? "bg-slate-900 border-slate-600" : "bg-gray-50 border-black"
       )}>
         <div>
-          <h1 className={cn("text-xl flex items-center gap-2 punk-accent-underline font-rubik-distressed", colorClass)}><Icon name="Music" /> Era Manifesto</h1>
+          <h1 onClick={() => { setActiveTab('dashboard'); setIsOpen(false); }} className={cn("text-xl flex items-center gap-2 punk-accent-underline font-rubik-distressed cursor-pointer", colorClass)}><Icon name="Music" /> Era Manifesto</h1>
           <div className={cn("text-xs font-bold mt-1", isDark ? "text-slate-400" : "opacity-60")}>{settings.artistName || 'Artist'}</div>
         </div>
         <button onClick={() => setIsOpen(false)} className={cn("md:hidden", isDark && "text-slate-50")}><Icon name="X" /></button>
@@ -147,13 +147,25 @@ export const Sidebar = ({ isOpen, setIsOpen, activeTab, setActiveTab }) => {
       </nav>
 
       {/* Footer Items */}
-      <div className={cn(
-        "p-4 pt-2 space-y-2 border-t-[3px]",
-        isDark ? "border-slate-600" : "border-black"
-      )}>
-        {footerMenu.map(item => (
-          <MenuButton key={item.id} item={item} />
-        ))}
+      <div className="p-4 pt-2">
+        <div className="grid grid-cols-2 gap-2">
+          {footerMenu.map(item => (
+            <button 
+              key={item.id}
+              onClick={() => { setActiveTab(item.id); setIsOpen(false); }}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 p-3 font-bold uppercase tracking-wide border-[3px] transition-transform hover:-translate-y-0.5 text-xs",
+                isDark ? "border-slate-600" : "border-black",
+                activeTab === item.id
+                  ? "bg-[var(--accent)] text-slate-900 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]"
+                  : (isDark ? "bg-slate-700 text-slate-200 hover:bg-slate-600" : "bg-white hover:bg-[var(--accent-soft)]")
+              )}
+            >
+              <Icon name={item.icon} size={20} />
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

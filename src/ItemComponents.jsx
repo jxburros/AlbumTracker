@@ -1128,3 +1128,113 @@ export const StandardDetailPage = ({
     </div>
   );
 };
+
+/**
+ * EraStageTagsModule - Standalone consistent module for Era, Stage, and Tags
+ * This module looks EXACTLY the same on every page it appears on for consistency.
+ * 
+ * @param {Object} value - Current values { eraIds, stageIds, tagIds }
+ * @param {Function} onChange - Callback with { eraIds, stageIds, tagIds }
+ * @param {Function} onSave - Optional callback to trigger save after change
+ * @param {string} title - Optional custom title for the module
+ */
+export const EraStageTagsModule = ({
+  value = {},
+  onChange,
+  onSave,
+  title = "Era, Stage & Tags"
+}) => {
+  const { data, actions } = useStore();
+  
+  const handleEraChange = (newEraIds) => {
+    const eraIds = Array.isArray(newEraIds) ? newEraIds : (newEraIds ? [newEraIds] : []);
+    onChange({ ...value, eraIds });
+    if (onSave) setTimeout(onSave, 0);
+  };
+  
+  const handleStageChange = (newStageIds) => {
+    const stageIds = Array.isArray(newStageIds) ? newStageIds : (newStageIds ? [newStageIds] : []);
+    onChange({ ...value, stageIds });
+    if (onSave) setTimeout(onSave, 0);
+  };
+  
+  const handleTagsChange = (newTagIds) => {
+    onChange({ ...value, tagIds: newTagIds });
+    if (onSave) setTimeout(onSave, 0);
+  };
+
+  // Get display values for current selections
+  const selectedEras = (data.eras || []).filter(e => (value.eraIds || []).includes(e.id));
+  const selectedStages = (data.stages || []).filter(s => (value.stageIds || []).includes(s.id));
+  const selectedTags = (data.tags || []).filter(t => (value.tagIds || []).includes(t.id));
+
+  return (
+    <div className={cn("p-6 mb-6", THEME.punk.card)}>
+      <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">{title}</h3>
+      
+      {/* Current Selections Display */}
+      <div className="mb-4 p-3 bg-gray-50 border-2 border-black">
+        <div className="text-xs font-bold uppercase mb-2 opacity-60">Current Selections</div>
+        <div className="flex flex-wrap gap-2 min-h-[28px]">
+          {selectedEras.map(era => (
+            <span key={era.id} className="px-2 py-1 bg-blue-100 border-2 border-blue-500 text-xs font-bold" style={{ color: era.color || '#000' }}>
+              Era: {era.name}
+            </span>
+          ))}
+          {selectedStages.map(stage => (
+            <span key={stage.id} className="px-2 py-1 bg-purple-100 border-2 border-purple-500 text-xs font-bold">
+              Stage: {stage.name}
+            </span>
+          ))}
+          {selectedTags.map(tag => (
+            <span key={tag.id} className="px-2 py-1 bg-yellow-100 border-2 border-yellow-500 text-xs font-bold" style={{ color: tag.color || '#000' }}>
+              {tag.name}
+            </span>
+          ))}
+          {selectedEras.length === 0 && selectedStages.length === 0 && selectedTags.length === 0 && (
+            <span className="text-xs opacity-50">No era, stage, or tags selected</span>
+          )}
+        </div>
+      </div>
+      
+      {/* Selection Controls */}
+      <div className="grid md:grid-cols-3 gap-4">
+        {/* Era Picker */}
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Era</label>
+          <UniversalEraPicker
+            value={value.eraIds || []}
+            onChange={handleEraChange}
+            eras={data.eras || []}
+            multiple={false}
+            placeholder="Select Era..."
+          />
+        </div>
+
+        {/* Stage Picker */}
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Stage</label>
+          <UniversalStagePicker
+            value={value.stageIds || []}
+            onChange={handleStageChange}
+            stages={data.stages || []}
+            multiple={false}
+            placeholder="Select Stage..."
+          />
+        </div>
+
+        {/* Tags Picker */}
+        <div>
+          <label className="block text-xs font-bold uppercase mb-1">Tags</label>
+          <UniversalTagsPicker
+            value={value.tagIds || []}
+            onChange={handleTagsChange}
+            tags={data.tags || []}
+            onCreateTag={actions.addTag}
+            placeholder="Add tag..."
+          />
+        </div>
+      </div>
+    </div>
+  );
+};

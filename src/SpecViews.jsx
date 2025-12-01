@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
+import { DetailPane, UniversalTagsPicker, UniversalEraPicker, UniversalStagePicker, EraStageTagsPicker, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
 
 // Song List View - Standardized Architecture
 export const SongListView = ({ onSelectSong }) => {
@@ -762,30 +762,15 @@ export const SongDetailView = ({ song, onBack }) => {
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Era</label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <UniversalEraPicker
-                    value={(form.eraIds || [])[0] || ''}
-                    onChange={value => {
-                      handleFieldChange('eraIds', value ? [value] : []);
-                      setTimeout(handleSave, 0);
-                    }}
-                    eras={data.eras || []}
-                    placeholder="No Era"
-                  />
-                </div>
-                <button 
-                  onClick={() => {
-                    if (confirm('Propagate this Era to all tasks in this song (including versions and videos)?')) {
-                      actions.propagateEraToChildren('song', song.id, form.eraIds || []);
-                    }
-                  }}
-                  className={cn("px-3 py-2 text-xs", THEME.punk.btn, "bg-purple-500 text-white")}
-                  title="Apply era to all child tasks"
-                >
-                  Propagate
-                </button>
-              </div>
+              <UniversalEraPicker
+                value={(form.eraIds || [])[0] || ''}
+                onChange={value => {
+                  handleFieldChange('eraIds', value ? [value] : []);
+                  setTimeout(handleSave, 0);
+                }}
+                eras={data.eras || []}
+                placeholder="No Era"
+              />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Stage</label>
@@ -1273,6 +1258,21 @@ export const SongDetailView = ({ song, onBack }) => {
       </div>
 
       {/* Issue #15: Cost Summary module REMOVED - costs are displayed in the Song Information section above */}
+
+      {/* Era, Stage & Tags Module - Consistent across all Item pages */}
+      <EraStageTagsModule
+        value={{
+          eraIds: form.eraIds || [],
+          stageIds: form.stageIds || [],
+          tagIds: form.tagIds || []
+        }}
+        onChange={({ eraIds, stageIds, tagIds }) => {
+          handleFieldChange('eraIds', eraIds);
+          handleFieldChange('stageIds', stageIds);
+          handleFieldChange('tagIds', tagIds);
+        }}
+        onSave={handleSave}
+      />
 
       {/* Song Task More/Edit Info Page Modal - Per spec Section 3 */}
       {/* Issue #11: AutoTasks have locked Name/Due Date fields with override option */}
@@ -2608,6 +2608,21 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           </table>
         </div>
       </div>
+
+      {/* Era, Stage & Tags Module - Consistent across all Item pages */}
+      <EraStageTagsModule
+        value={{
+          eraIds: form.eraIds || [],
+          stageIds: form.stageIds || [],
+          tagIds: form.tagIds || []
+        }}
+        onChange={({ eraIds, stageIds, tagIds }) => {
+          handleFieldChange('eraIds', eraIds);
+          handleFieldChange('stageIds', stageIds);
+          handleFieldChange('tagIds', tagIds);
+        }}
+        onSave={handleSave}
+      />
 
       {/* Release Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
       {editingTask && (
@@ -5415,6 +5430,21 @@ export const EventDetailView = ({ event, onBack }) => {
         </div>
       </div>
 
+      {/* Era, Stage & Tags Module - Consistent across all Item pages */}
+      <EraStageTagsModule
+        value={{
+          eraIds: form.eraIds || [],
+          stageIds: form.stageIds || [],
+          tagIds: form.tagIds || []
+        }}
+        onChange={({ eraIds, stageIds, tagIds }) => {
+          handleFieldChange('eraIds', eraIds);
+          handleFieldChange('stageIds', stageIds);
+          handleFieldChange('tagIds', tagIds);
+        }}
+        onSave={handleSave}
+      />
+
       {/* Event Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
       {editingTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
@@ -6577,6 +6607,21 @@ export const VideoDetailView = ({ video, onBack }) => {
         </div>
       </div>
 
+      {/* Era, Stage & Tags Module - Consistent across all Item pages */}
+      <EraStageTagsModule
+        value={{
+          eraIds: form.eraIds || [],
+          stageIds: form.stageIds || [],
+          tagIds: form.tagIds || []
+        }}
+        onChange={({ eraIds, stageIds, tagIds }) => {
+          handleFieldChange('eraIds', eraIds);
+          handleFieldChange('stageIds', stageIds);
+          handleFieldChange('tagIds', tagIds);
+        }}
+        onSave={handleSave}
+      />
+
       {/* Phase 1.7: Video Task More/Edit Info Page Modal - Unified Task Handling Architecture */}
       {editingTask && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => { setEditingTask(null); setEditingTaskContext(null); }}>
@@ -7164,6 +7209,23 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
     </div>
   );
 
+  // Era, Stage & Tags Module Section
+  const eraStageTagsSection = (
+    <EraStageTagsModule
+      value={{
+        eraIds: form.eraIds || [],
+        stageIds: form.stageIds || [],
+        tagIds: form.tagIds || []
+      }}
+      onChange={({ eraIds, stageIds, tagIds }) => {
+        handleFieldChange('eraIds', eraIds);
+        handleFieldChange('stageIds', stageIds);
+        handleFieldChange('tagIds', tagIds);
+      }}
+      onSave={handleSave}
+    />
+  );
+
   return (
     <StandardDetailPage
       item={currentTask}
@@ -7175,7 +7237,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
       isArchived={currentTask.isArchived}
       displaySection={displaySection}
       editSection={editSection}
-      extraSections={teamSection}
+      extraSections={<>{teamSection}{eraStageTagsSection}</>}
     />
   );
 };
