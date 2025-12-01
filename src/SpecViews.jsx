@@ -52,10 +52,10 @@ export const SongListView = ({ onSelectSong }) => {
   };
 
   return (
-    <div className="p-6 pb-24">
-        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+    <div className="view-shell">
+        <div className="section-header">
           <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>Songs</h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="section-actions">
           {/* Tier 1.1: Grid/List View Toggle */}
           <div className="flex border-4 border-black">
             <button 
@@ -128,7 +128,7 @@ export const SongListView = ({ onSelectSong }) => {
       ) : (
         /* List View (Original) */
         <div className={cn("overflow-x-auto", THEME.punk.card)}>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-compact">
             <thead>
               <tr className="bg-black text-white">
                 <th className="p-3 text-left cursor-pointer" onClick={() => toggleSort('title')}>Title <SortIcon field="title" /></th>
@@ -545,7 +545,7 @@ export const SongDetailView = ({ song, onBack }) => {
   }, [songTasks]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
           <Icon name="ChevronLeft" size={16} /> Back to Songs
@@ -1752,7 +1752,7 @@ export const GlobalTasksView = () => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Global Tasks</h2>
         <div className="flex gap-2">
@@ -2014,7 +2014,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Releases</h2>
         <div className="flex gap-2">
@@ -2352,7 +2352,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}><Icon name="ChevronLeft" size={16} /> Back to Releases</button>
         <button onClick={handleDeleteRelease} className={cn("px-4 py-2", THEME.punk.btn, "bg-red-500 text-white")}><Icon name="Trash2" size={16} /></button>
@@ -3435,7 +3435,7 @@ export const CombinedTimelineView = () => {
   const sourceTypes = ['Song Task', 'Song Custom', 'Version Task', 'Video Task', 'Video', 'Global', 'Release', 'Release Task', 'Event', 'Event Task', 'Exclusivity'];
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Combined Timeline</h2>
         <div className="flex gap-2">
@@ -3602,7 +3602,7 @@ export const VideosView = ({ onSelectSong }) => {
   };
 
   return (
-    <div className="p-6 pb-24 space-y-6">
+    <div className="view-shell space-y-6">
       <div className="flex flex-wrap items-center justify-between border-b-4 border-black pb-3 gap-3">
         <h2 className={THEME.punk.textStyle}>Videos</h2>
         <div className="flex gap-2">
@@ -4084,7 +4084,7 @@ export const TaskDashboardView = () => {
   const isDueSoon = (date) => date && date >= today && date <= nextWeek;
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Task Dashboard</h2>
         <div className="flex gap-2 items-center">
@@ -4641,7 +4641,7 @@ export const FinancialsView = () => {
   }, [costItems]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Financials</h2>
         <div className="flex gap-2">
@@ -4973,7 +4973,7 @@ export const ProgressView = () => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Progress</h2>
         <div className="text-right">
@@ -5157,7 +5157,7 @@ export const EventsListView = ({ onSelectEvent }) => {
   }, [data.events]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Events</h2>
         <div className="flex flex-wrap gap-2">
@@ -5337,7 +5337,7 @@ export const EventDetailView = ({ event, onBack }) => {
   }, [eventTasks, eventCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
           <Icon name="ChevronLeft" size={16} /> Back to Events
@@ -6052,7 +6052,7 @@ export const ExpensesListView = ({ onSelectExpense }) => {
   const totalExpenses = useMemo(() => expenses.reduce((sum, e) => sum + getEffectiveCost(e), 0), [expenses]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Expenses</h2>
         <div className="flex flex-wrap gap-2 items-center">
@@ -6165,7 +6165,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
   const currentExpense = useMemo(() => data.expenses?.find(e => e.id === expense.id) || expense, [data.expenses, expense]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
           <Icon name="ChevronLeft" size={16} /> Back to Expenses
@@ -6531,7 +6531,7 @@ export const VideosListView = ({ onSelectVideo }) => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Videos</h2>
         <div className="flex flex-wrap gap-2">
@@ -6856,7 +6856,7 @@ export const VideoDetailView = ({ video, onBack }) => {
   }, [videoTasks, videoCustomTasks, taskFilterStatus, taskSortBy, taskSortDir]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
           <Icon name="ChevronLeft" size={16} /> Back to Videos
@@ -7495,7 +7495,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   };
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
         <h2 className={THEME.punk.textStyle}>Global Tasks</h2>
         <div className="flex flex-wrap gap-2">
@@ -7733,7 +7733,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
   }, [currentTask, teamMembers]);
 
   return (
-    <div className="p-6 pb-24">
+    <div className="view-shell">
       <div className="flex justify-between items-center mb-6">
         <button onClick={onBack} className={cn("px-4 py-2 bg-white flex items-center gap-2", THEME.punk.btn)}>
           <Icon name="ChevronLeft" size={16} /> Back to Tasks

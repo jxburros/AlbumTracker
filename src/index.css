@@ -20,6 +20,53 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
+.view-shell {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 96px;
+}
+
+@media (min-width: 1024px) {
+  .view-shell {
+    padding: 32px 24px 96px;
+  }
+}
+
+.section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-compact th,
+.table-compact td {
+  padding: 10px 12px;
+}
+
+.table-compact th {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.table-compact tr + tr td {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.dark .table-compact tr + tr td {
+  border-top-color: rgba(148, 163, 184, 0.25);
+}
+
 .punk-shell {
   background-image:
     radial-gradient(circle at 24px 24px, rgba(15, 23, 42, 0.08) 2px, transparent 2px),

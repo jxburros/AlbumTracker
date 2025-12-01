@@ -38,7 +38,7 @@ export const ListView = ({ onEdit }) => {
     };
 
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <div className="flex justify-between mb-6">
                 <div className={cn("flex items-center px-2 bg-white", THEME.punk.border)}>
                    <span className="text-xs font-bold uppercase px-2">Filter:</span>
@@ -234,7 +234,7 @@ export const CalendarView = ({ onEdit }) => {
     };
 
     return (
-        <div className="h-full flex flex-col p-6 pb-24">
+        <div className="h-full flex flex-col view-shell">
             {/* Header with navigation */}
             <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                 <h2 className={THEME.punk.textStyle}>{monthNames[month]} {year}</h2>
@@ -568,7 +568,7 @@ export const GalleryView = () => {
     };
 
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <div className="flex flex-wrap justify-between items-center mb-8 border-b-4 border-black pb-4 gap-4">
                 <h2 className={cn("text-3xl flex items-center gap-2", THEME.punk.textStyle)}><Icon name="Image" /> Gallery</h2>
                 <div className="flex gap-2">
@@ -785,7 +785,7 @@ export const FilesView = () => {
     };
 
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <div className="flex flex-wrap justify-between items-center mb-8 border-b-4 border-black pb-4 gap-4">
                 <h2 className={cn("text-3xl flex items-center gap-2", THEME.punk.textStyle)}><Icon name="File" /> Files</h2>
                 <div className="flex gap-2">
@@ -1008,7 +1008,7 @@ export const TeamView = () => {
     }, [data.tasks, data.globalTasks, data.releases, data.songs]);
 
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                 <h2 className={THEME.punk.textStyle}>Team</h2>
                 <div className="flex gap-2">
@@ -1352,7 +1352,7 @@ export const MiscView = () => {
     }, [data.expenses, showArchived]);
 
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <div className="flex flex-wrap justify-between mb-6 items-center gap-4">
                 <h2 className={THEME.punk.textStyle}>Expenses</h2>
                 <div className="flex flex-wrap gap-2 items-center">
@@ -1596,7 +1596,7 @@ export const ActiveView = ({ onEdit }) => {
     );
     
     return (
-        <div className="p-6 pb-24">
+        <div className="view-shell">
             <h2 className={cn("mb-6", THEME.punk.textStyle)}>Active Tasks</h2>
             
             {/* Summary Stats */}
