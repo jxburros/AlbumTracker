@@ -7,6 +7,10 @@ const StoreContext = createContext();
 
 export const useStore = () => useContext(StoreContext);
 
+// Export format version and app version for data portability
+export const EXPORT_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';
+
 // Status enum for consistency across all entities - per APP ARCHITECTURE.txt Section 1.7
 export const STATUS_OPTIONS = [
   'Not Started',
@@ -2965,6 +2969,161 @@ export const StoreProvider = ({ children }) => {
          categoryId: categoryId,
          category: category.name 
        });
+     },
+
+     // ============================================================
+     // DATA IMPORT/EXPORT ACTIONS
+     // ============================================================
+
+     // Import data from a backup file
+     // mode: 'replace' - replace all existing data
+     // mode: 'merge' - merge with existing data (new items added, conflicts use imported)
+     importData: async (importedData, importMode = 'replace') => {
+       // Collections to import
+       const collections = [
+         'tasks', 'photos', 'files', 'vendors', 'teamMembers', 'misc',
+         'events', 'stages', 'eras', 'tags', 'songs', 'globalTasks',
+         'releases', 'standaloneVideos', 'templates', 'auditLog',
+         'expenses', 'taskCategories'
+       ];
+
+       if (importMode === 'replace') {
+         // Replace mode: clear and replace all data
+         const newData = { settings: data.settings };
+         
+         collections.forEach(col => {
+           newData[col] = importedData[col] || [];
+         });
+         
+         // Import settings if present
+         if (importedData.settings) {
+           newData.settings = { ...data.settings, ...importedData.settings };
+         }
+         
+         if (mode === 'cloud' && db && user) {
+           // For cloud mode, we need to clear and re-add all documents
+           // This is a simplified approach - just update local state
+           // Cloud sync will happen automatically via existing listeners
+           for (const col of collections) {
+             const colData = importedData[col] || [];
+             for (const item of colData) {
+               const colName = col === 'misc' ? 'misc_expenses' : col;
+               try {
+                 await setDoc(
+                   doc(db, 'artifacts', appId, 'users', user.uid, `album_${colName}`, item.id),
+                   { ...item, importedAt: serverTimestamp() }
+                 );
+               } catch (e) {
+                 console.error(`Failed to import ${col} item`, item.id, e);
+               }
+             }
+           }
+           // Save settings
+           if (importedData.settings) {
+             await setDoc(
+               doc(db, 'artifacts', appId, 'users', user.uid, 'album_tasks', 'settings'),
+               { ...data.settings, ...importedData.settings },
+               { merge: true }
+             );
+           }
+         } else {
+           // Local mode: just update state
+           setData(prev => ({
+             ...prev,
+             ...newData
+           }));
+         }
+       } else {
+         // Merge mode: add new items, update existing by ID
+         const mergedData = { ...data };
+         
+         collections.forEach(col => {
+           const existingItems = data[col] || [];
+           const newItems = importedData[col] || [];
+           const existingIds = new Set(existingItems.map(i => i.id));
+           
+           // Items that exist get updated, new ones get added
+           const updatedExisting = existingItems.map(existing => {
+             const imported = newItems.find(i => i.id === existing.id);
+             return imported ? { ...existing, ...imported } : existing;
+           });
+           
+           // Add items that don't exist
+           const toAdd = newItems.filter(i => !existingIds.has(i.id));
+           
+           mergedData[col] = [...updatedExisting, ...toAdd];
+         });
+         
+         // Merge settings
+         if (importedData.settings) {
+           mergedData.settings = { ...data.settings, ...importedData.settings };
+         }
+         
+         if (mode === 'cloud' && db && user) {
+           // For cloud mode in merge, upsert each item
+           for (const col of collections) {
+             const colData = mergedData[col] || [];
+             for (const item of colData) {
+               const colName = col === 'misc' ? 'misc_expenses' : col;
+               try {
+                 await setDoc(
+                   doc(db, 'artifacts', appId, 'users', user.uid, `album_${colName}`, item.id),
+                   { ...item, importedAt: serverTimestamp() },
+                   { merge: true }
+                 );
+               } catch (e) {
+                 console.error(`Failed to merge ${col} item`, item.id, e);
+               }
+             }
+           }
+           // Save settings
+           if (importedData.settings) {
+             await setDoc(
+               doc(db, 'artifacts', appId, 'users', user.uid, 'album_tasks', 'settings'),
+               mergedData.settings,
+               { merge: true }
+             );
+           }
+         } else {
+           // Local mode
+           setData(prev => ({
+             ...prev,
+             ...mergedData
+           }));
+         }
+       }
+       
+       // Log the import action
+       actions.logAudit('import', 'system', 'data-import', { 
+         mode: importMode,
+         importedAt: new Date().toISOString()
+       });
+       
+       return { success: true, mode: importMode };
+     },
+
+     // Get export data payload with metadata
+     getExportPayload: () => {
+       const collections = [
+         'tasks', 'photos', 'files', 'vendors', 'teamMembers', 'misc',
+         'events', 'stages', 'eras', 'tags', 'songs', 'globalTasks',
+         'releases', 'standaloneVideos', 'templates', 'auditLog',
+         'expenses', 'taskCategories'
+       ];
+       
+       const payload = {
+         exportVersion: EXPORT_VERSION,
+         appVersion: APP_VERSION,
+         exportedAt: new Date().toISOString(),
+         mode: mode,
+         settings: data.settings
+       };
+       
+       collections.forEach(col => {
+         payload[col] = data[col] || [];
+       });
+       
+       return payload;
      }
   };
 

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useStore, STATUS_OPTIONS, getTaskDueDate, getPrimaryDate, getEffectiveCost } from './Store';
+import { useStore, STATUS_OPTIONS, getTaskDueDate, getPrimaryDate, getEffectiveCost, EXPORT_VERSION, APP_VERSION } from './Store';
 import { THEME, COLORS, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane } from './ItemComponents';
@@ -1637,6 +1637,13 @@ export const SettingsView = () => {
     const [modImportText, setModImportText] = useState('');
     const [modStatus, setModStatus] = useState('');
 
+    // Data import/export state
+    const [importFile, setImportFile] = useState(null);
+    const [importPreview, setImportPreview] = useState(null);
+    const [importMode, setImportMode] = useState('replace');
+    const [importStatus, setImportStatus] = useState('');
+    const [isImporting, setIsImporting] = useState(false);
+
     useEffect(() => {
       setTemplateDrafts(settings.templates || []);
     }, [settings.templates]);
@@ -1729,16 +1736,109 @@ export const SettingsView = () => {
       storage: mode === 'cloud' ? 'Cloud' : 'Local'
     };
 
-    const backupAllData = () => {
-      const payload = { ...data, settings: { ...settings, templates: templateDrafts } };
+    // Enhanced export with version metadata
+    const exportAllData = () => {
+      const payload = actions.getExportPayload();
+      // Also include current template drafts in settings
+      payload.settings = { ...payload.settings, templates: templateDrafts };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `album-tracker-backup-${new Date().toISOString()}.json`;
+      a.download = `album-tracker-export-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
       actions.saveSettings({ lastBackup: new Date().toISOString() });
+      setImportStatus('Data exported successfully!');
+      setTimeout(() => setImportStatus(''), 3000);
+    };
+
+    // Legacy backup function (kept for compatibility with migration section)
+    const backupAllData = exportAllData;
+
+    // Handle file selection for import
+    const handleImportFileSelect = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      setImportFile(file);
+      setImportStatus('');
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          
+          // Validate structure
+          if (typeof parsed !== 'object' || parsed === null) {
+            setImportStatus('Error: Invalid file format');
+            setImportPreview(null);
+            return;
+          }
+          
+          // Generate preview counts
+          const preview = {
+            exportVersion: parsed.exportVersion || 'Unknown (legacy)',
+            appVersion: parsed.appVersion || 'Unknown',
+            exportedAt: parsed.exportedAt || 'Unknown',
+            counts: {
+              songs: (parsed.songs || []).length,
+              releases: (parsed.releases || []).length,
+              events: (parsed.events || []).length,
+              globalTasks: (parsed.globalTasks || []).length,
+              expenses: (parsed.expenses || []).length,
+              teamMembers: (parsed.teamMembers || []).length,
+              eras: (parsed.eras || []).length,
+              stages: (parsed.stages || []).length,
+              tags: (parsed.tags || []).length,
+              tasks: (parsed.tasks || []).length,
+              photos: (parsed.photos || []).length,
+              files: (parsed.files || []).length,
+              standaloneVideos: (parsed.standaloneVideos || []).length,
+              templates: (parsed.settings?.templates || parsed.templates || []).length
+            },
+            rawData: parsed,
+            isCompatible: !parsed.exportVersion || parsed.exportVersion === EXPORT_VERSION
+          };
+          
+          setImportPreview(preview);
+        } catch (err) {
+          setImportStatus('Error: Could not parse file. Make sure it is a valid JSON file.');
+          setImportPreview(null);
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    // Execute the import
+    const handleImportConfirm = async () => {
+      if (!importPreview?.rawData) return;
+      
+      setIsImporting(true);
+      setImportStatus('Importing data...');
+      
+      try {
+        await actions.importData(importPreview.rawData, importMode);
+        setImportStatus(`Success! Data ${importMode === 'replace' ? 'replaced' : 'merged'} successfully.`);
+        setImportPreview(null);
+        setImportFile(null);
+        // Reset the file input
+        const fileInput = document.getElementById('import-file-input');
+        if (fileInput) fileInput.value = '';
+      } catch (err) {
+        setImportStatus(`Error during import: ${err.message}`);
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    // Cancel import
+    const handleImportCancel = () => {
+      setImportPreview(null);
+      setImportFile(null);
+      setImportStatus('');
+      const fileInput = document.getElementById('import-file-input');
+      if (fileInput) fileInput.value = '';
     };
 
     const runMigrationFlow = async () => {
@@ -1973,6 +2073,149 @@ export const SettingsView = () => {
                       </button>
                     </div>
                     <div className="text-[11px] opacity-70">Supported actions: createTask, createGlobalTask, addTemplate, addStage, addTag, openLink.</div>
+                  </div>
+                </div>
+
+                {/* Data Management - Import/Export */}
+                <div className="pt-4 border-t-4 border-black space-y-3">
+                  <h3 className="font-black text-xs uppercase">Data Management</h3>
+                  <p className="text-xs opacity-70">Export your data for backup or import data from a previous backup.</p>
+                  
+                  {/* Export Section */}
+                  <div className={cn("p-3 space-y-2", THEME.punk.card)}>
+                    <div className="font-bold text-sm">Export All Data</div>
+                    <p className="text-[11px] opacity-70">Download a complete backup of all your songs, releases, events, tasks, settings, and more.</p>
+                    <button onClick={exportAllData} className={cn("w-full px-3 py-2 text-xs", THEME.punk.btn, "bg-green-600 text-white")}>
+                      Export All Data
+                    </button>
+                    {settings.lastBackup && (
+                      <div className="text-[10px] opacity-60">Last export: {new Date(settings.lastBackup).toLocaleString()}</div>
+                    )}
+                  </div>
+                  
+                  {/* Import Section */}
+                  <div className={cn("p-3 space-y-3", THEME.punk.card)}>
+                    <div className="font-bold text-sm">Import Data</div>
+                    <p className="text-[11px] opacity-70">Upload a previously exported JSON file to restore or merge your data.</p>
+                    
+                    <input 
+                      id="import-file-input"
+                      type="file" 
+                      accept=".json,application/json"
+                      onChange={handleImportFileSelect}
+                      className={cn("w-full text-xs", THEME.punk.input, "file:mr-2 file:px-3 file:py-1 file:border-2 file:border-black file:bg-black file:text-white file:font-bold file:text-xs file:cursor-pointer")}
+                    />
+                    
+                    {/* Status Messages */}
+                    {importStatus && (
+                      <div className={cn(
+                        "px-3 py-2 text-xs font-bold border-2 border-black",
+                        importStatus.startsWith('Error') ? "bg-red-100 text-red-700" : 
+                        importStatus.startsWith('Success') ? "bg-green-100 text-green-700" : 
+                        "bg-yellow-100 text-yellow-700"
+                      )}>
+                        {importStatus}
+                      </div>
+                    )}
+                    
+                    {/* Import Preview */}
+                    {importPreview && (
+                      <div className="space-y-3 pt-2 border-t-2 border-dashed border-black/30">
+                        <div className="font-bold text-sm">Import Preview</div>
+                        
+                        {/* Version Info */}
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="flex justify-between border-b border-dashed border-black/30 pb-1">
+                            <span className="font-bold">Export Version</span>
+                            <span>{importPreview.exportVersion}</span>
+                          </div>
+                          <div className="flex justify-between border-b border-dashed border-black/30 pb-1">
+                            <span className="font-bold">App Version</span>
+                            <span>{importPreview.appVersion}</span>
+                          </div>
+                          <div className="col-span-2 flex justify-between border-b border-dashed border-black/30 pb-1">
+                            <span className="font-bold">Exported At</span>
+                            <span>{importPreview.exportedAt !== 'Unknown' ? new Date(importPreview.exportedAt).toLocaleString() : 'Unknown'}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Compatibility Warning */}
+                        {!importPreview.isCompatible && (
+                          <div className="px-2 py-1 bg-yellow-100 border-2 border-yellow-500 text-yellow-700 text-[11px] font-bold">
+                            ⚠️ This export was created with a different version. Import may have compatibility issues.
+                          </div>
+                        )}
+                        
+                        {/* Item Counts */}
+                        <div className="font-bold text-xs">Items to Import:</div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          {Object.entries(importPreview.counts).filter(([, count]) => count > 0).map(([key, count]) => (
+                            <div key={key} className="flex justify-between border-b border-dashed border-black/30 pb-1">
+                              <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                              <span className="font-bold">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Import Mode Selection */}
+                        <div className="space-y-2 pt-2">
+                          <div className="font-bold text-xs">Import Mode:</div>
+                          <div className="space-y-2">
+                            <label className="flex items-start gap-2 text-xs">
+                              <input 
+                                type="radio" 
+                                name="importMode" 
+                                value="replace" 
+                                checked={importMode === 'replace'} 
+                                onChange={(e) => setImportMode(e.target.value)}
+                                className="mt-1"
+                              />
+                              <div>
+                                <div className="font-bold">Replace All</div>
+                                <div className="text-[10px] opacity-70">Delete existing data and replace with imported data. ⚠️ This cannot be undone!</div>
+                              </div>
+                            </label>
+                            <label className="flex items-start gap-2 text-xs">
+                              <input 
+                                type="radio" 
+                                name="importMode" 
+                                value="merge" 
+                                checked={importMode === 'merge'} 
+                                onChange={(e) => setImportMode(e.target.value)}
+                                className="mt-1"
+                              />
+                              <div>
+                                <div className="font-bold">Merge</div>
+                                <div className="text-[10px] opacity-70">Add new items and update existing items with matching IDs. Existing data is preserved.</div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 pt-2">
+                          <button 
+                            onClick={handleImportCancel} 
+                            className={cn("flex-1 px-3 py-2 text-xs", THEME.punk.btn)}
+                            disabled={isImporting}
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            onClick={handleImportConfirm} 
+                            disabled={isImporting}
+                            className={cn(
+                              "flex-1 px-3 py-2 text-xs font-bold", 
+                              THEME.punk.btn, 
+                              importMode === 'replace' ? "bg-red-600 text-white" : "bg-blue-600 text-white",
+                              isImporting && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {isImporting ? 'Importing...' : importMode === 'replace' ? 'Replace All Data' : 'Merge Data'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
