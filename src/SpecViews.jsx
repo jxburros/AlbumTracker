@@ -118,6 +118,16 @@ export const SongDetailView = ({ song, onBack }) => {
     return initial;
   });
 
+  // Sync text states with song prop when it changes
+  useEffect(() => {
+    setWritersText((song.writers || []).join(', '));
+    setComposersText((song.composers || []).join(', '));
+    setInstrumentsText((song.instruments || []).join(', '));
+    const versionTexts = {};
+    (song.versions || []).forEach(v => { versionTexts[v.id] = (v.instruments || []).join(', '); });
+    setVersionInstrumentsText(versionTexts);
+  }, [song.id, song.writers, song.composers, song.instruments, song.versions]);
+
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
   const taskBudget = (task = {}) => {
@@ -1862,6 +1872,11 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
   const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'auto'|'custom'|'new-custom' }
   // Text state for comma-separated inputs (to allow typing commas/spaces)
   const [platformsText, setPlatformsText] = useState((release.platforms || []).join(', '));
+
+  // Sync text states with release prop when it changes
+  useEffect(() => {
+    setPlatformsText((release.platforms || []).join(', '));
+  }, [release.id, release.platforms]);
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
