@@ -2285,6 +2285,21 @@ export const SettingsView = () => {
                   </div>
                 </div>
 
+                {/* Eras */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Eras</h3>
+                  <div className="space-y-2">
+                    {(data.eras || []).map(era => (
+                      <div key={era.id} className="flex items-center gap-2">
+                        <input value={era.name} onChange={e => actions.updateEra(era.id, { name: e.target.value })} className={cn("flex-1", THEME.punk.input)} />
+                        <input type="color" value={era.color || '#000000'} onChange={e => actions.updateEra(era.id, { color: e.target.value })} className="w-16 h-10 border-4 border-black" />
+                        <button onClick={() => actions.deleteEra(era.id)} className="text-red-500 font-bold text-xs">Delete</button>
+                      </div>
+                    ))}
+                    <button onClick={() => actions.addEra({ name: 'New Era' })} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>+ Add Era</button>
+                  </div>
+                </div>
+
                 {/* Tags */}
                 <div className="pt-4 border-t-4 border-black">
                   <h3 className="font-black text-xs uppercase mb-2">Tags</h3>
