@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
+import { useStore, STATUS_OPTIONS, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
@@ -32,7 +32,6 @@ export const SongListView = ({ onSelectSong }) => {
   // Column definitions
   const columns = [
     { field: 'title', label: 'Title', sortable: true, render: (item) => <span className="font-bold">{item.title}</span> },
-    { field: 'category', label: 'Category', sortable: true },
     { field: 'releaseDate', label: 'Release Date', sortable: true, render: (item) => item.releaseDate || '-' },
     { field: 'isSingle', label: 'Single?', align: 'center', render: (item) => item.isSingle ? 'Yes' : 'No' },
     { field: 'exclusiveType', label: 'Exclusive', render: (item) => item.exclusiveType && item.exclusiveType !== 'None' ? item.exclusiveType : '-' },
@@ -42,16 +41,13 @@ export const SongListView = ({ onSelectSong }) => {
   ];
 
   // Filter options
-  const filterOptions = [
-    { field: 'category', label: 'All Categories', options: SONG_CATEGORIES.map(c => ({ value: c, label: c })) }
-  ];
+  const filterOptions = [];
 
   // Render grid card
   const renderGridCard = (song) => (
     <div key={song.id} onClick={() => onSelectSong?.(song)} className={cn("p-4 cursor-pointer hover:bg-yellow-50", THEME.punk.card)}>
       <div className="font-bold text-lg mb-2">{song.title}</div>
       <div className="text-xs space-y-1">
-        <div className="flex justify-between"><span className="opacity-60">Category:</span><span className="font-bold">{song.category}</span></div>
         <div className="flex justify-between"><span className="opacity-60">Release:</span><span className="font-bold">{song.releaseDate || 'TBD'}</span></div>
         <div className="flex justify-between"><span className="opacity-60">Progress:</span><span className="font-bold">{songProgress(song)}%</span></div>
         <div className="flex justify-between"><span className="opacity-60">Est. Cost:</span><span className="font-bold">{formatMoney(song.estimatedCost || 0)}</span></div>
@@ -208,14 +204,16 @@ export const SongDetailView = ({ song, onBack }) => {
     }
     handleFieldChange('coreReleaseIds', newIds);
     // Auto-fill release date from earliest attached release if not overridden
+    let newReleaseDate = form.releaseDate;
     if (!form.releaseDateOverride && newIds.length > 0) {
       const dates = newIds.map(id => data.releases.find(r => r.id === id)?.releaseDate).filter(Boolean).sort();
       if (dates.length > 0 && dates[0] !== form.releaseDate) {
         handleFieldChange('releaseDate', dates[0]);
+        newReleaseDate = dates[0];
       }
     }
-    setTimeout(handleSave, 0);
-  }, [form.coreReleaseIds, form.coreReleaseId, form.releaseDateOverride, form.releaseDate, data.releases, handleFieldChange, handleSave]);
+    actions.updateSong(song.id, { ...form, coreReleaseIds: newIds, releaseDate: newReleaseDate });
+  }, [form, data.releases, handleFieldChange, actions, song.id]);
 
   const currentSong = useMemo(() => data.songs.find(s => s.id === song.id) || song, [data.songs, song]);
   
@@ -561,17 +559,11 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Writers</label>
-            <input value={writersText} onChange={e => setWritersText(e.target.value)} onBlur={() => { handleFieldChange('writers', writersText.split(',').map(w => w.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+            <input value={writersText} onChange={e => setWritersText(e.target.value)} onBlur={() => { const newWriters = writersText.split(',').map(w => w.trim()).filter(Boolean); handleFieldChange('writers', newWriters); actions.updateSong(song.id, { ...form, writers: newWriters }); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Composers</label>
-            <input value={composersText} onChange={e => setComposersText(e.target.value)} onBlur={() => { handleFieldChange('composers', composersText.split(',').map(c => c.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Category</label>
-            <select value={form.category || 'Album'} onChange={e => { handleFieldChange('category', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
-              {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <input value={composersText} onChange={e => setComposersText(e.target.value)} onBlur={() => { const newComposers = composersText.split(',').map(c => c.trim()).filter(Boolean); handleFieldChange('composers', newComposers); actions.updateSong(song.id, { ...form, composers: newComposers }); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
           </div>
         </div>
         
@@ -611,8 +603,9 @@ export const SongDetailView = ({ song, onBack }) => {
                   type="checkbox" 
                   checked={form.releaseDateOverride || false} 
                   onChange={e => { 
-                    handleFieldChange('releaseDateOverride', e.target.checked); 
-                    setTimeout(handleSave, 0); 
+                    const newValue = e.target.checked;
+                    handleFieldChange('releaseDateOverride', newValue); 
+                    actions.updateSong(song.id, { ...form, releaseDateOverride: newValue }); 
                   }}
                   className="w-4 h-4" 
                 />
@@ -628,15 +621,15 @@ export const SongDetailView = ({ song, onBack }) => {
             <label className="block text-xs font-bold uppercase mb-1">Flags</label>
             <div className="flex flex-wrap gap-4 p-2 border-4 border-black bg-white h-10 items-center">
               <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                <input type="checkbox" checked={form.isSingle || false} onChange={e => { handleFieldChange('isSingle', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                <input type="checkbox" checked={form.isSingle || false} onChange={e => { const newValue = e.target.checked; handleFieldChange('isSingle', newValue); actions.updateSong(song.id, { ...form, isSingle: newValue }); }} className="w-4 h-4" />
                 Single
               </label>
               <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                <input type="checkbox" checked={form.stemsNeeded || false} onChange={e => { handleFieldChange('stemsNeeded', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                <input type="checkbox" checked={form.stemsNeeded || false} onChange={e => { const newValue = e.target.checked; handleFieldChange('stemsNeeded', newValue); actions.updateSong(song.id, { ...form, stemsNeeded: newValue }); }} className="w-4 h-4" />
                 Stems
               </label>
               <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                <input type="checkbox" checked={form.hasExclusivity || false} onChange={e => { handleFieldChange('hasExclusivity', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                <input type="checkbox" checked={form.hasExclusivity || false} onChange={e => { const newValue = e.target.checked; handleFieldChange('hasExclusivity', newValue); actions.updateSong(song.id, { ...form, hasExclusivity: newValue }); }} className="w-4 h-4" />
                 Exclusive
               </label>
             </div>
@@ -676,7 +669,7 @@ export const SongDetailView = ({ song, onBack }) => {
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Exclusivity End</label>
-              <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={form.exclusiveStartDate ? new Date(new Date(form.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full", THEME.punk.input)} />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Exclusivity Notes</label>
@@ -693,8 +686,9 @@ export const SongDetailView = ({ song, onBack }) => {
               value={instrumentsText} 
               onChange={e => setInstrumentsText(e.target.value)}
               onBlur={() => {
-                handleFieldChange('instruments', instrumentsText.split(',').map(i => i.trim()).filter(Boolean));
-                setTimeout(handleSave, 0);
+                const newInstruments = instrumentsText.split(',').map(i => i.trim()).filter(Boolean);
+                handleFieldChange('instruments', newInstruments);
+                actions.updateSong(song.id, { ...form, instruments: newInstruments });
               }} 
               className={cn("w-full", THEME.punk.input)} 
               placeholder="guitar, synth, drums" 
@@ -715,9 +709,10 @@ export const SongDetailView = ({ song, onBack }) => {
                   memberId: newSongMusician.memberId, 
                   instruments: (newSongMusician.instruments || '').split(',').map(i => i.trim()).filter(Boolean) 
                 };
-                handleFieldChange('musicians', [...(form.musicians || []), newMusician]);
+                const newMusicians = [...(form.musicians || []), newMusician];
+                handleFieldChange('musicians', newMusicians);
                 setNewSongMusician({ memberId: '', instruments: '' });
-                setTimeout(handleSave, 0);
+                actions.updateSong(song.id, { ...form, musicians: newMusicians });
               }} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>Add</button>
             </div>
             {(form.musicians || []).length > 0 && (
@@ -728,8 +723,9 @@ export const SongDetailView = ({ song, onBack }) => {
                     <span key={m.id} className="px-2 py-1 border border-black bg-blue-100 text-[10px] font-bold flex items-center gap-1">
                       {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
                       <button onClick={() => {
-                        handleFieldChange('musicians', (form.musicians || []).filter(mu => mu.id !== m.id));
-                        setTimeout(handleSave, 0);
+                        const newMusicians = (form.musicians || []).filter(mu => mu.id !== m.id);
+                        handleFieldChange('musicians', newMusicians);
+                        actions.updateSong(song.id, { ...form, musicians: newMusicians });
                       }} className="text-red-600">×</button>
                     </span>
                   );
@@ -906,7 +902,7 @@ export const SongDetailView = ({ song, onBack }) => {
                           </div>
                           <div>
                             <label className="block text-xs font-bold uppercase mb-1">End Date</label>
-                            <input type="date" value={v.exclusiveEndDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveEndDate: e.target.value })} className={cn("w-full text-xs", THEME.punk.input)} />
+                            <input type="date" value={v.exclusiveEndDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { exclusiveEndDate: e.target.value })} min={v.exclusiveStartDate ? new Date(new Date(v.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full text-xs", THEME.punk.input)} />
                           </div>
                           <div>
                             <label className="block text-xs font-bold uppercase mb-1">Notes</label>
@@ -2143,7 +2139,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           {/* Phase 3.3: Release Type with expanded options */}
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Type</label>
-            <select value={form.type || 'Album'} onChange={e => { handleFieldChange('type', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+            <select value={form.type || 'Album'} onChange={e => { const newType = e.target.value; handleFieldChange('type', newType); actions.updateRelease(release.id, { ...form, type: newType }); }} className={cn("w-full", THEME.punk.input)}>
               {RELEASE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
@@ -2164,7 +2160,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
               <input 
                 type="checkbox" 
                 checked={form.hasExclusivity || false} 
-                onChange={e => { handleFieldChange('hasExclusivity', e.target.checked); setTimeout(handleSave, 0); }} 
+                onChange={e => { const newValue = e.target.checked; handleFieldChange('hasExclusivity', newValue); actions.updateRelease(release.id, { ...form, hasExclusivity: newValue }); }} 
                 className="w-5 h-5" 
               />
               Exclusive Availability?
@@ -2177,7 +2173,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
-                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={form.exclusiveStartDate ? new Date(new Date(form.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full", THEME.punk.input)} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
@@ -2188,7 +2184,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
           </div>
           {/* Has Physical Copies checkbox (Phase 3.1 & 3.6) */}
           <div className="flex items-center gap-2 font-bold">
-            <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { handleFieldChange('hasPhysicalCopies', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
+            <input type="checkbox" checked={form.hasPhysicalCopies || false} onChange={e => { const newValue = e.target.checked; handleFieldChange('hasPhysicalCopies', newValue); actions.updateRelease(release.id, { ...form, hasPhysicalCopies: newValue }); }} className="w-5 h-5" />
             Has Physical Copies?
           </div>
           {form.hasPhysicalCopies && (
@@ -2205,7 +2201,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
         <div className="grid md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Distribution Platforms</label>
-            <input value={platformsText} onChange={e => setPlatformsText(e.target.value)} onBlur={() => { handleFieldChange('platforms', platformsText.split(',').map(v => v.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
+            <input value={platformsText} onChange={e => setPlatformsText(e.target.value)} onBlur={() => { const newValue = platformsText.split(',').map(v => v.trim()).filter(Boolean); handleFieldChange('platforms', newValue); actions.updateRelease(release.id, { ...form, platforms: newValue }); }} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Additional Costs / Notes</label>
@@ -5049,7 +5045,7 @@ export const EventDetailView = ({ event, onBack }) => {
                     onClick={() => {
                       const updated = (form.attendees || []).filter((_, i) => i !== idx);
                       handleFieldChange('attendees', updated);
-                      handleSave();
+                      actions.updateEvent(event.id, { ...form, attendees: updated });
                     }}
                     className="text-red-500 hover:bg-red-100 p-0.5"
                   >
@@ -5068,7 +5064,7 @@ export const EventDetailView = ({ event, onBack }) => {
                 if (e.key === 'Enter' && e.target.value.trim()) {
                   const updated = [...(form.attendees || []), e.target.value.trim()];
                   handleFieldChange('attendees', updated);
-                  handleSave();
+                  actions.updateEvent(event.id, { ...form, attendees: updated });
                   e.target.value = '';
                 }
               }}
@@ -5079,7 +5075,7 @@ export const EventDetailView = ({ event, onBack }) => {
                 if (input.value.trim()) {
                   const updated = [...(form.attendees || []), input.value.trim()];
                   handleFieldChange('attendees', updated);
-                  handleSave();
+                  actions.updateEvent(event.id, { ...form, attendees: updated });
                   input.value = '';
                 }
               }}
@@ -5665,7 +5661,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
     }
     setStatusWarning('');
     handleFieldChange('status', newStatus);
-    setTimeout(handleSave, 0);
+    actions.updateExpense(expense.id, { ...form, status: newStatus });
   };
 
   const currentExpense = useMemo(() => 
@@ -5769,13 +5765,13 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
           <label className="block text-xs font-bold uppercase mb-1">Vendor/Payee</label>
           <div className="flex gap-2 mb-2">
             <button 
-              onClick={() => { handleFieldChange('vendorMode', 'text'); setTimeout(handleSave, 0); }}
+              onClick={() => { handleFieldChange('vendorMode', 'text'); actions.updateExpense(expense.id, { ...form, vendorMode: 'text' }); }}
               className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode !== 'teamMember' ? "bg-black text-white" : "bg-white")}
             >
               Text Input
             </button>
             <button 
-              onClick={() => { handleFieldChange('vendorMode', 'teamMember'); setTimeout(handleSave, 0); }}
+              onClick={() => { handleFieldChange('vendorMode', 'teamMember'); actions.updateExpense(expense.id, { ...form, vendorMode: 'teamMember' }); }}
               className={cn("px-3 py-1 text-xs font-bold", THEME.punk.btn, form.vendorMode === 'teamMember' ? "bg-black text-white" : "bg-white")}
             >
               Team Members
@@ -5793,7 +5789,7 @@ export const ExpenseDetailView = ({ expense, onBack }) => {
                         ? [...(form.teamMemberIds || []), member.id]
                         : (form.teamMemberIds || []).filter(id => id !== member.id);
                       handleFieldChange('teamMemberIds', newIds);
-                      setTimeout(handleSave, 0);
+                      actions.updateExpense(expense.id, { ...form, teamMemberIds: newIds });
                     }}
                     className="w-3 h-3" 
                   />
@@ -6045,6 +6041,16 @@ export const VideoDetailView = ({ video, onBack }) => {
     }
   };
 
+  // Helper to save specific data directly, bypassing stale form state
+  const saveVideoData = async (newData) => {
+    const updatedData = { ...form, ...newData };
+    if (video._source === 'standalone') {
+      await actions.updateStandaloneVideo(video.id, updatedData);
+    } else {
+      await actions.updateSongVideo(video._songId, video.id, updatedData);
+    }
+  };
+
   const handleFieldChange = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); };
 
   // Handle opening the Task Edit Modal - Unified Task Handling Architecture
@@ -6260,7 +6266,7 @@ export const VideoDetailView = ({ video, onBack }) => {
                   const newType = e.target.value;
                   handleFieldChange('videoType', newType);
                   handleFieldChange('types', newType ? { [newType]: true } : {});
-                  setTimeout(handleSave, 0);
+                  saveVideoData({ videoType: newType, types: newType ? { [newType]: true } : {} });
                 }} 
                 className={cn("w-full", THEME.punk.input)}
               >
@@ -6307,7 +6313,7 @@ export const VideoDetailView = ({ video, onBack }) => {
               <input 
                 type="checkbox" 
                 checked={form.timedExclusive || false} 
-                onChange={e => { handleFieldChange('timedExclusive', e.target.checked); setTimeout(handleSave, 0); }} 
+                onChange={e => { const newValue = e.target.checked; handleFieldChange('timedExclusive', newValue); saveVideoData({ timedExclusive: newValue }); }} 
                 className="w-5 h-5" 
               />
               Timed Exclusive?
@@ -6320,7 +6326,7 @@ export const VideoDetailView = ({ video, onBack }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">End Date</label>
-                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={form.exclusiveStartDate ? new Date(new Date(form.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full", THEME.punk.input)} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes (Platform)</label>
@@ -6344,7 +6350,7 @@ export const VideoDetailView = ({ video, onBack }) => {
                         ? [...(form.attachedReleaseIds || []), r.id]
                         : (form.attachedReleaseIds || []).filter(id => id !== r.id);
                       handleFieldChange('attachedReleaseIds', newIds);
-                      setTimeout(handleSave, 0);
+                      saveVideoData({ attachedReleaseIds: newIds });
                     }}
                     className="w-3 h-3" 
                   />
@@ -6367,7 +6373,7 @@ export const VideoDetailView = ({ video, onBack }) => {
                         ? [...(form.attachedEventIds || []), ev.id]
                         : (form.attachedEventIds || []).filter(id => id !== ev.id);
                       handleFieldChange('attachedEventIds', newIds);
-                      setTimeout(handleSave, 0);
+                      saveVideoData({ attachedEventIds: newIds });
                     }}
                     className="w-3 h-3" 
                   />
@@ -7001,7 +7007,8 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
       if (newCategory) {
         handleFieldChange('category', newCategory.name);
         handleFieldChange('categoryId', newCategory.id);
-        setTimeout(handleSave, 0);
+        // Save directly with the new values to avoid stale state
+        await actions.updateGlobalTask(task.id, { ...form, category: newCategory.name, categoryId: newCategory.id });
       }
       setNewCategoryName('');
       setShowAddCategory(false);
@@ -7012,14 +7019,16 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
     if (!newAssignments.memberId) return;
     const updatedMembers = [...(form.assignedMembers || []), { memberId: newAssignments.memberId, cost: parseFloat(newAssignments.cost) || 0 }];
     handleFieldChange('assignedMembers', updatedMembers);
-    setTimeout(handleSave, 0);
+    // Save directly with the new assignedMembers to avoid stale state
+    actions.updateGlobalTask(task.id, { ...form, assignedMembers: updatedMembers });
     setNewAssignments({ memberId: '', cost: 0 });
   };
 
   const removeAssignment = (index) => {
     const updatedMembers = (form.assignedMembers || []).filter((_, i) => i !== index);
     handleFieldChange('assignedMembers', updatedMembers);
-    setTimeout(handleSave, 0);
+    // Save directly with the new assignedMembers to avoid stale state
+    actions.updateGlobalTask(task.id, { ...form, assignedMembers: updatedMembers });
   };
 
   const currentTask = useMemo(() => 
@@ -7095,12 +7104,14 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
             <select 
               value={form.category || ''} 
               onChange={e => { 
-                handleFieldChange('category', e.target.value); 
-                const cat = allCategories.find(c => c.name === e.target.value);
-                if (cat && !cat.isLegacy) {
-                  handleFieldChange('categoryId', cat.id);
+                const newCategory = e.target.value;
+                handleFieldChange('category', newCategory); 
+                const cat = allCategories.find(c => c.name === newCategory);
+                const newCategoryId = cat && !cat.isLegacy ? cat.id : undefined;
+                if (newCategoryId) {
+                  handleFieldChange('categoryId', newCategoryId);
                 }
-                setTimeout(handleSave, 0); 
+                actions.updateGlobalTask(task.id, { ...form, category: newCategory, categoryId: newCategoryId }); 
               }} 
               className={cn("flex-1", THEME.punk.input)}
             >
@@ -7136,7 +7147,7 @@ export const GlobalTaskDetailView = ({ task, onBack }) => {
         </div>
         <div>
           <label className="block text-xs font-bold uppercase mb-1">Status</label>
-          <select value={form.status || 'Not Started'} onChange={e => { handleFieldChange('status', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+          <select value={form.status || 'Not Started'} onChange={e => { const newStatus = e.target.value; handleFieldChange('status', newStatus); actions.updateGlobalTask(task.id, { ...form, status: newStatus }); }} className={cn("w-full", THEME.punk.input)}>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>

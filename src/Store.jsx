@@ -1644,7 +1644,18 @@ export const StoreProvider = ({ children }) => {
         if (releaseDate) {
           releaseOverrides[releaseId] = releaseDate;
         }
-        return { ...v, releaseIds, releaseOverrides };
+        
+        // Auto-fill version releaseDate from earliest attached release
+        const allDates = releaseIds
+          .map(id => data.releases.find(r => r.id === id)?.releaseDate)
+          .filter(Boolean)
+          .sort();
+        const earliestDate = allDates[0];
+        const newReleaseDate = (earliestDate && (!v.releaseDate || earliestDate < v.releaseDate))
+          ? earliestDate
+          : v.releaseDate;
+        
+        return { ...v, releaseIds, releaseOverrides, releaseDate: newReleaseDate };
       });
       if (mode === 'cloud') {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), { versions: updatedVersions });
@@ -2084,7 +2095,30 @@ export const StoreProvider = ({ children }) => {
      },
      
     updateRelease: async (releaseId, updates) => {
-      const applyReleaseSync = (releaseDate) => {
+      // Helper to generate physical release tasks
+      const generatePhysicalTasks = (releaseDate, existingTasks = []) => {
+        const physicalTaskTypes = PHYSICAL_RELEASE_TASK_TYPES.map(t => t.type);
+        const hasPhysicalTasks = existingTasks.some(t => physicalTaskTypes.includes(t.type));
+        if (hasPhysicalTasks) return existingTasks;
+        
+        const releaseDateObj = new Date(releaseDate);
+        const newTasks = [...existingTasks];
+        PHYSICAL_RELEASE_TASK_TYPES.forEach(taskType => {
+          const taskDate = new Date(releaseDateObj);
+          taskDate.setDate(taskDate.getDate() - taskType.daysBeforeRelease);
+          newTasks.push(createUnifiedTask({
+            type: taskType.type,
+            category: taskType.category,
+            date: taskDate.toISOString().split('T')[0],
+            dueDate: taskDate.toISOString().split('T')[0],
+            parentType: 'release'
+          }));
+        });
+        newTasks.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        return newTasks;
+      };
+
+      const applyReleaseSync = (releaseDate, additionalUpdates = {}) => {
         if (!releaseDate) return;
         setData(prev => {
           const updatedSongs = (prev.songs || []).map(song => {
@@ -2105,16 +2139,30 @@ export const StoreProvider = ({ children }) => {
           });
           const updatedReleases = (prev.releases || []).map(r => {
             if (r.id !== releaseId) return r;
-            const tasks = recalculateReleaseTasks(r.tasks || [], releaseDate);
-            return { ...r, releaseDate, tasks };
+            let tasks = recalculateReleaseTasks(r.tasks || [], releaseDate);
+            // Generate physical tasks if toggling hasPhysicalCopies to true
+            if (additionalUpdates.hasPhysicalCopies === true && !r.hasPhysicalCopies) {
+              tasks = generatePhysicalTasks(releaseDate, tasks);
+            }
+            return { ...r, ...additionalUpdates, releaseDate, tasks };
           });
           return { ...prev, songs: updatedSongs, releases: updatedReleases };
         });
       };
 
+      const release = data.releases.find(r => r.id === releaseId);
+      const effectiveReleaseDate = updates.releaseDate || release?.releaseDate;
+      const isTogglingPhysicalOn = updates.hasPhysicalCopies === true && !release?.hasPhysicalCopies;
+
       if (mode === 'cloud') {
-        const release = data.releases.find(r => r.id === releaseId);
-        const recalculatedTasks = updates.releaseDate ? recalculateReleaseTasks(release?.tasks || [], updates.releaseDate) : undefined;
+        let recalculatedTasks = updates.releaseDate ? recalculateReleaseTasks(release?.tasks || [], updates.releaseDate) : undefined;
+        
+        // Generate physical tasks if toggling hasPhysicalCopies to true
+        if (isTogglingPhysicalOn && effectiveReleaseDate) {
+          const baseTasks = recalculatedTasks || release?.tasks || [];
+          recalculatedTasks = generatePhysicalTasks(effectiveReleaseDate, baseTasks);
+        }
+        
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), {
           ...updates,
           ...(recalculatedTasks ? { tasks: recalculatedTasks } : {})
@@ -2122,11 +2170,19 @@ export const StoreProvider = ({ children }) => {
         if (updates.releaseDate) applyReleaseSync(updates.releaseDate);
       } else {
         if (updates.releaseDate) {
-          applyReleaseSync(updates.releaseDate);
+          applyReleaseSync(updates.releaseDate, updates);
         } else {
           setData(p => ({
             ...p,
-            releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, ...updates } : r)
+            releases: (p.releases || []).map(r => {
+              if (r.id !== releaseId) return r;
+              let updatedRelease = { ...r, ...updates };
+              // Generate physical tasks if toggling hasPhysicalCopies to true
+              if (isTogglingPhysicalOn && effectiveReleaseDate) {
+                updatedRelease.tasks = generatePhysicalTasks(effectiveReleaseDate, r.tasks || []);
+              }
+              return updatedRelease;
+            })
           }));
         }
       }
