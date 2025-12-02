@@ -1179,7 +1179,7 @@ export const StoreProvider = ({ children }) => {
  
 
     addEra: async (era) => {
-      const newEra = { id: crypto.randomUUID(), name: era.name || 'New Era', color: era.color || '#000' };
+      const newEra = { id: crypto.randomUUID(), name: era.name || 'New Era', color: era.color || '#000000' };
       if (mode === 'cloud') {
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_eras'), { ...newEra, createdAt: serverTimestamp() });
       } else {
@@ -1232,7 +1232,7 @@ export const StoreProvider = ({ children }) => {
  
 
     addTag: async (tag) => {
-      const newTag = { id: crypto.randomUUID(), name: tag.name || 'New Tag', color: tag.color || '#000' };
+      const newTag = { id: crypto.randomUUID(), name: tag.name || 'New Tag', color: tag.color || '#000000' };
       if (mode === 'cloud') {
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'album_tags'), { ...newTag, createdAt: serverTimestamp() });
       } else {
