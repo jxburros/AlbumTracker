@@ -1651,7 +1651,7 @@ export const StoreProvider = ({ children }) => {
           .filter(Boolean)
           .sort();
         const earliestDate = allDates[0];
-        const newReleaseDate = (earliestDate && (!v.releaseDate || earliestDate < v.releaseDate))
+        const newReleaseDate = (earliestDate && (!v.releaseDate || new Date(earliestDate) < new Date(v.releaseDate)))
           ? earliestDate
           : v.releaseDate;
         

@@ -4,6 +4,12 @@ import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
 import { DetailPane, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
 
+// Helper to calculate minimum end date (one day after start date)
+const getMinEndDate = (startDate) => {
+  if (!startDate) return '';
+  return new Date(new Date(startDate).getTime() + 86400000).toISOString().split('T')[0];
+};
+
 // Song List View - Standardized Architecture
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
@@ -669,7 +675,7 @@ export const SongDetailView = ({ song, onBack }) => {
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Exclusivity End</label>
-              <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={form.exclusiveStartDate ? new Date(new Date(form.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full", THEME.punk.input)} />
+              <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={getMinEndDate(form.exclusiveStartDate)} className={cn("w-full", THEME.punk.input)} />
             </div>
             <div>
               <label className="block text-xs font-bold uppercase mb-1">Exclusivity Notes</label>
@@ -2173,7 +2179,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Exclusive End Date</label>
-                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={form.exclusiveStartDate ? new Date(new Date(form.exclusiveStartDate).getTime() + 86400000).toISOString().split('T')[0] : ''} className={cn("w-full", THEME.punk.input)} />
+                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} min={getMinEndDate(form.exclusiveStartDate)} className={cn("w-full", THEME.punk.input)} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1">Exclusive Notes</label>
@@ -5101,8 +5107,9 @@ export const EventDetailView = ({ event, onBack }) => {
                 <div key={songId} className="flex items-center gap-1 px-2 py-1 bg-blue-100 border-2 border-blue-500 text-xs font-bold">
                   <span>🎵 {song.title}</span>
                   <button onClick={() => {
-                    handleFieldChange('linkedSongIds', (form.linkedSongIds || []).filter(id => id !== songId));
-                    setTimeout(handleSave, 0);
+                    const newLinkedSongIds = (form.linkedSongIds || []).filter(id => id !== songId);
+                    handleFieldChange('linkedSongIds', newLinkedSongIds);
+                    actions.updateEvent(event.id, { linkedSongIds: newLinkedSongIds });
                   }} className="text-blue-800 hover:text-red-600"><Icon name="X" size={12} /></button>
                 </div>
               ) : null;
@@ -5114,8 +5121,9 @@ export const EventDetailView = ({ event, onBack }) => {
                 <div key={releaseId} className="flex items-center gap-1 px-2 py-1 bg-purple-100 border-2 border-purple-500 text-xs font-bold">
                   <span>📀 {release.name}</span>
                   <button onClick={() => {
-                    handleFieldChange('linkedReleaseIds', (form.linkedReleaseIds || []).filter(id => id !== releaseId));
-                    setTimeout(handleSave, 0);
+                    const newLinkedReleaseIds = (form.linkedReleaseIds || []).filter(id => id !== releaseId);
+                    handleFieldChange('linkedReleaseIds', newLinkedReleaseIds);
+                    actions.updateEvent(event.id, { linkedReleaseIds: newLinkedReleaseIds });
                   }} className="text-purple-800 hover:text-red-600"><Icon name="X" size={12} /></button>
                 </div>
               ) : null;
@@ -5127,8 +5135,9 @@ export const EventDetailView = ({ event, onBack }) => {
                 <div key={videoId} className="flex items-center gap-1 px-2 py-1 bg-red-100 border-2 border-red-500 text-xs font-bold">
                   <span>🎬 {video.title}</span>
                   <button onClick={() => {
-                    handleFieldChange('linkedVideoIds', (form.linkedVideoIds || []).filter(id => id !== videoId));
-                    setTimeout(handleSave, 0);
+                    const newLinkedVideoIds = (form.linkedVideoIds || []).filter(id => id !== videoId);
+                    handleFieldChange('linkedVideoIds', newLinkedVideoIds);
+                    actions.updateEvent(event.id, { linkedVideoIds: newLinkedVideoIds });
                   }} className="text-red-800 hover:text-red-600"><Icon name="X" size={12} /></button>
                 </div>
               ) : null;
@@ -5140,8 +5149,9 @@ export const EventDetailView = ({ event, onBack }) => {
                 <div key={expenseId} className="flex items-center gap-1 px-2 py-1 bg-green-100 border-2 border-green-500 text-xs font-bold">
                   <span>💰 {expense.name}</span>
                   <button onClick={() => {
-                    handleFieldChange('linkedExpenseIds', (form.linkedExpenseIds || []).filter(id => id !== expenseId));
-                    setTimeout(handleSave, 0);
+                    const newLinkedExpenseIds = (form.linkedExpenseIds || []).filter(id => id !== expenseId);
+                    handleFieldChange('linkedExpenseIds', newLinkedExpenseIds);
+                    actions.updateEvent(event.id, { linkedExpenseIds: newLinkedExpenseIds });
                   }} className="text-green-800 hover:text-red-600"><Icon name="X" size={12} /></button>
                 </div>
               ) : null;
@@ -5161,8 +5171,9 @@ export const EventDetailView = ({ event, onBack }) => {
               value="" 
               onChange={e => {
                 if (e.target.value && !(form.linkedSongIds || []).includes(e.target.value)) {
-                  handleFieldChange('linkedSongIds', [...(form.linkedSongIds || []), e.target.value]);
-                  setTimeout(handleSave, 0);
+                  const newLinkedSongIds = [...(form.linkedSongIds || []), e.target.value];
+                  handleFieldChange('linkedSongIds', newLinkedSongIds);
+                  actions.updateEvent(event.id, { linkedSongIds: newLinkedSongIds });
                 }
               }} 
               className={cn("w-full", THEME.punk.input)}
@@ -5179,8 +5190,9 @@ export const EventDetailView = ({ event, onBack }) => {
               value="" 
               onChange={e => {
                 if (e.target.value && !(form.linkedReleaseIds || []).includes(e.target.value)) {
-                  handleFieldChange('linkedReleaseIds', [...(form.linkedReleaseIds || []), e.target.value]);
-                  setTimeout(handleSave, 0);
+                  const newLinkedReleaseIds = [...(form.linkedReleaseIds || []), e.target.value];
+                  handleFieldChange('linkedReleaseIds', newLinkedReleaseIds);
+                  actions.updateEvent(event.id, { linkedReleaseIds: newLinkedReleaseIds });
                 }
               }} 
               className={cn("w-full", THEME.punk.input)}
@@ -5197,8 +5209,9 @@ export const EventDetailView = ({ event, onBack }) => {
               value="" 
               onChange={e => {
                 if (e.target.value && !(form.linkedVideoIds || []).includes(e.target.value)) {
-                  handleFieldChange('linkedVideoIds', [...(form.linkedVideoIds || []), e.target.value]);
-                  setTimeout(handleSave, 0);
+                  const newLinkedVideoIds = [...(form.linkedVideoIds || []), e.target.value];
+                  handleFieldChange('linkedVideoIds', newLinkedVideoIds);
+                  actions.updateEvent(event.id, { linkedVideoIds: newLinkedVideoIds });
                 }
               }} 
               className={cn("w-full", THEME.punk.input)}
@@ -5215,8 +5228,9 @@ export const EventDetailView = ({ event, onBack }) => {
               value="" 
               onChange={e => {
                 if (e.target.value && !(form.linkedExpenseIds || []).includes(e.target.value)) {
-                  handleFieldChange('linkedExpenseIds', [...(form.linkedExpenseIds || []), e.target.value]);
-                  setTimeout(handleSave, 0);
+                  const newLinkedExpenseIds = [...(form.linkedExpenseIds || []), e.target.value];
+                  handleFieldChange('linkedExpenseIds', newLinkedExpenseIds);
+                  actions.updateEvent(event.id, { linkedExpenseIds: newLinkedExpenseIds });
                 }
               }} 
               className={cn("w-full", THEME.punk.input)}
