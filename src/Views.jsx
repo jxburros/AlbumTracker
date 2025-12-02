@@ -62,6 +62,8 @@ export const CalendarView = ({ onEdit, onSelectEvent }) => {
     const [selectedItem, setSelectedItem] = useState(null);
     // Phase 5: Event custom tasks - Unified Task Handling: Use modal instead of inline form
     const [editingEventTask, setEditingEventTask] = useState(null);
+    // Text state for comma-separated event platforms (to allow typing commas/spaces)
+    const [eventPlatformsText, setEventPlatformsText] = useState('');
     const year = date.getFullYear();
     const month = date.getMonth();
 
@@ -222,6 +224,9 @@ export const CalendarView = ({ onEdit, onSelectEvent }) => {
             onEdit(item);
         } else {
             setSelectedItem(item);
+            if (item._kind === 'event') {
+                setEventPlatformsText((item.platforms || []).join(', '));
+            }
         }
     };
 
@@ -337,7 +342,7 @@ export const CalendarView = ({ onEdit, onSelectEvent }) => {
                                         </div>
                                         <div>
                                             <label className="block font-black uppercase mb-1">Platforms</label>
-                                            <input value={(selectedItem.platforms || []).join(', ')} onChange={e => updateSelectedEvent('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
+                                            <input value={eventPlatformsText} onChange={e => setEventPlatformsText(e.target.value)} onBlur={() => updateSelectedEvent('platforms', eventPlatformsText.split(',').map(v => v.trim()).filter(Boolean))} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, Venue, Stream" />
                                         </div>
                                         {/* Phase 2: Removed Exclusive Type and Estimated/Quoted/Paid Cost fields - Events derive cost from Tasks only */}
                                     </div>
@@ -910,21 +915,36 @@ export const TeamView = () => {
     });
     const [editingMember, setEditingMember] = useState(null);
     const [filter, setFilter] = useState('all'); // 'all', 'musicians', 'individual', 'group', 'organization'
+    // Text state for comma-separated inputs (to allow typing commas/spaces)
+    const [newMemberRolesText, setNewMemberRolesText] = useState('');
+    const [newMemberInstrumentsText, setNewMemberInstrumentsText] = useState('');
+    const [editingMemberRolesText, setEditingMemberRolesText] = useState('');
+    const [editingMemberInstrumentsText, setEditingMemberInstrumentsText] = useState('');
     const companies = (data.teamMembers || []).filter(m => m.type === 'company' || m.type === 'organization');
     const groups = (data.teamMembers || []).filter(m => m.type === 'group');
     const individuals = (data.teamMembers || []).filter(m => m.type === 'individual');
 
     const handleAdd = async () => {
         if (!newMember.name) return;
-        await actions.addTeamMember(newMember);
+        // Convert text fields to arrays before saving
+        const rolesArray = newMemberRolesText.split(',').map(r => r.trim()).filter(Boolean);
+        const instrumentsArray = newMemberInstrumentsText.split(',').map(i => i.trim()).filter(Boolean);
+        await actions.addTeamMember({ ...newMember, roles: rolesArray, role: rolesArray[0] || '', instruments: instrumentsArray });
         // Reset with all new fields per APP ARCHITECTURE.txt Section 5.5
         setNewMember({ name: '', role: '', roles: [], type: 'individual', contacts: { phone: '', email: '', website: '' }, notes: '', links: { groups: [], organizations: [], members: [] }, isMusician: false, instruments: [], workMode: 'In-Person', orgType: 'For-Profit', groupType: '' });
+        setNewMemberRolesText('');
+        setNewMemberInstrumentsText('');
     };
 
     const handleUpdateMember = async () => {
         if (editingMember) {
-            await actions.updateTeamMember(editingMember.id, editingMember);
+            // Convert text fields to arrays before saving
+            const rolesArray = editingMemberRolesText.split(',').map(r => r.trim()).filter(Boolean);
+            const instrumentsArray = editingMemberInstrumentsText.split(',').map(i => i.trim()).filter(Boolean);
+            await actions.updateTeamMember(editingMember.id, { ...editingMember, roles: rolesArray, role: rolesArray[0] || '', instruments: instrumentsArray });
             setEditingMember(null);
+            setEditingMemberRolesText('');
+            setEditingMemberInstrumentsText('');
         }
     };
 
@@ -991,7 +1011,7 @@ export const TeamView = () => {
                 <h3 className="font-black uppercase mb-4 border-b-2 border-black pb-2">Add New Team Member</h3>
                 <div className="grid md:grid-cols-2 gap-4">
                     <input value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} placeholder="Name" className={cn("w-full", THEME.punk.input)} />
-                    <input value={(newMember.roles || []).join(', ')} onChange={e => setNewMember({ ...newMember, roles: e.target.value.split(',').map(r => r.trim()).filter(Boolean), role: e.target.value.split(',').map(r => r.trim()).filter(Boolean)[0] || '' })} placeholder="Roles (comma-separated)" className={cn("w-full", THEME.punk.input)} />
+                    <input value={newMemberRolesText} onChange={e => setNewMemberRolesText(e.target.value)} placeholder="Roles (comma-separated)" className={cn("w-full", THEME.punk.input)} />
                     <div className="flex gap-2 items-center">
                         <label className="text-xs font-bold uppercase">Type</label>
                         <select value={newMember.type} onChange={e => setNewMember({ ...newMember, type: e.target.value })} className={cn("w-full", THEME.punk.input)}>
@@ -1071,8 +1091,8 @@ export const TeamView = () => {
                         <div>
                             <label className="block text-xs font-bold uppercase mb-1">Instruments (comma-separated)</label>
                             <input 
-                                value={(newMember.instruments || []).join(', ')} 
-                                onChange={e => setNewMember({ ...newMember, instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} 
+                                value={newMemberInstrumentsText} 
+                                onChange={e => setNewMemberInstrumentsText(e.target.value)} 
                                 placeholder="guitar, piano, drums"
                                 className={cn("w-full", THEME.punk.input)} 
                             />
@@ -1143,7 +1163,11 @@ export const TeamView = () => {
                             >
                                 <Icon name="Plus" size={16}/>
                             </button>
-                            <button onClick={() => setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) })} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
+                            <button onClick={() => {
+                                setEditingMember({ ...v, contacts: v.contacts || { phone: v.phone || '', email: v.email || '', website: '' }, links: v.links || { groups: [], organizations: [], members: [] }, roles: v.roles || (v.role ? [v.role] : []) });
+                                setEditingMemberRolesText((v.roles || (v.role ? [v.role] : [])).join(', '));
+                                setEditingMemberInstrumentsText((v.instruments || []).join(', '));
+                            }} className="text-blue-500 hover:bg-blue-100 p-1"><Icon name="Settings" size={16}/></button>
                             <button onClick={() => actions.deleteTeamMember(v.id)} className="text-red-500 hover:bg-red-100 p-1"><Icon name="Trash2" size={16}/></button>
                         </div>
                     </div>
@@ -1169,10 +1193,7 @@ export const TeamView = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Roles</label>
-                                <input value={(editingMember.roles || []).join(', ')} onChange={e => {
-                                    const values = e.target.value.split(',').map(r => r.trim()).filter(Boolean);
-                                    setEditingMember(prev => ({ ...prev, roles: values, role: values[0] || '' }));
-                                }} className={cn("w-full", THEME.punk.input)} />
+                                <input value={editingMemberRolesText} onChange={e => setEditingMemberRolesText(e.target.value)} className={cn("w-full", THEME.punk.input)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold uppercase mb-1">Type</label>
@@ -1227,8 +1248,8 @@ export const TeamView = () => {
                                 <div>
                                     <label className="block text-xs font-bold uppercase mb-1">Instruments</label>
                                     <input 
-                                        value={(editingMember.instruments || []).join(', ')} 
-                                        onChange={e => setEditingMember(prev => ({ ...prev, instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) }))} 
+                                        value={editingMemberInstrumentsText} 
+                                        onChange={e => setEditingMemberInstrumentsText(e.target.value)} 
                                         placeholder="guitar, piano, drums"
                                         className={cn("w-full", THEME.punk.input)} 
                                     />

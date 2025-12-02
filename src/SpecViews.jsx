@@ -107,6 +107,26 @@ export const SongDetailView = ({ song, onBack }) => {
   const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'song'|'version'|'custom', versionId?: string }
   // Instrument state - unified with Version's simpler system (Issue #2)
   const [newSongMusician, setNewSongMusician] = useState({ memberId: '', instruments: '' });
+  // Text state for comma-separated inputs (to allow typing commas/spaces)
+  const [writersText, setWritersText] = useState((song.writers || []).join(', '));
+  const [composersText, setComposersText] = useState((song.composers || []).join(', '));
+  const [instrumentsText, setInstrumentsText] = useState((song.instruments || []).join(', '));
+  // Version instruments text state (keyed by version ID)
+  const [versionInstrumentsText, setVersionInstrumentsText] = useState(() => {
+    const initial = {};
+    (song.versions || []).forEach(v => { initial[v.id] = (v.instruments || []).join(', '); });
+    return initial;
+  });
+
+  // Sync text states with song prop when it changes
+  useEffect(() => {
+    setWritersText((song.writers || []).join(', '));
+    setComposersText((song.composers || []).join(', '));
+    setInstrumentsText((song.instruments || []).join(', '));
+    const versionTexts = {};
+    (song.versions || []).forEach(v => { versionTexts[v.id] = (v.instruments || []).join(', '); });
+    setVersionInstrumentsText(versionTexts);
+  }, [song.id, song.writers, song.composers, song.instruments, song.versions]);
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
@@ -541,11 +561,11 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Writers</label>
-            <input value={(form.writers || []).join(', ')} onChange={e => handleFieldChange('writers', e.target.value.split(',').map(w => w.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+            <input value={writersText} onChange={e => setWritersText(e.target.value)} onBlur={() => { handleFieldChange('writers', writersText.split(',').map(w => w.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Composers</label>
-            <input value={(form.composers || []).join(', ')} onChange={e => handleFieldChange('composers', e.target.value.split(',').map(c => c.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+            <input value={composersText} onChange={e => setComposersText(e.target.value)} onBlur={() => { handleFieldChange('composers', composersText.split(',').map(c => c.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Category</label>
@@ -670,9 +690,10 @@ export const SongDetailView = ({ song, onBack }) => {
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Instruments</label>
             <input 
-              value={(form.instruments || []).join(', ')} 
-              onChange={e => {
-                handleFieldChange('instruments', e.target.value.split(',').map(i => i.trim()).filter(Boolean));
+              value={instrumentsText} 
+              onChange={e => setInstrumentsText(e.target.value)}
+              onBlur={() => {
+                handleFieldChange('instruments', instrumentsText.split(',').map(i => i.trim()).filter(Boolean));
                 setTimeout(handleSave, 0);
               }} 
               className={cn("w-full", THEME.punk.input)} 
@@ -898,7 +919,7 @@ export const SongDetailView = ({ song, onBack }) => {
                     {/* Instruments */}
                     <div className="mb-4">
                       <label className="block text-xs font-bold uppercase mb-1">Instruments</label>
-                      <input value={(v.instruments || []).join(', ')} onChange={e => actions.updateSongVersion(song.id, v.id, { instruments: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="guitar, synth, drums" />
+                      <input value={versionInstrumentsText[v.id] ?? (v.instruments || []).join(', ')} onChange={e => setVersionInstrumentsText(prev => ({ ...prev, [v.id]: e.target.value }))} onBlur={() => actions.updateSongVersion(song.id, v.id, { instruments: (versionInstrumentsText[v.id] || '').split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="guitar, synth, drums" />
                     </div>
                     
                     {/* Musicians */}
@@ -1849,6 +1870,13 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
   // Task editing modal state - Unified Task Handling Architecture
   const [editingTask, setEditingTask] = useState(null);
   const [editingTaskContext, setEditingTaskContext] = useState(null); // { type: 'auto'|'custom'|'new-custom' }
+  // Text state for comma-separated inputs (to allow typing commas/spaces)
+  const [platformsText, setPlatformsText] = useState((release.platforms || []).join(', '));
+
+  // Sync text states with release prop when it changes
+  useEffect(() => {
+    setPlatformsText((release.platforms || []).join(', '));
+  }, [release.id, release.platforms]);
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
@@ -2177,7 +2205,7 @@ export const ReleaseDetailView = ({ release, onBack, onSelectSong }) => {
         <div className="grid md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Distribution Platforms</label>
-            <input value={(form.platforms || []).join(', ')} onChange={e => handleFieldChange('platforms', e.target.value.split(',').map(v => v.trim()).filter(Boolean))} onBlur={handleSave} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
+            <input value={platformsText} onChange={e => setPlatformsText(e.target.value)} onBlur={() => { handleFieldChange('platforms', platformsText.split(',').map(v => v.trim()).filter(Boolean)); setTimeout(handleSave, 0); }} placeholder="Spotify, Vinyl, D2C" className={cn("w-full", THEME.punk.input)} />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Additional Costs / Notes</label>
@@ -3164,6 +3192,8 @@ export const VideosView = ({ onSelectSong }) => {
   });
   // Phase 8: Musicians for videos
   const [newVideoMusicians, setNewVideoMusicians] = useState({});
+  // Text state for comma-separated video platforms (to allow typing commas/spaces)
+  const [videoPlatformsText, setVideoPlatformsText] = useState({});
   const teamMembers = data.teamMembers || [];
 
   const songVersions = (song) => song.versions || [];
@@ -3398,7 +3428,7 @@ export const VideosView = ({ onSelectSong }) => {
                               </div>
                               <div>
                                 <label className="block text-[10px] font-bold uppercase mb-1">Platforms</label>
-                                <input value={(video.platforms || []).join(', ')} onChange={e => actions.updateSongVideo(song.id, video.id, { platforms: e.target.value.split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, TikTok, IG" />
+                                <input value={videoPlatformsText[`${song.id}-${video.id}`] ?? (video.platforms || []).join(', ')} onChange={e => setVideoPlatformsText(prev => ({ ...prev, [`${song.id}-${video.id}`]: e.target.value }))} onBlur={() => actions.updateSongVideo(song.id, video.id, { platforms: (videoPlatformsText[`${song.id}-${video.id}`] || '').split(',').map(i => i.trim()).filter(Boolean) })} className={cn("w-full", THEME.punk.input)} placeholder="YouTube, TikTok, IG" />
                               </div>
                               <div className="grid grid-cols-3 gap-2 text-[10px]">
                                 {['Estimated', 'Quoted', 'Paid'].map(k => (
