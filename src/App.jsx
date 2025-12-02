@@ -140,7 +140,7 @@ function AppInner() {
           
           {/* Original Views */}
           {tab === 'list' && <ListView onEdit={setEditing} />}
-          {tab === 'calendar' && <CalendarView onEdit={setEditing} />}
+          {tab === 'calendar' && <CalendarView onEdit={setEditing} onSelectEvent={handleSelectEvent} />}
           {tab === 'gallery' && <GalleryView />}
           {tab === 'files' && <FilesView />}
           {tab === 'team' && <TeamView />}

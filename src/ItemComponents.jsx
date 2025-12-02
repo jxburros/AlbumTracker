@@ -151,19 +151,7 @@ export const UniversalTagsPicker = ({ value = [], onChange, tags = [], onCreateT
   
   return (
     <div className="relative">
-      {/* Selected tags as pills */}
-      <div className="flex flex-wrap gap-1 mb-2 min-h-[28px]">
-        {selectedTags.map(tag => (
-          <div key={tag.id} className="flex items-center gap-1 px-2 py-1 bg-yellow-100 border-2 border-black text-xs font-bold">
-            <span style={{ color: tag.color || '#000' }}>{tag.name}</span>
-            <button onClick={() => handleRemoveTag(tag.id)} className="text-gray-600 hover:text-red-600">
-              <Icon name="X" size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
-      
-      {/* Input with autocomplete */}
+      {/* Input with autocomplete - NOW FIRST */}
       <input
         type="text"
         value={inputValue}
@@ -198,6 +186,20 @@ export const UniversalTagsPicker = ({ value = [], onChange, tags = [], onCreateT
           {filteredSuggestions.length === 0 && !inputValue.trim() && (
             <div className="px-3 py-2 text-xs text-gray-500">No tags available</div>
           )}
+        </div>
+      )}
+      
+      {/* Selected tags as pills - NOW BELOW INPUT */}
+      {selectedTags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2 min-h-[28px]">
+          {selectedTags.map(tag => (
+            <div key={tag.id} className="flex items-center gap-1 px-2 py-1 bg-yellow-100 border-2 border-black text-xs font-bold">
+              <span style={{ color: tag.color || '#000' }}>{tag.name}</span>
+              <button onClick={() => handleRemoveTag(tag.id)} className="text-gray-600 hover:text-red-600">
+                <Icon name="X" size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

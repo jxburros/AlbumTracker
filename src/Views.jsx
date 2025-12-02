@@ -56,10 +56,9 @@ export const ListView = ({ onEdit }) => {
     );
 };
 
-export const CalendarView = ({ onEdit }) => {
+export const CalendarView = ({ onEdit, onSelectEvent }) => {
     const { data, actions } = useStore();
     const [date, setDate] = useState(new Date());
-    const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '' });
     const [selectedItem, setSelectedItem] = useState(null);
     // Phase 5: Event custom tasks - Unified Task Handling: Use modal instead of inline form
     const [editingEventTask, setEditingEventTask] = useState(null);
@@ -247,60 +246,26 @@ export const CalendarView = ({ onEdit }) => {
                 </div>
             </div>
 
-            {/* Add Event Form - Per APP ARCHITECTURE.txt Section 5.4 */}
-            <div className={cn("mb-4 p-4 flex flex-col gap-3", THEME.punk.card)}>
-                <div className="grid md:grid-cols-4 gap-3">
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Title</label>
-                        <input value={newEvent.title} onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))} placeholder="Event title" className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Date</label>
-                        <input type="date" value={newEvent.date} onChange={e => setNewEvent(prev => ({ ...prev, date: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Time</label>
-                        <input type="time" value={newEvent.time || ''} onChange={e => setNewEvent(prev => ({ ...prev, time: e.target.value }))} className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Location</label>
-                        <input value={newEvent.location || ''} onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))} placeholder="Venue, city" className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                </div>
-                <div className="grid md:grid-cols-4 gap-3">
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Description</label>
-                        <input value={newEvent.description} onChange={e => setNewEvent(prev => ({ ...prev, description: e.target.value }))} placeholder="Notes" className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold uppercase mb-1">Entry Cost</label>
-                        <input type="number" value={newEvent.entryCost || ''} onChange={e => setNewEvent(prev => ({ ...prev, entryCost: parseFloat(e.target.value) || 0 }))} placeholder="0" className={cn("w-full", THEME.punk.input)} />
-                    </div>
-                    <div className="flex items-center">
-                        <label className="flex items-center gap-2 font-bold text-xs">
-                            <input 
-                                type="checkbox" 
-                                checked={newEvent.includePreparation !== false}
-                                onChange={e => setNewEvent(prev => ({ ...prev, includePreparation: e.target.checked }))}
-                                className="w-4 h-4" 
-                            />
-                            Include Prep Tasks
-                        </label>
-                    </div>
-                    <div className="flex items-end">
-                        <button
-                            onClick={() => {
-                                if (!newEvent.title || !newEvent.date) return;
-                                // Use dedicated addEvent action with auto-task generation
-                                actions.addEvent({ ...newEvent, type: 'Standalone Event' }, newEvent.includePreparation !== false);
-                                setNewEvent({ title: '', date: '', description: '', time: '', location: '', entryCost: 0, includePreparation: true });
-                            }}
-                            className={cn("px-4 py-2 w-full", THEME.punk.btn, "bg-black text-white")}
-                        >
-                            + Add Event
-                        </button>
-                    </div>
-                </div>
+            {/* Add Event Button - Creates a new blank event and navigates to detail page */}
+            <div className={cn("mb-4 p-4 flex justify-end", THEME.punk.card)}>
+                <button
+                    onClick={async () => {
+                        // Create a new blank event with today's date
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const newEvent = await actions.addEvent({ 
+                            title: 'New Event', 
+                            date: todayStr,
+                            description: '' 
+                        }, false);
+                        // Navigate to event detail page if callback provided
+                        if (onSelectEvent && newEvent) {
+                            onSelectEvent(newEvent);
+                        }
+                    }}
+                    className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}
+                >
+                    + Add Event
+                </button>
             </div>
 
             {/* Legend */}

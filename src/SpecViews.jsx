@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useStore, STATUS_OPTIONS, SONG_CATEGORIES, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
@@ -529,131 +529,111 @@ export const SongDetailView = ({ song, onBack }) => {
       {/* Display Section */}
       {displaySection}
 
-      {/* SECTION B: Song Information - Per spec order:
-           1. Basic Song Fields (Title, Writers, Composers)
-           2. Releases (Attached Releases, Release Date)  
-           3. Flags (Is Single?, Stems Needed?)
-           4. Videos (Core Version Video Options)
-           5. Exclusivity
-           6. Instruments
-           7. Metadata (Era, Stage, Tags, Notes) */}
+      {/* SECTION B: Song Information - Consolidated per spec */}
       <div className={cn("p-6 mb-6", THEME.punk.card)}>
         <h3 className="font-black uppercase mb-4 border-b-4 border-black pb-2">Song Information</h3>
         
-        {/* B.1 Basic Song Fields: Title, Writers, Composers */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Basic Song Fields</h4>
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Song Title</label>
-              <input value={form.title || ''} onChange={e => handleFieldChange('title', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Writers</label>
-              <input value={(form.writers || []).join(', ')} onChange={e => handleFieldChange('writers', e.target.value.split(',').map(w => w.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Composers</label>
-              <input value={(form.composers || []).join(', ')} onChange={e => handleFieldChange('composers', e.target.value.split(',').map(c => c.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
-            </div>
+        {/* Row 1: Title, Writers, Composers, Category */}
+        <div className="grid md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Song Title</label>
+            <input value={form.title || ''} onChange={e => handleFieldChange('title', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Writers</label>
+            <input value={(form.writers || []).join(', ')} onChange={e => handleFieldChange('writers', e.target.value.split(',').map(w => w.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Composers</label>
+            <input value={(form.composers || []).join(', ')} onChange={e => handleFieldChange('composers', e.target.value.split(',').map(c => c.trim()).filter(Boolean))} onBlur={handleSave} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Category</label>
+            <select value={form.category || 'Album'} onChange={e => { handleFieldChange('category', e.target.value); setTimeout(handleSave, 0); }} className={cn("w-full", THEME.punk.input)}>
+              {SONG_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </div>
         
-        {/* B.2 Releases: Attached Releases (Core Version), Release Date */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Releases</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Attached Releases (Core Version)</label>
-              <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white max-h-32 overflow-y-auto">
-                {(data.releases || []).length === 0 ? (
-                  <span className="text-xs opacity-50">No releases available</span>
-                ) : (data.releases || []).map(r => (
-                  <label key={r.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={coreReleaseIdSet.has(r.id)} 
-                      onChange={e => handleCoreReleasesChange(r.id, e.target.checked)}
-                      className="w-4 h-4" 
-                    />
-                    {r.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
-              <div className="flex gap-2 items-center">
-                {/* Issue #3: Release Date is only editable when:
-                    1. Song has no Releases attached (coreReleaseIds.length === 0), OR
-                    2. User has explicitly selected Override Release Date (releaseDateOverride) */}
-                <input 
-                  type="date" 
-                  value={form.releaseDateOverride ? form.releaseDate : (earliestReleaseDate || form.releaseDate || '')} 
-                  onChange={e => handleFieldChange('releaseDate', e.target.value)} 
-                  onBlur={handleSave} 
-                  disabled={!form.releaseDateOverride && coreReleaseIds.length > 0}
-                  className={cn("flex-1", THEME.punk.input, !form.releaseDateOverride && coreReleaseIds.length > 0 && "opacity-60")} 
-                />
-                <label className="flex items-center gap-1 text-xs font-bold whitespace-nowrap">
+        {/* Row 2: Attached Releases and Release Date */}
+        <div className="grid md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Attached Releases (Core Version)</label>
+            <div className="flex flex-wrap gap-2 p-2 border-4 border-black bg-white min-h-[40px] max-h-24 overflow-y-auto items-center">
+              {(data.releases || []).length === 0 ? (
+                <span className="text-xs opacity-50">No releases available</span>
+              ) : (data.releases || []).map(r => (
+                <label key={r.id} className="flex items-center gap-1 text-xs font-bold cursor-pointer">
                   <input 
                     type="checkbox" 
-                    checked={form.releaseDateOverride || false} 
-                    onChange={e => { 
-                      handleFieldChange('releaseDateOverride', e.target.checked); 
-                      setTimeout(handleSave, 0); 
-                    }}
+                    checked={coreReleaseIdSet.has(r.id)} 
+                    onChange={e => handleCoreReleasesChange(r.id, e.target.checked)}
                     className="w-4 h-4" 
                   />
-                  Override
+                  {r.name}
                 </label>
-              </div>
-              {!form.releaseDateOverride && earliestReleaseDate && (
-                <div className="text-[10px] text-gray-500 mt-1">Auto-filled from earliest attached release</div>
-              )}
-              {coreReleaseIds.length === 0 && !form.releaseDate && (
-                <div className="text-[10px] text-gray-500 mt-1">Editable - no releases attached</div>
-              )}
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
+            <div className="flex gap-2 items-center">
+              <input 
+                type="date" 
+                value={form.releaseDateOverride ? form.releaseDate : (earliestReleaseDate || form.releaseDate || '')} 
+                onChange={e => handleFieldChange('releaseDate', e.target.value)} 
+                onBlur={handleSave} 
+                disabled={!form.releaseDateOverride && coreReleaseIds.length > 0}
+                className={cn("flex-1", THEME.punk.input, !form.releaseDateOverride && coreReleaseIds.length > 0 && "opacity-60")} 
+              />
+              <label className="flex items-center gap-1 text-xs font-bold whitespace-nowrap">
+                <input 
+                  type="checkbox" 
+                  checked={form.releaseDateOverride || false} 
+                  onChange={e => { 
+                    handleFieldChange('releaseDateOverride', e.target.checked); 
+                    setTimeout(handleSave, 0); 
+                  }}
+                  className="w-4 h-4" 
+                />
+                Override
+              </label>
             </div>
           </div>
         </div>
         
-        {/* B.3 Flags: Is Single?, Stems Needed? */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Flags</h4>
-          <div className="flex flex-wrap gap-6">
-            <label className="flex items-center gap-2 font-bold">
-              <input type="checkbox" checked={form.isSingle || false} onChange={e => { handleFieldChange('isSingle', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
-              Is Single?
-            </label>
-            <label className="flex items-center gap-2 font-bold">
-              <input type="checkbox" checked={form.stemsNeeded || false} onChange={e => { handleFieldChange('stemsNeeded', e.target.checked); setTimeout(handleSave, 0); }} className="w-5 h-5" />
-              Stems Needed?
-            </label>
+        {/* Row 3: Flags, Videos, Exclusivity */}
+        <div className="grid md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Flags</label>
+            <div className="flex flex-wrap gap-4 p-2 border-4 border-black bg-white h-10 items-center">
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                <input type="checkbox" checked={form.isSingle || false} onChange={e => { handleFieldChange('isSingle', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                Single
+              </label>
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                <input type="checkbox" checked={form.stemsNeeded || false} onChange={e => { handleFieldChange('stemsNeeded', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                Stems
+              </label>
+              <label className="flex items-center gap-1 text-xs font-bold cursor-pointer">
+                <input type="checkbox" checked={form.hasExclusivity || false} onChange={e => { handleFieldChange('hasExclusivity', e.target.checked); setTimeout(handleSave, 0); }} className="w-4 h-4" />
+                Exclusive
+              </label>
+            </div>
           </div>
-          {form.isSingle && (
-            <div className="mt-2 text-xs text-blue-600 font-bold">💡 Tip: Attach a Single/Double Single Release</div>
-          )}
-          {form.stemsNeeded && (
-            <div className="mt-2 text-xs text-blue-600 font-bold">💡 Auto-tasks created: Receive Stems, Release Stems</div>
-          )}
-        </div>
-        
-        {/* B.4 Videos: Core Version Video Options - Issue #1 Fix: Video checkboxes now work at Song level */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Videos (Core Version)</h4>
-          <div className="p-3 bg-gray-50 border-2 border-black">
-            <div className="flex flex-wrap gap-4 text-sm">
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase mb-1">Videos (Core Version)</label>
+            <div className="flex flex-wrap gap-3 p-2 border-4 border-black bg-white min-h-[40px] items-center">
               {[
-                { key: 'music', label: 'Music Video' },
-                { key: 'lyric', label: 'Lyric Video' },
-                { key: 'enhancedLyric', label: 'Enhanced Lyric Video' },
-                { key: 'loop', label: 'Loop Video' },
+                { key: 'music', label: 'Music' },
+                { key: 'lyric', label: 'Lyric' },
+                { key: 'enhancedLyric', label: 'Enhanced' },
+                { key: 'loop', label: 'Loop' },
                 { key: 'visualizer', label: 'Visualizer' },
-                { key: 'live', label: 'Live Video' },
-                { key: 'custom', label: 'Custom Video' }
+                { key: 'live', label: 'Live' },
+                { key: 'custom', label: 'Custom' }
               ].map(type => (
-                <label key={type.key} className="flex items-center gap-2 cursor-pointer font-bold">
+                <label key={type.key} className="flex items-center gap-1 text-xs font-bold cursor-pointer whitespace-nowrap">
                   <input 
                     type="checkbox" 
                     checked={hasVideoOfType(type.key)} 
@@ -664,48 +644,30 @@ export const SongDetailView = ({ song, onBack }) => {
                 </label>
               ))}
             </div>
-            <div className="text-[10px] text-gray-500 mt-2">Checking creates a Video Item; unchecking prompts to delete it</div>
           </div>
         </div>
         
-        {/* B.5 Exclusivity */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Exclusivity</h4>
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 font-bold">
-              <input 
-                type="checkbox" 
-                checked={form.hasExclusivity || false} 
-                onChange={e => { handleFieldChange('hasExclusivity', e.target.checked); setTimeout(handleSave, 0); }} 
-                className="w-5 h-5" 
-              />
-              Has Exclusivity
-            </label>
-            {form.hasExclusivity && (
-              <div className="grid md:grid-cols-3 gap-4 pl-7">
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Exclusivity Start Date</label>
-                  <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Exclusivity End Date</label>
-                  <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase mb-1">Exclusivity Notes</label>
-                  <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform, terms..." className={cn("w-full", THEME.punk.input)} />
-                </div>
-              </div>
-            )}
+        {/* Row 4: Exclusivity Details (conditional) */}
+        {form.hasExclusivity && (
+          <div className="grid md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Exclusivity Start</label>
+              <input type="date" value={form.exclusiveStartDate || ''} onChange={e => handleFieldChange('exclusiveStartDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Exclusivity End</label>
+              <input type="date" value={form.exclusiveEndDate || ''} onChange={e => handleFieldChange('exclusiveEndDate', e.target.value)} onBlur={handleSave} className={cn("w-full", THEME.punk.input)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Exclusivity Notes</label>
+              <input value={form.exclusiveNotes || ''} onChange={e => handleFieldChange('exclusiveNotes', e.target.value)} onBlur={handleSave} placeholder="Platform, terms..." className={cn("w-full", THEME.punk.input)} />
+            </div>
           </div>
-        </div>
+        )}
         
-        {/* B.6 Instruments & Musicians - Unified with Version's simpler system (Issue #2) */}
-        <div className="mb-6 pb-4 border-b-2 border-gray-200">
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Instruments &amp; Musicians</h4>
-          
-          {/* Instruments - same pattern as Versions */}
-          <div className="mb-4">
+        {/* Row 5: Instruments */}
+        <div className="grid md:grid-cols-2 gap-4 mb-4">
+          <div>
             <label className="block text-xs font-bold uppercase mb-1">Instruments</label>
             <input 
               value={(form.instruments || []).join(', ')} 
@@ -717,16 +679,14 @@ export const SongDetailView = ({ song, onBack }) => {
               placeholder="guitar, synth, drums" 
             />
           </div>
-
-          {/* Musicians - same pattern as Versions */}
-          <div className="mb-4">
-            <div className="text-xs font-bold uppercase mb-2">Musicians</div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              <select value={newSongMusician?.memberId || ''} onChange={e => setNewSongMusician(prev => ({ ...(prev || {}), memberId: e.target.value }))} className={cn("px-2 py-1 text-xs", THEME.punk.input)}>
+          <div>
+            <label className="block text-xs font-bold uppercase mb-1">Musicians</label>
+            <div className="flex gap-2">
+              <select value={newSongMusician?.memberId || ''} onChange={e => setNewSongMusician(prev => ({ ...(prev || {}), memberId: e.target.value }))} className={cn("flex-1", THEME.punk.input)}>
                 <option value="">Select Member</option>
                 {teamMembers.filter(m => m.isMusician).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
-              <input value={newSongMusician?.instruments || ''} onChange={e => setNewSongMusician(prev => ({ ...(prev || {}), instruments: e.target.value }))} placeholder="instruments" className={cn("px-2 py-1 text-xs flex-1", THEME.punk.input)} />
+              <input value={newSongMusician?.instruments || ''} onChange={e => setNewSongMusician(prev => ({ ...(prev || {}), instruments: e.target.value }))} placeholder="instruments" className={cn("w-32", THEME.punk.input)} />
               <button onClick={() => {
                 if (!newSongMusician?.memberId) return;
                 const newMusician = { 
@@ -739,30 +699,29 @@ export const SongDetailView = ({ song, onBack }) => {
                 setTimeout(handleSave, 0);
               }} className={cn("px-2 py-1 text-xs", THEME.punk.btn, "bg-black text-white")}>Add</button>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(form.musicians || []).map(m => {
-                const member = teamMembers.find(tm => tm.id === m.memberId);
-                return (
-                  <span key={m.id} className="px-2 py-1 border-2 border-black bg-blue-100 text-xs font-bold flex items-center gap-2">
-                    {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
-                    <button onClick={() => {
-                      handleFieldChange('musicians', (form.musicians || []).filter(mu => mu.id !== m.id));
-                      setTimeout(handleSave, 0);
-                    }} className="text-red-600">×</button>
-                  </span>
-                );
-              })}
-            </div>
+            {(form.musicians || []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {(form.musicians || []).map(m => {
+                  const member = teamMembers.find(tm => tm.id === m.memberId);
+                  return (
+                    <span key={m.id} className="px-2 py-1 border border-black bg-blue-100 text-[10px] font-bold flex items-center gap-1">
+                      {member?.name || 'Member'} — {(m.instruments || []).join(', ')}
+                      <button onClick={() => {
+                        handleFieldChange('musicians', (form.musicians || []).filter(mu => mu.id !== m.id));
+                        setTimeout(handleSave, 0);
+                      }} className="text-red-600">×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
         
-        {/* B.7 Notes */}
+        {/* Row 6: Notes */}
         <div>
-          <h4 className="text-xs font-black uppercase mb-3 text-gray-600">Notes</h4>
-          <div>
-            <label className="block text-xs font-bold uppercase mb-1">Notes</label>
-            <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Additional notes..." />
-          </div>
+          <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+          <textarea value={form.notes || ''} onChange={e => handleFieldChange('notes', e.target.value)} onBlur={handleSave} className={cn("w-full h-20", THEME.punk.input)} placeholder="Additional notes..." />
         </div>
       </div>
 
@@ -1393,6 +1352,63 @@ export const SongDetailView = ({ song, onBack }) => {
                 >
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+              </div>
+
+              {/* Era, Stage & Tags - Per spec for all task editing modals */}
+              <div className="space-y-2 p-3 bg-gray-50 border-2 border-gray-300">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Era</label>
+                    <select 
+                      value={(editingTask.eraIds || [])[0] || ''} 
+                      onChange={e => setEditingTask(prev => ({ ...prev, eraIds: e.target.value ? [e.target.value] : [] }))}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Select Era...</option>
+                      {(data.eras || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Stage</label>
+                    <select 
+                      value={(editingTask.stageIds || [])[0] || ''} 
+                      onChange={e => setEditingTask(prev => ({ ...prev, stageIds: e.target.value ? [e.target.value] : [] }))}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Select Stage...</option>
+                      {(data.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Tags</label>
+                    <select 
+                      value={(editingTask.tagIds || [])[0] || ''} 
+                      onChange={e => {
+                        const newTagId = e.target.value;
+                        if (newTagId && !(editingTask.tagIds || []).includes(newTagId)) {
+                          setEditingTask(prev => ({ ...prev, tagIds: [...(prev.tagIds || []), newTagId] }));
+                        }
+                      }}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Add tag...</option>
+                      {(data.tags || []).filter(t => !(editingTask.tagIds || []).includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {(editingTask.tagIds || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(editingTask.tagIds || []).map(tagId => {
+                      const tag = (data.tags || []).find(t => t.id === tagId);
+                      return tag ? (
+                        <span key={tagId} className="px-2 py-1 bg-yellow-100 border border-black text-[10px] font-bold flex items-center gap-1">
+                          {tag.name}
+                          <button onClick={() => setEditingTask(prev => ({ ...prev, tagIds: (prev.tagIds || []).filter(id => id !== tagId) }))} className="text-red-600">×</button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Notes */}
@@ -3415,6 +3431,17 @@ export const TaskDashboardView = () => {
   const { data } = useStore();
   const [view, setView] = useState('upcoming'); // 'upcoming', 'inProgress', 'overview'
   const [stageFilter, setStageFilter] = useState('all');
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  
+  // Photo carousel rotation - every 4 seconds
+  const photos = data.photos || [];
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentPhotoIndex(prev => (prev + 1) % photos.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [photos.length]);
   
   // Get today's date for comparison
   const today = new Date().toISOString().split('T')[0];
@@ -3683,7 +3710,7 @@ export const TaskDashboardView = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <div className={cn("p-4 text-center", THEME.punk.card)}>
           <div className="text-3xl font-black text-gray-600">{stats.total}</div>
           <div className="text-xs font-bold uppercase">Total Tasks</div>
@@ -3712,7 +3739,55 @@ export const TaskDashboardView = () => {
           <div className="text-2xl font-black text-indigo-600">{formatMoney(stats.remaining)}</div>
           <div className="text-xs font-bold uppercase">Estimated Remaining</div>
         </div>
+        <div className={cn("p-4 text-center", THEME.punk.card, "bg-purple-50")}>
+          <div className="text-2xl font-black text-purple-600">{formatMoney(stats.totalCost)}</div>
+          <div className="text-xs font-bold uppercase">Total Estimated</div>
+        </div>
       </div>
+
+      {/* Photo Carousel - Only show if user has photos */}
+      {photos.length > 0 && (
+        <div className={cn("p-4 mb-6", THEME.punk.card)}>
+          <h3 className="font-black uppercase mb-3 border-b-2 border-black pb-2">📷 Photo Gallery</h3>
+          <div className="relative h-48 overflow-hidden rounded">
+            {photos.map((photo, index) => (
+              <div 
+                key={photo.id}
+                className={cn(
+                  "absolute inset-0 transition-opacity duration-700",
+                  index === currentPhotoIndex ? "opacity-100" : "opacity-0"
+                )}
+              >
+                <img 
+                  src={photo.data} 
+                  alt={photo.title || photo.name || 'Photo'}
+                  className="w-full h-full object-cover"
+                />
+                {photo.title && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white px-3 py-2">
+                    <div className="text-sm font-bold">{photo.title}</div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {/* Photo indicators */}
+            {photos.length > 1 && (
+              <div className="absolute bottom-12 left-0 right-0 flex justify-center gap-2">
+                {photos.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setCurrentPhotoIndex(index)}
+                    className={cn(
+                      "w-2 h-2 rounded-full border border-white",
+                      index === currentPhotoIndex ? "bg-white" : "bg-transparent"
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Phase 9: Notifications/Alerts Section */}
       {notifications.length > 0 && (
@@ -6496,6 +6571,62 @@ export const VideoDetailView = ({ video, onBack }) => {
                   ))}
                 </div>
               </div>
+              {/* Era, Stage & Tags - Per spec for all task editing modals */}
+              <div className="md:col-span-2 space-y-2 p-2 bg-gray-50 border-2 border-gray-300">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Era</label>
+                    <select 
+                      value={(editingTask.eraIds || [])[0] || ''} 
+                      onChange={e => setEditingTask({ ...editingTask, eraIds: e.target.value ? [e.target.value] : [] })}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Select Era...</option>
+                      {(data.eras || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Stage</label>
+                    <select 
+                      value={(editingTask.stageIds || [])[0] || ''} 
+                      onChange={e => setEditingTask({ ...editingTask, stageIds: e.target.value ? [e.target.value] : [] })}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Select Stage...</option>
+                      {(data.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase mb-1">Tags</label>
+                    <select 
+                      value=""
+                      onChange={e => {
+                        const newTagId = e.target.value;
+                        if (newTagId && !(editingTask.tagIds || []).includes(newTagId)) {
+                          setEditingTask({ ...editingTask, tagIds: [...(editingTask.tagIds || []), newTagId] });
+                        }
+                      }}
+                      className={cn("w-full text-xs", THEME.punk.input)}
+                    >
+                      <option value="">Add tag...</option>
+                      {(data.tags || []).filter(t => !(editingTask.tagIds || []).includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {(editingTask.tagIds || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {(editingTask.tagIds || []).map(tagId => {
+                      const tag = (data.tags || []).find(t => t.id === tagId);
+                      return tag ? (
+                        <span key={tagId} className="px-2 py-1 bg-yellow-100 border border-black text-[10px] font-bold flex items-center gap-1">
+                          {tag.name}
+                          <button onClick={() => setEditingTask({ ...editingTask, tagIds: (editingTask.tagIds || []).filter(id => id !== tagId) })} className="text-red-600">×</button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
               {/* Phase 1.7: Notes */}
               <div className="md:col-span-2">
                 <label className="block text-xs font-bold uppercase mb-1">Notes</label>
@@ -6526,6 +6657,15 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   const [filterArchived, setFilterArchived] = useState('active');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [newTaskForm, setNewTaskForm] = useState({
+    taskName: 'New Task',
+    category: 'Other',
+    date: new Date().toISOString().split('T')[0],
+    status: 'Not Started',
+    estimatedCost: 0,
+    notes: ''
+  });
 
   // Phase 5.1: Categories as Items
   const allCategories = useMemo(() => {
@@ -6545,14 +6685,22 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     return tasks;
   }, [data.globalTasks, filterArchived]);
 
-  const handleAddTask = async () => {
-    const newTask = await actions.addGlobalTask({
+  const handleAddTask = () => {
+    // Open the add task modal instead of immediately creating and navigating
+    setNewTaskForm({
       taskName: 'New Task',
       category: 'Other',
       date: new Date().toISOString().split('T')[0],
       status: 'Not Started',
-      estimatedCost: 0
+      estimatedCost: 0,
+      notes: ''
     });
+    setShowAddTaskModal(true);
+  };
+
+  const handleCreateTask = async () => {
+    const newTask = await actions.addGlobalTask(newTaskForm);
+    setShowAddTaskModal(false);
     if (onSelectTask) onSelectTask(newTask);
   };
 
@@ -6694,6 +6842,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   );
 
   return (
+    <>
     <StandardListPage
       title="Global Tasks"
       items={filteredTasks}
@@ -6707,6 +6856,90 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
       headerExtra={headerExtra}
       emptyMessage="No tasks yet. Click + Add Task to create one."
     />
+    
+    {/* Add Task Modal */}
+    {showAddTaskModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowAddTaskModal(false)}>
+        <div className={cn("bg-white p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto", THEME.punk.card)} onClick={e => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-4 border-b-4 border-black pb-2">
+            <h3 className="font-black uppercase">Add New Task</h3>
+            <button onClick={() => setShowAddTaskModal(false)} className="text-2xl font-bold">×</button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Task Name</label>
+              <input 
+                value={newTaskForm.taskName} 
+                onChange={e => setNewTaskForm(prev => ({ ...prev, taskName: e.target.value }))} 
+                className={cn("w-full", THEME.punk.input)} 
+              />
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Category</label>
+                <select 
+                  value={newTaskForm.category} 
+                  onChange={e => setNewTaskForm(prev => ({ ...prev, category: e.target.value }))}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  <option value="Other">Other</option>
+                  {allCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Date</label>
+                <input 
+                  type="date" 
+                  value={newTaskForm.date} 
+                  onChange={e => setNewTaskForm(prev => ({ ...prev, date: e.target.value }))} 
+                  className={cn("w-full", THEME.punk.input)} 
+                />
+              </div>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Status</label>
+                <select 
+                  value={newTaskForm.status} 
+                  onChange={e => setNewTaskForm(prev => ({ ...prev, status: e.target.value }))}
+                  className={cn("w-full", THEME.punk.input)}
+                >
+                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase mb-1">Estimated Cost</label>
+                <input 
+                  type="number" 
+                  value={newTaskForm.estimatedCost} 
+                  onChange={e => setNewTaskForm(prev => ({ ...prev, estimatedCost: parseFloat(e.target.value) || 0 }))} 
+                  className={cn("w-full", THEME.punk.input)} 
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-xs font-bold uppercase mb-1">Notes</label>
+              <textarea 
+                value={newTaskForm.notes || ''} 
+                onChange={e => setNewTaskForm(prev => ({ ...prev, notes: e.target.value }))} 
+                className={cn("w-full h-20", THEME.punk.input)} 
+                placeholder="Task notes..."
+              />
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2 mt-4 pt-4 border-t-2 border-gray-200">
+            <button onClick={() => setShowAddTaskModal(false)} className={cn("px-4 py-2", THEME.punk.btn)}>Cancel</button>
+            <button onClick={handleCreateTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-green-600 text-white")}>Create Task</button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 };
 
