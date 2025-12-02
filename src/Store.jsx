@@ -7,6 +7,10 @@ const StoreContext = createContext();
 
 export const useStore = () => useContext(StoreContext);
 
+// Export format version and app version for data portability
+export const EXPORT_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';
+
 // Status enum for consistency across all entities - per APP ARCHITECTURE.txt Section 1.7
 export const STATUS_OPTIONS = [
   'Not Started',
@@ -2965,6 +2969,179 @@ export const StoreProvider = ({ children }) => {
          categoryId: categoryId,
          category: category.name 
        });
+     },
+
+     // ============================================================
+     // DATA IMPORT/EXPORT ACTIONS
+     // ============================================================
+
+     // Import data from a backup file
+     // mode: 'replace' - replace all existing data
+     // mode: 'merge' - merge with existing data (new items added, conflicts use imported)
+     importData: async (importedData, importMode = 'replace') => {
+       // Collections to import
+       const collections = [
+         'tasks', 'photos', 'files', 'vendors', 'teamMembers', 'misc',
+         'events', 'stages', 'eras', 'tags', 'songs', 'globalTasks',
+         'releases', 'standaloneVideos', 'templates', 'auditLog',
+         'expenses', 'taskCategories'
+       ];
+
+       if (importMode === 'replace') {
+         // Replace mode: clear and replace all data
+         const newData = { settings: data.settings };
+         
+         collections.forEach(col => {
+           newData[col] = importedData[col] || [];
+         });
+         
+         // Import settings if present
+         if (importedData.settings) {
+           newData.settings = { ...data.settings, ...importedData.settings };
+         }
+         
+         if (mode === 'cloud' && db && user) {
+           // For cloud mode: delete existing documents then add imported ones
+           // Note: This uses setDoc which will create or overwrite documents by ID.
+           // Existing documents with IDs not in the import will remain.
+           // For a true "replace all", you would need to query and delete all first,
+           // but that's expensive. This approach effectively merges by ID while
+           // replacing document contents.
+           for (const col of collections) {
+             const colData = importedData[col] || [];
+             const colName = col === 'misc' ? 'misc_expenses' : col;
+             
+             // Delete existing items that are not in the import
+             const existingItems = data[col] || [];
+             const importedIds = new Set(colData.map(item => item.id));
+             for (const existing of existingItems) {
+               if (!importedIds.has(existing.id)) {
+                 try {
+                   await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, `album_${colName}`, existing.id));
+                 } catch (e) {
+                   console.error(`Failed to delete ${col} item during replace`, existing.id, e);
+                 }
+               }
+             }
+             
+             // Add/update imported items
+             for (const item of colData) {
+               try {
+                 await setDoc(
+                   doc(db, 'artifacts', appId, 'users', user.uid, `album_${colName}`, item.id),
+                   { ...item, importedAt: serverTimestamp() }
+                 );
+               } catch (e) {
+                 console.error(`Failed to import ${col} item`, item.id, e);
+               }
+             }
+           }
+           // Save settings
+           if (importedData.settings) {
+             await setDoc(
+               doc(db, 'artifacts', appId, 'users', user.uid, 'album_tasks', 'settings'),
+               { ...data.settings, ...importedData.settings },
+               { merge: true }
+             );
+           }
+         } else {
+           // Local mode: directly update state with imported data
+           setData(prev => ({
+             ...prev,
+             ...newData
+           }));
+         }
+       } else {
+         // Merge mode: add new items, update existing by ID
+         const mergedData = { ...data };
+         
+         collections.forEach(col => {
+           const existingItems = data[col] || [];
+           const newItems = importedData[col] || [];
+           const existingIds = new Set(existingItems.map(i => i.id));
+           
+           // Items that exist get updated, new ones get added
+           const updatedExisting = existingItems.map(existing => {
+             const imported = newItems.find(i => i.id === existing.id);
+             return imported ? { ...existing, ...imported } : existing;
+           });
+           
+           // Add items that don't exist
+           const toAdd = newItems.filter(i => !existingIds.has(i.id));
+           
+           mergedData[col] = [...updatedExisting, ...toAdd];
+         });
+         
+         // Merge settings
+         if (importedData.settings) {
+           mergedData.settings = { ...data.settings, ...importedData.settings };
+         }
+         
+         if (mode === 'cloud' && db && user) {
+           // For cloud mode in merge, upsert each item
+           for (const col of collections) {
+             const colData = mergedData[col] || [];
+             for (const item of colData) {
+               const colName = col === 'misc' ? 'misc_expenses' : col;
+               try {
+                 await setDoc(
+                   doc(db, 'artifacts', appId, 'users', user.uid, `album_${colName}`, item.id),
+                   { ...item, importedAt: serverTimestamp() },
+                   { merge: true }
+                 );
+               } catch (e) {
+                 console.error(`Failed to merge ${col} item`, item.id, e);
+               }
+             }
+           }
+           // Save settings
+           if (importedData.settings) {
+             await setDoc(
+               doc(db, 'artifacts', appId, 'users', user.uid, 'album_tasks', 'settings'),
+               mergedData.settings,
+               { merge: true }
+             );
+           }
+         } else {
+           // Local mode
+           setData(prev => ({
+             ...prev,
+             ...mergedData
+           }));
+         }
+       }
+       
+       // Log the import action
+       actions.logAudit('import', 'system', 'data-import', { 
+         mode: importMode,
+         importedAt: new Date().toISOString()
+       });
+       
+       return { success: true, mode: importMode };
+     },
+
+     // Get export data payload with metadata
+     getExportPayload: () => {
+       const collections = [
+         'tasks', 'photos', 'files', 'vendors', 'teamMembers', 'misc',
+         'events', 'stages', 'eras', 'tags', 'songs', 'globalTasks',
+         'releases', 'standaloneVideos', 'templates', 'auditLog',
+         'expenses', 'taskCategories'
+       ];
+       
+       const payload = {
+         exportVersion: EXPORT_VERSION,
+         appVersion: APP_VERSION,
+         exportedAt: new Date().toISOString(),
+         mode: mode,
+         settings: data.settings
+       };
+       
+       collections.forEach(col => {
+         payload[col] = data[col] || [];
+       });
+       
+       return payload;
      }
   };
 
