@@ -15,10 +15,14 @@ function AppInner() {
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedGlobalTask, setSelectedGlobalTask] = useState(null);
-  const { data } = useStore();
+  const { data, actions } = useStore();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
   const accent = COLOR_VALUES[settings.themeColor || 'pink'] || COLOR_VALUES.pink;
+
+  // Feature 4: Era Mode state
+  const eraModeActive = settings.eraModeActive && settings.eraModeEraId;
+  const eraModeEra = eraModeActive ? (data.eras || []).find(e => e.id === settings.eraModeEraId) : null;
 
   // Phase 10: Apply dark class to html element for Tailwind dark mode
   useEffect(() => {
@@ -104,7 +108,26 @@ function AppInner() {
           </button>
         )}
 
-        <div className="flex-1 overflow-y-auto pt-16 md:pt-0">
+        {/* Feature 4: Era Mode Indicator Banner */}
+        {eraModeActive && eraModeEra && (
+          <div className={cn(
+            "fixed top-0 left-0 md:left-64 right-0 z-20 px-4 py-2 flex items-center justify-between gap-4",
+            "bg-yellow-400 border-b-4 border-black text-black"
+          )}>
+            <div className="flex items-center gap-2 font-bold text-sm">
+              <span>🎯 ERA MODE:</span>
+              <span style={{ color: eraModeEra.color || '#000' }}>{eraModeEra.name}</span>
+            </div>
+            <button 
+              onClick={() => actions.saveSettings({ eraModeActive: false })}
+              className="px-3 py-1 bg-black text-white text-xs font-bold hover:bg-gray-800"
+            >
+              Exit Era Mode
+            </button>
+          </div>
+        )}
+
+        <div className={cn("flex-1 overflow-y-auto pt-16 md:pt-0", eraModeActive && "pt-24 md:pt-10")}>
           {/* Songs - Following unified Item/Page architecture */}
           {tab === 'songs' && <SongListView onSelectSong={handleSelectSong} />}
           {tab === 'songDetail' && selectedSong && <SongDetailView song={selectedSong} onBack={() => { setSelectedSong(null); setTab('songs'); }} />}
