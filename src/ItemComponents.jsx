@@ -107,6 +107,126 @@ export const DetailPane = ({ title, children }) => (
   </div>
 );
 
+/**
+ * AutocompleteInput - Input field with autocomplete suggestions for comma-separated values
+ * Used for Writers, Composers, and similar fields that allow multiple names
+ * 
+ * @param {string} value - Current comma-separated text value
+ * @param {Function} onChange - Callback when text changes
+ * @param {Function} onBlur - Callback when input loses focus
+ * @param {Array<string>} suggestions - Array of suggested values
+ * @param {string} placeholder - Input placeholder text
+ * @param {string} className - Additional CSS classes
+ */
+export const AutocompleteInput = ({ 
+  value = '', 
+  onChange, 
+  onBlur, 
+  suggestions = [], 
+  placeholder = '', 
+  className = '' 
+}) => {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  
+  // Get the current word being typed (after the last comma)
+  const getCurrentWord = () => {
+    const beforeCursor = value.substring(0, cursorPosition);
+    const lastCommaIndex = beforeCursor.lastIndexOf(',');
+    return beforeCursor.substring(lastCommaIndex + 1).trim();
+  };
+  
+  const currentWord = getCurrentWord();
+  
+  // Filter suggestions based on current word
+  const filteredSuggestions = useMemo(() => {
+    if (!currentWord) return [];
+    const lowerWord = currentWord.toLowerCase();
+    // Get unique suggestions that match and aren't already in the value
+    const existingNames = value.split(',').map(n => n.trim().toLowerCase()).filter(Boolean);
+    return suggestions
+      .filter(s => {
+        const lowerS = s.toLowerCase();
+        return lowerS.includes(lowerWord) && !existingNames.includes(lowerS);
+      })
+      .slice(0, 8); // Limit to 8 suggestions
+  }, [currentWord, suggestions, value]);
+  
+  const handleInputChange = (e) => {
+    onChange(e.target.value);
+    setCursorPosition(e.target.selectionStart || 0);
+    setShowSuggestions(true);
+  };
+  
+  const handleKeyUp = (e) => {
+    setCursorPosition(e.target.selectionStart || 0);
+  };
+  
+  const handleSelectSuggestion = (suggestion) => {
+    // Replace the current word with the suggestion
+    const beforeCursor = value.substring(0, cursorPosition);
+    const afterCursor = value.substring(cursorPosition);
+    const lastCommaIndex = beforeCursor.lastIndexOf(',');
+    
+    // Build new value
+    let newValue;
+    if (lastCommaIndex >= 0) {
+      // There's content before this word
+      newValue = beforeCursor.substring(0, lastCommaIndex + 1) + ' ' + suggestion;
+    } else {
+      // This is the first word
+      newValue = suggestion;
+    }
+    
+    // Add remaining content after cursor (if any meaningful content)
+    const remainingAfterComma = afterCursor.indexOf(',');
+    if (remainingAfterComma >= 0) {
+      newValue += afterCursor.substring(remainingAfterComma);
+    }
+    
+    onChange(newValue);
+    setShowSuggestions(false);
+  };
+  
+  const handleInputBlur = () => {
+    // Delay hiding suggestions to allow click on suggestion
+    setTimeout(() => {
+      setShowSuggestions(false);
+      if (onBlur) onBlur();
+    }, 200);
+  };
+  
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={handleInputChange}
+        onKeyUp={handleKeyUp}
+        onFocus={() => setShowSuggestions(true)}
+        onBlur={handleInputBlur}
+        placeholder={placeholder}
+        className={cn("w-full", THEME.punk.input, className)}
+      />
+      
+      {/* Suggestions dropdown */}
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white border-4 border-black max-h-40 overflow-y-auto shadow-lg">
+          {filteredSuggestions.map((suggestion, index) => (
+            <button
+              key={`${suggestion}-${index}`}
+              onClick={() => handleSelectSuggestion(suggestion)}
+              className="w-full text-left px-3 py-2 hover:bg-yellow-100 text-sm font-bold"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Universal Tags Picker with autocomplete
 // Used across Songs, Versions, Videos, Releases, Events, Global Tasks, etc.
 export const UniversalTagsPicker = ({ value = [], onChange, tags = [], onCreateTag, placeholder = 'Add tag...' }) => {

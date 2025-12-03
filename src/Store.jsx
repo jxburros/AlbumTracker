@@ -285,6 +285,22 @@ export const resolveCostPrecedence = (entity = {}) => {
 
 export const getEffectiveCost = (entity = {}) => resolveCostPrecedence(entity).value;
 
+// Feature 4: Era Mode filtering helper
+// Returns true if item belongs to the active era or if Era Mode is not active
+export const itemBelongsToEra = (item, eraModeEraId) => {
+  if (!eraModeEraId) return true; // Era Mode not active, show all
+  if (!item) return false;
+  
+  // Check eraIds array (primary)
+  const itemEraIds = item.eraIds || item.era_ids || [];
+  if (itemEraIds.includes(eraModeEraId)) return true;
+  
+  // Fallback: check single eraId field
+  if (item.eraId === eraModeEraId) return true;
+  
+  return false;
+};
+
 // Exclusivity options for availability windows
 export const EXCLUSIVITY_OPTIONS = ['None', 'Platform Exclusive', 'Website Only', 'Radio Only', 'Timed Exclusive'];
 
@@ -1665,9 +1681,56 @@ export const StoreProvider = ({ children }) => {
           songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
         }));
       }
+      
+      // Feature 2: Bi-directional sync - add track to Release's tracks list
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const existingTracks = release.tracks || [];
+        const existingTrack = existingTracks.find(t => t.songId === songId && (t.versionIds || []).includes(versionId));
+        if (!existingTrack) {
+          // Check if there's already a track for this song, if so add versionId to it
+          const songTrack = existingTracks.find(t => t.songId === songId);
+          if (songTrack) {
+            // Add versionId to existing track's versionIds
+            const updatedVersionIds = [...new Set([...(songTrack.versionIds || []), versionId])];
+            const updatedTracks = existingTracks.map(t => 
+              t.id === songTrack.id ? { ...t, versionIds: updatedVersionIds } : t
+            );
+            if (mode === 'cloud') {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+            } else {
+              setData(p => ({
+                ...p,
+                releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+              }));
+            }
+          } else {
+            // Create new track for this song/version
+            const newTrack = {
+              id: crypto.randomUUID(),
+              songId: songId,
+              versionIds: [versionId],
+              order: existingTracks.length,
+              isExternal: false,
+              externalArtist: '',
+              externalTitle: ''
+            };
+            const updatedTracks = [...existingTracks, newTrack];
+            if (mode === 'cloud') {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+            } else {
+              setData(p => ({
+                ...p,
+                releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+              }));
+            }
+          }
+        }
+      }
     },
 
     // Detach a version from a release (Phase 4: ability to decouple/unlink releases from versions)
+    // Feature 2: Bi-directional sync - also removes from Release's tracks list
     detachVersionFromRelease: async (songId, versionId, releaseId) => {
       const song = data.songs.find(s => s.id === songId);
       if (!song) return;
@@ -1685,6 +1748,38 @@ export const StoreProvider = ({ children }) => {
           ...p,
           songs: (p.songs || []).map(s => s.id === songId ? { ...s, versions: updatedVersions } : s)
         }));
+      }
+      
+      // Feature 2: Bi-directional sync - remove version from Release's tracks list
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const existingTracks = release.tracks || [];
+        // Find track with this songId and versionId
+        const trackIndex = existingTracks.findIndex(t => t.songId === songId && (t.versionIds || []).includes(versionId));
+        if (trackIndex >= 0) {
+          const track = existingTracks[trackIndex];
+          const remainingVersionIds = (track.versionIds || []).filter(vid => vid !== versionId);
+          let updatedTracks;
+          if (remainingVersionIds.length === 0) {
+            // No more versions on this track, remove the whole track
+            updatedTracks = existingTracks.filter((_, idx) => idx !== trackIndex);
+            // Reorder remaining tracks
+            updatedTracks.forEach((t, idx) => { t.order = idx; });
+          } else {
+            // Keep track but with remaining versions
+            updatedTracks = existingTracks.map((t, idx) => 
+              idx === trackIndex ? { ...t, versionIds: remainingVersionIds } : t
+            );
+          }
+          if (mode === 'cloud') {
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId), { tracks: updatedTracks });
+          } else {
+            setData(p => ({
+              ...p,
+              releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
+            }));
+          }
+        }
       }
     },
 
@@ -2392,9 +2487,13 @@ export const StoreProvider = ({ children }) => {
     },
 
     // Phase 3.5: Remove track from release
+    // Feature 2: Bi-directional sync - also detaches from Song/Version's releaseIds
     removeReleaseTrack: async (releaseId, trackId) => {
       const release = data.releases.find(r => r.id === releaseId);
       if (!release) return;
+      
+      // Get the track being removed to sync with Song/Version
+      const trackToRemove = (release.tracks || []).find(t => t.id === trackId);
       
       const updatedTracks = (release.tracks || []).filter(t => t.id !== trackId);
       // Reorder remaining tracks
@@ -2407,6 +2506,46 @@ export const StoreProvider = ({ children }) => {
           ...p,
           releases: (p.releases || []).map(r => r.id === releaseId ? { ...r, tracks: updatedTracks } : r)
         }));
+      }
+      
+      // Feature 2: Bi-directional sync - detach from Song/Version
+      if (trackToRemove && trackToRemove.songId && !trackToRemove.isExternal) {
+        const song = data.songs.find(s => s.id === trackToRemove.songId);
+        if (song) {
+          const versionIds = trackToRemove.versionIds || [];
+          // Check if it's core version attachment (empty versionIds or contains 'core')
+          if (versionIds.length === 0 || versionIds.includes('core')) {
+            // Remove from coreReleaseIds
+            const coreReleaseIds = (song.coreReleaseIds || (song.coreReleaseId ? [song.coreReleaseId] : [])).filter(id => id !== releaseId);
+            if (mode === 'cloud') {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', song.id), { coreReleaseIds });
+            } else {
+              setData(p => ({
+                ...p,
+                songs: (p.songs || []).map(s => s.id === song.id ? { ...s, coreReleaseIds } : s)
+              }));
+            }
+          }
+          // Also detach from any non-core versions
+          const nonCoreVersionIds = versionIds.filter(vid => vid !== 'core');
+          if (nonCoreVersionIds.length > 0) {
+            const updatedVersions = (song.versions || []).map(v => {
+              if (!nonCoreVersionIds.includes(v.id)) return v;
+              const newReleaseIds = (v.releaseIds || []).filter(id => id !== releaseId);
+              const releaseOverrides = { ...(v.releaseOverrides || {}) };
+              delete releaseOverrides[releaseId];
+              return { ...v, releaseIds: newReleaseIds, releaseOverrides };
+            });
+            if (mode === 'cloud') {
+              await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', song.id), { versions: updatedVersions });
+            } else {
+              setData(p => ({
+                ...p,
+                songs: (p.songs || []).map(s => s.id === song.id ? { ...s, versions: updatedVersions } : s)
+              }));
+            }
+          }
+        }
       }
     },
 

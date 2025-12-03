@@ -1982,6 +1982,49 @@ export const SettingsView = () => {
                   <p className="text-xs opacity-70 mt-2">Used as the fallback era for new templates and migration previews.</p>
                 </div>
 
+                {/* Feature 4: Era Mode - Focus on a single era */}
+                <div className="pt-4 border-t-4 border-black">
+                  <h3 className="font-black text-xs uppercase mb-2">Era Mode</h3>
+                  <p className="text-xs opacity-70 mb-3">When active, all lists are filtered to show only items from the selected era. New items will automatically be assigned to the active era.</p>
+                  
+                  {/* Era Mode Toggle */}
+                  <div className="flex items-center gap-4 mb-3">
+                    <label className="flex items-center gap-2 font-bold">
+                      <input
+                        type="checkbox"
+                        checked={settings.eraModeActive || false}
+                        onChange={e => actions.saveSettings({ eraModeActive: e.target.checked })}
+                        className="w-5 h-5"
+                      />
+                      Era Mode Active
+                    </label>
+                  </div>
+                  
+                  {/* Era Selection - only shown when Era Mode is active */}
+                  {settings.eraModeActive && (
+                    <div className="space-y-3">
+                      <select
+                        value={settings.eraModeEraId || ''}
+                        onChange={e => actions.saveSettings({ eraModeEraId: e.target.value })}
+                        className={cn("w-full", THEME.punk.input)}
+                      >
+                        <option value="">Select Era for Era Mode...</option>
+                        {(data.eras || []).map(era => <option key={era.id} value={era.id}>{era.name}</option>)}
+                      </select>
+                      
+                      {settings.eraModeEraId && (
+                        <div className={cn("p-3 bg-yellow-100 border-4 border-yellow-500")}>
+                          <div className="font-bold text-sm flex items-center gap-2">
+                            <span className="text-yellow-700">🎯 ERA MODE ACTIVE:</span>
+                            <span>{(data.eras || []).find(e => e.id === settings.eraModeEraId)?.name || 'Unknown Era'}</span>
+                          </div>
+                          <p className="text-xs mt-1 opacity-80">All lists are filtered to this era. Disable Era Mode above to see all items.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Auto Task Toggles */}
                 <div className="pt-4 border-t-4 border-black space-y-3">
                   <h3 className="font-black text-xs uppercase">Auto-Generated Tasks</h3>

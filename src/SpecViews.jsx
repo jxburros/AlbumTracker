@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useStore, STATUS_OPTIONS, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks } from './Store';
+import { useStore, STATUS_OPTIONS, RELEASE_TYPES, getEffectiveCost, calculateTaskProgress, resolveCostPrecedence, getPrimaryDate, getTaskDueDate, generateEventTasks, itemBelongsToEra } from './Store';
 import { THEME, formatMoney, cn } from './utils';
 import { Icon } from './Components';
-import { DetailPane, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection } from './ItemComponents';
+import { DetailPane, EraStageTagsModule, StandardListPage, StandardDetailPage, DisplayInfoSection, AutocompleteInput } from './ItemComponents';
 
 // Helper to calculate minimum end date (one day after start date)
 const getMinEndDate = (startDate) => {
@@ -14,6 +14,10 @@ const getMinEndDate = (startDate) => {
 export const SongListView = ({ onSelectSong }) => {
   const { data, actions } = useStore();
   const [filterSingles, setFilterSingles] = useState(false);
+  const settings = data.settings || {};
+
+  // Feature 4: Era Mode filtering
+  const eraModeEraId = (settings.eraModeActive && settings.eraModeEraId) ? settings.eraModeEraId : null;
 
   const songProgress = (song) => {
     const versionTasks = (song.versions || []).flatMap(v => [...(v.tasks || []), ...(v.customTasks || [])]);
@@ -21,17 +25,23 @@ export const SongListView = ({ onSelectSong }) => {
     return calculateTaskProgress(tasks).progress;
   };
 
-  // Filter songs (singles filter applied here since it's a toggle, not dropdown)
+  // Filter songs (singles filter and Era Mode applied)
   const filteredSongs = useMemo(() => {
     let songs = [...(data.songs || [])];
+    // Feature 4: Era Mode filter
+    if (eraModeEraId) {
+      songs = songs.filter(s => itemBelongsToEra(s, eraModeEraId));
+    }
     if (filterSingles) {
       songs = songs.filter(s => s.isSingle);
     }
     return songs;
-  }, [data.songs, filterSingles]);
+  }, [data.songs, filterSingles, eraModeEraId]);
 
   const handleAddSong = async () => {
-    const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false });
+    // Feature 4: Auto-assign active Era to new songs
+    const defaultEraIds = eraModeEraId ? [eraModeEraId] : (settings.defaultEraId ? [settings.defaultEraId] : []);
+    const newSong = await actions.addSong({ title: 'New Song', category: 'Album', releaseDate: '', isSingle: false, eraIds: defaultEraIds });
     if (onSelectSong) onSelectSong(newSong);
   };
 
@@ -132,6 +142,23 @@ export const SongDetailView = ({ song, onBack }) => {
 
   const teamMembers = useMemo(() => data.teamMembers || [], [data.teamMembers]);
 
+  // Feature 1: Get unique writers and composers from all songs for autocomplete suggestions
+  const allWritersSuggestions = useMemo(() => {
+    const writers = new Set();
+    (data.songs || []).forEach(s => {
+      (s.writers || []).forEach(w => writers.add(w));
+    });
+    return Array.from(writers).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }, [data.songs]);
+
+  const allComposersSuggestions = useMemo(() => {
+    const composers = new Set();
+    (data.songs || []).forEach(s => {
+      (s.composers || []).forEach(c => composers.add(c));
+    });
+    return Array.from(composers).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  }, [data.songs]);
+
   const taskBudget = (task = {}) => {
     if (task.paidCost !== undefined) return task.paidCost || 0;
     if (task.actualCost !== undefined) return task.actualCost || 0;
@@ -200,13 +227,30 @@ export const SongDetailView = ({ song, onBack }) => {
   };
 
   // Handle Core Releases multiple selection - per specification section B.1
-  const handleCoreReleasesChange = useCallback((releaseId, checked) => {
+  // Feature 2: Bi-directional sync with Release track list
+  const handleCoreReleasesChange = useCallback(async (releaseId, checked) => {
     const currentIds = form.coreReleaseIds || (form.coreReleaseId ? [form.coreReleaseId] : []);
     let newIds;
     if (checked) {
       newIds = [...currentIds, releaseId];
+      // Feature 2: Add song to release tracks (at the bottom)
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const existingTrack = (release.tracks || []).find(t => t.songId === song.id && (!t.versionIds || t.versionIds.length === 0 || t.versionIds.includes('core')));
+        if (!existingTrack) {
+          await actions.addReleaseTrack(releaseId, { songId: song.id, versionIds: ['core'] });
+        }
+      }
     } else {
       newIds = currentIds.filter(id => id !== releaseId);
+      // Feature 2: Remove song's core version from release tracks
+      const release = data.releases.find(r => r.id === releaseId);
+      if (release) {
+        const trackToRemove = (release.tracks || []).find(t => t.songId === song.id && (!t.versionIds || t.versionIds.length === 0 || t.versionIds.includes('core')));
+        if (trackToRemove) {
+          await actions.removeReleaseTrack(releaseId, trackToRemove.id);
+        }
+      }
     }
     handleFieldChange('coreReleaseIds', newIds);
     // Auto-fill release date from earliest attached release if not overridden
@@ -565,11 +609,23 @@ export const SongDetailView = ({ song, onBack }) => {
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Writers</label>
-            <input value={writersText} onChange={e => setWritersText(e.target.value)} onBlur={() => { const newWriters = writersText.split(',').map(w => w.trim()).filter(Boolean); handleFieldChange('writers', newWriters); actions.updateSong(song.id, { ...form, writers: newWriters }); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+            <AutocompleteInput 
+              value={writersText} 
+              onChange={setWritersText} 
+              onBlur={() => { const newWriters = writersText.split(',').map(w => w.trim()).filter(Boolean); handleFieldChange('writers', newWriters); actions.updateSong(song.id, { ...form, writers: newWriters }); }} 
+              suggestions={allWritersSuggestions}
+              placeholder="comma-separated" 
+            />
           </div>
           <div>
             <label className="block text-xs font-bold uppercase mb-1">Composers</label>
-            <input value={composersText} onChange={e => setComposersText(e.target.value)} onBlur={() => { const newComposers = composersText.split(',').map(c => c.trim()).filter(Boolean); handleFieldChange('composers', newComposers); actions.updateSong(song.id, { ...form, composers: newComposers }); }} placeholder="comma-separated" className={cn("w-full", THEME.punk.input)} />
+            <AutocompleteInput 
+              value={composersText} 
+              onChange={setComposersText} 
+              onBlur={() => { const newComposers = composersText.split(',').map(c => c.trim()).filter(Boolean); handleFieldChange('composers', newComposers); actions.updateSong(song.id, { ...form, composers: newComposers }); }} 
+              suggestions={allComposersSuggestions}
+              placeholder="comma-separated" 
+            />
           </div>
         </div>
         
@@ -984,9 +1040,40 @@ export const SongDetailView = ({ song, onBack }) => {
                         <label className="block text-xs font-bold uppercase mb-1">Version Name</label>
                         <input value={v.name} onChange={e => actions.updateSongVersion(song.id, v.id, { name: e.target.value })} className={cn("w-full", THEME.punk.input)} />
                       </div>
+                      {/* Feature 3: Version release date derived from attached releases with override option */}
                       <div>
                         <label className="block text-xs font-bold uppercase mb-1">Release Date</label>
-                        <input type="date" value={v.releaseDate || ''} onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDate: e.target.value })} className={cn("w-full", THEME.punk.input)} />
+                        {(() => {
+                          // Calculate earliest release date from attached releases
+                          const attachedDates = (v.releaseIds || [])
+                            .map(rid => data.releases.find(r => r.id === rid)?.releaseDate)
+                            .filter(Boolean)
+                            .sort();
+                          const derivedDate = attachedDates[0] || '';
+                          const hasAttachedReleases = (v.releaseIds || []).length > 0;
+                          const displayDate = v.releaseDateOverride ? (v.releaseDate || '') : (derivedDate || v.releaseDate || '');
+                          
+                          return (
+                            <div className="flex gap-2 items-center">
+                              <input 
+                                type="date" 
+                                value={displayDate} 
+                                onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDate: e.target.value })}
+                                disabled={!v.releaseDateOverride && hasAttachedReleases}
+                                className={cn("flex-1", THEME.punk.input, !v.releaseDateOverride && hasAttachedReleases && "opacity-60")} 
+                              />
+                              <label className="flex items-center gap-1 text-xs font-bold whitespace-nowrap">
+                                <input 
+                                  type="checkbox" 
+                                  checked={v.releaseDateOverride || false} 
+                                  onChange={e => actions.updateSongVersion(song.id, v.id, { releaseDateOverride: e.target.checked })}
+                                  className="w-4 h-4" 
+                                />
+                                Override
+                              </label>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1758,9 +1845,24 @@ export const GlobalTasksView = () => {
 // Releases List View - Standardized Architecture
 export const ReleasesListView = ({ onSelectRelease }) => {
   const { data, actions } = useStore();
+  const settings = data.settings || {};
+
+  // Feature 4: Era Mode filtering
+  const eraModeEraId = (settings.eraModeActive && settings.eraModeEraId) ? settings.eraModeEraId : null;
+
+  // Filter releases by Era Mode
+  const filteredReleases = useMemo(() => {
+    let releases = [...(data.releases || [])];
+    if (eraModeEraId) {
+      releases = releases.filter(r => itemBelongsToEra(r, eraModeEraId));
+    }
+    return releases;
+  }, [data.releases, eraModeEraId]);
 
   const handleAddRelease = async () => {
-    const newRelease = await actions.addRelease({ name: 'New Release', type: 'Album', releaseDate: '', estimatedCost: 0, notes: '' });
+    // Feature 4: Auto-assign active Era to new releases
+    const defaultEraIds = eraModeEraId ? [eraModeEraId] : (settings.defaultEraId ? [settings.defaultEraId] : []);
+    const newRelease = await actions.addRelease({ name: 'New Release', type: 'Album', releaseDate: '', estimatedCost: 0, notes: '', eraIds: defaultEraIds });
     if (onSelectRelease) onSelectRelease(newRelease);
   };
 
@@ -1844,7 +1946,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   return (
     <StandardListPage
       title="Releases"
-      items={data.releases || []}
+      items={filteredReleases}
       onSelectItem={onSelectRelease}
       onAddItem={handleAddRelease}
       addButtonText="+ Add Release"
@@ -4780,6 +4882,19 @@ export const ProgressView = () => {
 // Events List View - Standardized Architecture
 export const EventsListView = ({ onSelectEvent }) => {
   const { data, actions } = useStore();
+  const settings = data.settings || {};
+
+  // Feature 4: Era Mode filtering
+  const eraModeEraId = (settings.eraModeActive && settings.eraModeEraId) ? settings.eraModeEraId : null;
+
+  // Filter events by Era Mode
+  const filteredEvents = useMemo(() => {
+    let events = [...(data.events || [])];
+    if (eraModeEraId) {
+      events = events.filter(e => itemBelongsToEra(e, eraModeEraId));
+    }
+    return events;
+  }, [data.events, eraModeEraId]);
 
   const eventProgress = (event) => {
     const tasks = [...(event.tasks || []), ...(event.customTasks || [])];
@@ -4792,19 +4907,22 @@ export const EventsListView = ({ onSelectEvent }) => {
   };
 
   const handleAddEvent = async () => {
+    // Feature 4: Auto-assign active Era to new events
+    const defaultEraIds = eraModeEraId ? [eraModeEraId] : (settings.defaultEraId ? [settings.defaultEraId] : []);
     const newEvent = await actions.addEvent({ 
       title: 'New Event', 
       date: new Date().toISOString().split('T')[0], 
-      type: 'Standalone Event' 
+      type: 'Standalone Event',
+      eraIds: defaultEraIds
     }, false);
     if (onSelectEvent) onSelectEvent(newEvent);
   };
 
   const eventTypes = useMemo(() => {
     const types = new Set();
-    (data.events || []).forEach(e => e.type && types.add(e.type));
+    filteredEvents.forEach(e => e.type && types.add(e.type));
     return Array.from(types);
-  }, [data.events]);
+  }, [filteredEvents]);
 
   // Column definitions
   const columns = [
@@ -4843,7 +4961,7 @@ export const EventsListView = ({ onSelectEvent }) => {
   return (
     <StandardListPage
       title="Events"
-      items={data.events || []}
+      items={filteredEvents}
       onSelectItem={onSelectEvent}
       onAddItem={handleAddEvent}
       columns={columns}
