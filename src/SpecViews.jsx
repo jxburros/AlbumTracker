@@ -6936,12 +6936,14 @@ export const VideoDetailView = ({ video, onBack }) => {
 
 // Global Tasks List View - Standardized Architecture
 // Phase 5: Enhanced with Category management
+// Phase 6: Added Kanban Board View
 export const GlobalTasksListView = ({ onSelectTask }) => {
   const { data, actions } = useStore();
   const [filterArchived, setFilterArchived] = useState('active');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list', 'grid', 'board'
   const [newTaskForm, setNewTaskForm] = useState({
     taskName: 'New Task',
     category: 'Other',
@@ -6950,6 +6952,57 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     estimatedCost: 0,
     notes: ''
   });
+
+  // Kanban board column configuration
+  const kanbanColumns = useMemo(() => [
+    { 
+      id: 'todo', 
+      title: 'Todo', 
+      statuses: ['Not Started'], 
+      bgColor: 'bg-gray-100',
+      borderColor: 'border-gray-400'
+    },
+    { 
+      id: 'inprogress', 
+      title: 'In Progress', 
+      statuses: ['In-Progress', 'In Progress'], 
+      bgColor: 'bg-blue-100',
+      borderColor: 'border-blue-400'
+    },
+    { 
+      id: 'review', 
+      title: 'Review', 
+      statuses: ['Waiting on Someone Else', 'Paid But Not Complete', 'Complete But Not Paid'], 
+      bgColor: 'bg-yellow-100',
+      borderColor: 'border-yellow-400'
+    },
+    { 
+      id: 'done', 
+      title: 'Done', 
+      statuses: ['Complete', 'Done'], 
+      bgColor: 'bg-green-100',
+      borderColor: 'border-green-400'
+    }
+  ], []);
+
+  // Helper to get column index for a task status
+  const getColumnForStatus = useCallback((status) => {
+    const index = kanbanColumns.findIndex(col => col.statuses.includes(status));
+    return index >= 0 ? index : 0; // Default to first column if status not found
+  }, [kanbanColumns]);
+
+  // Move task to previous/next column
+  const moveTaskToColumn = useCallback(async (task, direction) => {
+    const currentColIndex = getColumnForStatus(task.status);
+    const newColIndex = direction === 'left' 
+      ? Math.max(0, currentColIndex - 1)
+      : Math.min(kanbanColumns.length - 1, currentColIndex + 1);
+    
+    if (newColIndex !== currentColIndex) {
+      const newStatus = kanbanColumns[newColIndex].statuses[0];
+      await actions.updateGlobalTask(task.id, { status: newStatus });
+    }
+  }, [getColumnForStatus, kanbanColumns, actions]);
 
   // Phase 5.1: Categories as Items
   const allCategories = useMemo(() => {
@@ -7041,21 +7094,210 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
     </div>
   );
 
-  // Header extra content
-  const headerExtra = (
-    <>
-      <div className="flex items-center gap-4 mb-4">
-        <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
-          <option value="all">All</option>
-          <option value="active">Active</option>
-          <option value="done">Done</option>
-          <option value="archived">Archived</option>
-        </select>
-        <button onClick={() => setShowManageCategoriesModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
-          <Icon name="Folder" size={16} className="inline mr-1" /> Categories
-        </button>
+  // Kanban Board Card Component
+  const KanbanTaskCard = ({ task, columnIndex }) => {
+    const isFirstColumn = columnIndex === 0;
+    const isLastColumn = columnIndex === kanbanColumns.length - 1;
+    
+    return (
+      <div 
+        className={cn(
+          "p-3 mb-2 bg-white border-2 border-black cursor-pointer hover:shadow-lg transition-shadow",
+          task.isArchived && "opacity-50"
+        )}
+        onClick={() => onSelectTask?.(task)}
+      >
+        <div className="font-bold text-sm mb-2 truncate">{task.taskName}</div>
+        {task.category && (
+          <div className="text-xs mb-1">
+            <span className="px-1 py-0.5 bg-purple-100 border border-purple-300 font-bold">{task.category}</span>
+          </div>
+        )}
+        {task.date && (
+          <div className="text-xs text-gray-600 mb-1">📅 {task.date}</div>
+        )}
+        {task.estimatedCost > 0 && (
+          <div className="text-xs text-gray-600 mb-2">💰 {formatMoney(getEffectiveCost(task))}</div>
+        )}
+        
+        {/* Move arrows */}
+        <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+          <button
+            onClick={(e) => { e.stopPropagation(); moveTaskToColumn(task, 'left'); }}
+            disabled={isFirstColumn}
+            className={cn(
+              "px-2 py-1 text-xs font-bold border-2 border-black",
+              isFirstColumn ? "opacity-30 cursor-not-allowed bg-gray-100" : "bg-white hover:bg-gray-100"
+            )}
+            title="Move left"
+          >
+            ← 
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); moveTaskToColumn(task, 'right'); }}
+            disabled={isLastColumn}
+            className={cn(
+              "px-2 py-1 text-xs font-bold border-2 border-black",
+              isLastColumn ? "opacity-30 cursor-not-allowed bg-gray-100" : "bg-white hover:bg-gray-100"
+            )}
+            title="Move right"
+          >
+            →
+          </button>
+        </div>
       </div>
-      
+    );
+  };
+
+  // Board View Component
+  const BoardView = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {kanbanColumns.map((column, colIndex) => {
+        const columnTasks = filteredTasks.filter(task => 
+          column.statuses.includes(task.status)
+        );
+        
+        return (
+          <div 
+            key={column.id} 
+            className={cn("border-4 border-black p-3 min-h-[400px]", column.bgColor)}
+          >
+            <div className={cn("font-black uppercase text-sm mb-3 pb-2 border-b-2", column.borderColor)}>
+              {column.title} 
+              <span className="ml-2 px-2 py-0.5 bg-black text-white text-xs rounded-none">
+                {columnTasks.length}
+              </span>
+            </div>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {columnTasks.length === 0 ? (
+                <div className="p-4 text-center text-xs opacity-50 border-2 border-dashed border-gray-400">
+                  No tasks
+                </div>
+              ) : (
+                columnTasks.map(task => (
+                  <KanbanTaskCard key={task.id} task={task} columnIndex={colIndex} />
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // View Mode Toggle with Board option
+  const ViewModeToggleWithBoard = () => (
+    <div className="flex border-4 border-black">
+      <button 
+        onClick={() => setViewMode('list')} 
+        className={cn("px-3 py-2 font-bold text-xs", viewMode === 'list' ? "bg-black text-white" : "bg-white")}
+        title="List View"
+      >
+        <Icon name="List" size={16} />
+      </button>
+      <button 
+        onClick={() => setViewMode('grid')} 
+        className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'grid' ? "bg-black text-white" : "bg-white")}
+        title="Grid View"
+      >
+        <Icon name="Folder" size={16} />
+      </button>
+      <button 
+        onClick={() => setViewMode('board')} 
+        className={cn("px-3 py-2 font-bold text-xs border-l-4 border-black", viewMode === 'board' ? "bg-black text-white" : "bg-white")}
+        title="Board View"
+      >
+        <Icon name="Layout" size={16} />
+      </button>
+    </div>
+  );
+
+  // List View Component - renders a table of tasks
+  const ListView = () => (
+    <div className={cn("overflow-x-auto", THEME.punk.card)}>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-black text-white">
+            {columns.map(col => (
+              <th key={col.field} className={cn("p-3", col.align === 'right' ? 'text-right' : 'text-left')}>
+                {col.label}
+              </th>
+            ))}
+            <th className="p-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredTasks.length === 0 ? (
+            <tr><td colSpan={columns.length + 1} className="p-10 text-center opacity-50">No tasks yet. Click + Add Task to create one.</td></tr>
+          ) : (
+            filteredTasks.map(task => (
+              <tr 
+                key={task.id} 
+                className={cn("border-b border-gray-200 hover:bg-yellow-50 cursor-pointer", task.isArchived && "opacity-50")}
+                onClick={() => onSelectTask?.(task)}
+              >
+                {columns.map(col => (
+                  <td 
+                    key={col.field}
+                    className={cn("p-3", col.align === 'right' ? 'text-right' : '')}
+                  >
+                    {col.render ? col.render(task) : (task[col.field] ?? '-')}
+                  </td>
+                ))}
+                <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                  {renderActions(task)}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  // Grid View Component - renders cards in a grid
+  const GridView = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {filteredTasks.length === 0 ? (
+        <div className={cn("col-span-full p-10 text-center opacity-50", THEME.punk.card)}>No tasks yet. Click + Add Task to create one.</div>
+      ) : (
+        filteredTasks.map(task => renderGridCard(task))
+      )}
+    </div>
+  );
+
+  // Main render - all views use consistent header
+  return (
+    <div className="p-6 pb-24">
+      {/* Header */}
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <h2 className={cn(THEME.punk.textStyle, "punk-accent-underline text-2xl")}>Global Tasks</h2>
+        <div className="flex flex-wrap gap-2 items-center">
+          <ViewModeToggleWithBoard />
+          <select value={filterArchived} onChange={e => setFilterArchived(e.target.value)} className={cn("px-3 py-2", THEME.punk.input)}>
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="done">Done</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button onClick={() => setShowManageCategoriesModal(true)} className={cn("px-4 py-2", THEME.punk.btn, "bg-purple-600 text-white")}>
+            <Icon name="Folder" size={16} className="inline mr-1" /> Categories
+          </button>
+          <button onClick={handleAddTask} className={cn("px-4 py-2", THEME.punk.btn, "bg-black text-white")}>
+            + Add Task
+          </button>
+        </div>
+      </div>
+
+      {/* View Content */}
+      {viewMode === 'board' ? (
+        <BoardView />
+      ) : viewMode === 'grid' ? (
+        <GridView />
+      ) : (
+        <ListView />
+      )}
+
       {/* Manage Categories Modal */}
       {showManageCategoriesModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowManageCategoriesModal(false)}>
@@ -7122,24 +7364,6 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
           </div>
         </div>
       )}
-    </>
-  );
-
-  return (
-    <>
-    <StandardListPage
-      title="Global Tasks"
-      items={filteredTasks}
-      onSelectItem={onSelectTask}
-      onAddItem={handleAddTask}
-      addButtonText="+ Add Task"
-      columns={columns}
-      filterOptions={filterOptions}
-      renderGridCard={renderGridCard}
-      renderActions={renderActions}
-      headerExtra={headerExtra}
-      emptyMessage="No tasks yet. Click + Add Task to create one."
-    />
     
     {/* Add Task Modal */}
     {showAddTaskModal && (
@@ -7223,7 +7447,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
         </div>
       </div>
     )}
-  </>
+    </div>
   );
 };
 

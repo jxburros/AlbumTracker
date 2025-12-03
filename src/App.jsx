@@ -1,9 +1,166 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react';
 import { StoreProvider, useStore } from './Store';
 import { Sidebar, Editor, Icon } from './Components';
 import { ListView, CalendarView, GalleryView, FilesView, TeamView, MiscView, ArchiveView, ActiveView, SettingsView } from './Views';
 import { SongListView, SongDetailView, ReleasesListView, ReleaseDetailView, CombinedTimelineView, TaskDashboardView, FinancialsView, ProgressView, EventsListView, EventDetailView, ExpensesListView, ExpenseDetailView, VideosListView, VideoDetailView, GlobalTasksListView, GlobalTaskDetailView } from './SpecViews';
 import { COLOR_VALUES, THEME, cn } from './utils';
+
+// Toast notification context and component
+const ToastContext = createContext();
+export const useToast = () => useContext(ToastContext);
+
+const ToastProvider = ({ children }) => {
+  const [toasts, setToasts] = useState([]);
+  
+  const showToast = useCallback((message, options = {}) => {
+    const id = crypto.randomUUID();
+    const toast = {
+      id,
+      message,
+      type: options.type || 'info', // 'info', 'success', 'error', 'warning'
+      duration: options.duration ?? 5000,
+      action: options.action || null, // { label: string, onClick: () => void }
+    };
+    setToasts(prev => [...prev, toast]);
+    
+    // Auto-dismiss after duration
+    if (toast.duration > 0) {
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, toast.duration);
+    }
+    
+    return id;
+  }, []);
+  
+  const dismissToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+  
+  return (
+    <ToastContext.Provider value={{ showToast, dismissToast, toasts }}>
+      {children}
+    </ToastContext.Provider>
+  );
+};
+
+// Toast notification display component
+const ToastContainer = () => {
+  const { toasts, dismissToast } = useToast();
+  const { data } = useStore();
+  const settings = data.settings || {};
+  const isDark = settings.themeMode === 'dark';
+  const focusMode = settings.focusMode || false;
+  
+  if (toasts.length === 0) return null;
+  
+  return (
+    <div className="fixed bottom-20 md:bottom-6 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 max-w-sm w-full px-4">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={cn(
+            "flex items-center justify-between gap-3 p-4 w-full",
+            focusMode ? "rounded-lg shadow-lg border" : "border-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]",
+            isDark 
+              ? "bg-slate-800 text-slate-50 border-slate-600" 
+              : "bg-white text-slate-900 border-black",
+            toast.type === 'success' && (isDark ? 'border-l-green-500' : 'border-l-green-600'),
+            toast.type === 'error' && (isDark ? 'border-l-red-500' : 'border-l-red-600'),
+            toast.type === 'warning' && (isDark ? 'border-l-yellow-500' : 'border-l-yellow-600'),
+            focusMode ? "border-l-4" : "border-l-8"
+          )}
+          style={{ animation: 'slideInUp 0.3s ease-out' }}
+        >
+          <span className={cn(
+            "flex-1 text-sm",
+            focusMode ? "font-medium" : "font-bold uppercase"
+          )}>
+            {toast.message}
+          </span>
+          
+          <div className="flex items-center gap-2">
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action.onClick();
+                  dismissToast(toast.id);
+                }}
+                className={cn(
+                  "px-3 py-1 text-xs font-bold uppercase transition-colors",
+                  focusMode ? "rounded bg-[var(--accent)] text-slate-900 hover:opacity-80" : "bg-[var(--accent)] text-slate-900 border-2 border-black hover:-translate-y-0.5 active:translate-y-0",
+                  isDark && !focusMode && "border-slate-600"
+                )}
+              >
+                {toast.action.label}
+              </button>
+            )}
+            <button
+              onClick={() => dismissToast(toast.id)}
+              className={cn(
+                "p-1 transition-colors",
+                isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              <Icon name="X" size={16} />
+            </button>
+          </div>
+        </div>
+      ))}
+      
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+// Custom hook to handle mutations with undo toast notifications
+export const useUndoableAction = () => {
+  const { showToast } = useToast();
+  const { actions } = useStore();
+  
+  const performAction = useCallback(async (actionFn, successMessage) => {
+    try {
+      await actionFn();
+      showToast(successMessage, {
+        type: 'success',
+        action: { // Always show undo since we just added to stack
+          label: 'Undo',
+          onClick: async () => {
+            const result = await actions.undo();
+            if (result?.undone) {
+              showToast(`Undone: ${result.description}`, { type: 'info', duration: 3000 });
+            }
+          }
+        }
+      });
+    } catch (error) {
+      showToast(`Error: ${error.message || 'Action failed'}`, { type: 'error' });
+    }
+  }, [showToast, actions]);
+  
+  const triggerUndo = useCallback(async () => {
+    const result = await actions.undo();
+    if (result?.undone) {
+      showToast(`Undone: ${result.description}`, { type: 'info', duration: 3000 });
+    } else {
+      showToast('Nothing to undo', { type: 'warning', duration: 2000 });
+    }
+    return result;
+  }, [actions, showToast]);
+  
+  return { performAction, triggerUndo };
+};
 
 // Floating Action Button (FAB) for mobile quick actions
 const FloatingActionButton = () => {
@@ -13,6 +170,7 @@ const FloatingActionButton = () => {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const fabRef = useRef(null);
   const { data, actions } = useStore();
+  const { showToast } = useToast();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
 
@@ -42,6 +200,7 @@ const FloatingActionButton = () => {
       status: 'Not Started',
       category: 'Other'
     });
+    showToast(`Task "${taskTitle.trim()}" created`, { type: 'success' });
     setTaskTitle('');
     setShowTaskModal(false);
   };
@@ -53,6 +212,7 @@ const FloatingActionButton = () => {
       paidCost: parseFloat(expenseAmount) || 0,
       status: 'Complete'
     });
+    showToast(`Expense "${expenseName.trim()}" logged`, { type: 'success' });
     setExpenseName('');
     setExpenseAmount('');
     setShowExpenseModal(false);
@@ -66,6 +226,7 @@ const FloatingActionButton = () => {
       category: 'Other',
       notes: 'Quick note'
     });
+    showToast(`Note "${noteTitle.trim()}" created`, { type: 'success' });
     setNoteTitle('');
     setShowNoteModal(false);
   };
@@ -273,6 +434,7 @@ function AppInner() {
   const { data, actions } = useStore();
   const settings = data.settings || {};
   const isDark = settings.themeMode === 'dark';
+  const focusMode = settings.focusMode || false;
   const accent = COLOR_VALUES[settings.themeColor || 'pink'] || COLOR_VALUES.pink;
 
   // Feature 4: Era Mode state
@@ -331,43 +493,80 @@ function AppInner() {
         '--accent-strong': accent.strong,
         '--accent-soft': accent.soft,
       }}
+      data-focus-mode={focusMode ? 'true' : undefined}
       className={cn(
-        "flex h-screen overflow-hidden punk-shell",
-        THEME.punk.font,
+        "flex h-screen overflow-hidden",
+        focusMode ? "font-sans" : cn("punk-shell", THEME.punk.font),
         isDark ? "bg-slate-900 text-slate-50" : "bg-slate-50 text-slate-900"
       )}
     >
-      <Sidebar
-        isOpen={sidebarOpen}
-        setIsOpen={setSidebarOpen}
-        activeTab={tab}
-        setActiveTab={(t) => { setTab(t); setSelectedSong(null); setSelectedRelease(null); setSelectedEvent(null); setSelectedExpense(null); setSelectedVideo(null); setSelectedGlobalTask(null); }}
-      />
+      {/* Sidebar - hidden in focus mode */}
+      {!focusMode && (
+        <Sidebar
+          isOpen={sidebarOpen}
+          setIsOpen={setSidebarOpen}
+          activeTab={tab}
+          setActiveTab={(t) => { setTab(t); setSelectedSong(null); setSelectedRelease(null); setSelectedEvent(null); setSelectedExpense(null); setSelectedVideo(null); setSelectedGlobalTask(null); }}
+        />
+      )}
 
       <main
         className={cn(
-          "flex-1 flex flex-col min-w-0 relative ml-0 md:ml-64 transition-all duration-200 punk-canvas",
+          "flex-1 flex flex-col min-w-0 relative transition-all duration-200",
+          focusMode ? "ml-0" : "ml-0 md:ml-64",
+          focusMode ? "" : "punk-canvas",
           isDark ? "text-slate-50" : "text-slate-900"
         )}
       >
-        {/* Mobile Menu Button */}
-        {!sidebarOpen && (
+        {/* Header with Focus Mode Toggle and Mobile Menu */}
+        <div className={cn(
+          "fixed top-0 right-0 z-30 p-4 flex items-center gap-2",
+          focusMode ? "left-0" : "left-0 md:left-64"
+        )}>
+          {/* Mobile Menu Button - only when not in focus mode */}
+          {!focusMode && !sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className={cn(
+                "md:hidden p-2 shadow-lg",
+                focusMode ? "border" : "border-4",
+                isDark ? "bg-slate-800 text-slate-50 border-slate-600" : "bg-white text-slate-900 border-black"
+              )}
+            >
+              <Icon name="Menu" />
+            </button>
+          )}
+          
+          {/* Spacer to push focus mode toggle to the right */}
+          <div className="flex-1" />
+          
+          {/* Focus Mode Toggle Button */}
           <button
-            onClick={() => setSidebarOpen(true)}
+            onClick={() => actions.saveSettings({ focusMode: !focusMode })}
+            title={focusMode ? "Exit Focus Mode" : "Enter Focus Mode"}
             className={cn(
-              "md:hidden fixed top-4 left-4 z-30 p-2 border-4 shadow-lg",
-              isDark ? "bg-slate-800 text-slate-50 border-slate-600" : "bg-white text-slate-900 border-black"
+              "p-2 flex items-center gap-2 font-bold uppercase text-xs transition-transform hover:-translate-y-0.5",
+              focusMode ? "border rounded" : "border-[3px]",
+              focusMode ? "shadow-sm" : "shadow-[4px_4px_0px_0px_rgba(0,0,0,0.85)]",
+              isDark 
+                ? "bg-slate-800 text-slate-50 border-slate-600 hover:bg-slate-700" 
+                : "bg-white text-slate-900 border-black hover:bg-[var(--accent-soft)]",
+              focusMode && "bg-[var(--accent)] text-slate-900"
             )}
           >
-            <Icon name="Menu" />
+            <Icon name={focusMode ? "EyeOff" : "Eye"} size={18} />
+            <span className="hidden sm:inline">{focusMode ? "Exit Focus" : "Focus"}</span>
           </button>
-        )}
+        </div>
 
         {/* Feature 4: Era Mode Indicator Banner */}
         {eraModeActive && eraModeEra && (
           <div className={cn(
-            "fixed top-0 left-0 md:left-64 right-0 z-20 px-4 py-2 flex items-center justify-between gap-4",
-            "bg-yellow-400 border-b-4 border-black text-black"
+            "fixed top-14 right-0 z-20 px-4 py-2 flex items-center justify-between gap-4",
+            focusMode ? "left-0 border-b" : "left-0 md:left-64 border-b-4",
+            focusMode 
+              ? "bg-yellow-300 border-yellow-500 text-black"
+              : "bg-yellow-400 border-black text-black"
           )}>
             <div className="flex items-center gap-2 font-bold text-sm">
               <span>🎯 ERA MODE:</span>
@@ -375,14 +574,23 @@ function AppInner() {
             </div>
             <button 
               onClick={() => actions.saveSettings({ eraModeActive: false })}
-              className="px-3 py-1 bg-black text-white text-xs font-bold hover:bg-gray-800"
+              className={cn(
+                "px-3 py-1 text-xs font-bold",
+                focusMode 
+                  ? "bg-gray-800 text-white rounded hover:bg-gray-700"
+                  : "bg-black text-white hover:bg-gray-800"
+              )}
             >
               Exit Era Mode
             </button>
           </div>
         )}
 
-        <div className={cn("flex-1 overflow-y-auto pt-16 md:pt-0", eraModeActive && "pt-24 md:pt-10")}>
+        <div className={cn(
+          "flex-1 overflow-y-auto",
+          "pt-16", // Always have padding for the header
+          eraModeActive && "pt-28" // Extra padding when era mode banner is shown
+        )}>
           {/* Songs - Following unified Item/Page architecture */}
           {tab === 'songs' && <SongListView onSelectSong={handleSelectSong} />}
           {tab === 'songDetail' && selectedSong && <SongDetailView song={selectedSong} onBack={() => { setSelectedSong(null); setTab('songs'); }} />}
@@ -433,6 +641,35 @@ function AppInner() {
 
       {/* Floating Action Button for mobile quick actions */}
       <FloatingActionButton />
+
+      {/* Focus Mode Styles - simplify UI when focus mode is active */}
+      {focusMode && (
+        <style>{`
+          /* Reduce border widths from 4px/3px to 1px in focus mode */
+          [data-focus-mode="true"] .border-4,
+          [data-focus-mode="true"] .border-\\[4px\\],
+          [data-focus-mode="true"] .border-\\[3px\\] {
+            border-width: 1px !important;
+          }
+          
+          /* Reduce shadows in focus mode */
+          [data-focus-mode="true"] .shadow-\\[4px_4px_0px_0px_rgba\\(0\\,0\\,0\\,0\\.85\\)\\],
+          [data-focus-mode="true"] .shadow-\\[6px_6px_0px_0px_rgba\\(0\\,0\\,0\\,0\\.85\\)\\] {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+          }
+          
+          /* Remove punk textures in focus mode */
+          [data-focus-mode="true"] .punk-shell::before,
+          [data-focus-mode="true"] .punk-shell::after,
+          [data-focus-mode="true"] .punk-canvas::before,
+          [data-focus-mode="true"] .punk-canvas::after {
+            display: none !important;
+          }
+        `}</style>
+      )}
+      
+      {/* Toast notification container */}
+      <ToastContainer />
     </div>
   );
 }
@@ -440,7 +677,9 @@ function AppInner() {
 export default function App() {
   return (
     <StoreProvider>
-      <AppInner />
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
     </StoreProvider>
   );
 }

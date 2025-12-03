@@ -669,6 +669,9 @@ const migrateLegacyData = (data) => {
   };
 };
 
+// Maximum undo history size to prevent memory issues
+const MAX_UNDO_HISTORY = 15;
+
 export const StoreProvider = ({ children }) => {
   const [mode, setMode] = useState('loading');
   const [data, setData] = useState({
@@ -695,6 +698,10 @@ export const StoreProvider = ({ children }) => {
     expenses: [],
     taskCategories: []
   });
+  
+  // Undo history stack - stores snapshots of items before mutations
+  // Each entry: { action: 'update'|'delete', collection: string, id: string, prevState: object, timestamp: string, description: string }
+  const [undoStack, setUndoStack] = useState([]);
   const [user, setUser] = useState(null);
   const [db, setDb] = useState(null);
   const [storage, setStorage] = useState(null);
@@ -895,20 +902,84 @@ export const StoreProvider = ({ children }) => {
         };
         setData(prev => ({ ...prev, auditLog: [entry, ...(prev.auditLog || [])].slice(0, 200) }));
      },
+     
+     // Capture a snapshot before mutation for undo capability
+     captureSnapshot: (action, collectionName, id, prevState, description = '') => {
+        const snapshot = {
+          action,
+          collection: collectionName,
+          id,
+          prevState: JSON.parse(JSON.stringify(prevState)), // Deep clone to preserve state
+          timestamp: new Date().toISOString(),
+          description: description || `${action} ${collectionName.replace(/s$/, '')}` // e.g., "delete song"
+        };
+        setUndoStack(prev => [snapshot, ...prev].slice(0, MAX_UNDO_HISTORY));
+     },
+     
+     // Undo the most recent action
+     undo: async () => {
+        if (undoStack.length === 0) return null;
+        
+        const [snapshot, ...rest] = undoStack;
+        setUndoStack(rest);
+        
+        const { action, collection: col, id, prevState, description } = snapshot;
+        const colKey = col === 'misc_expenses' ? 'misc' : col;
+        
+        if (action === 'delete') {
+          // Restore deleted item
+          if (mode === 'cloud') {
+            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, `album_${col}`, id), { ...prevState, restoredAt: serverTimestamp() });
+          } else {
+            setData(p => ({...p, [colKey]: [...(p[colKey] || []), prevState]}));
+          }
+        } else if (action === 'update') {
+          // Restore previous state
+          if (mode === 'cloud') {
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, `album_${col}`, id), prevState);
+          } else {
+            setData(p => ({
+              ...p,
+              [colKey]: (p[colKey] || []).map(i => i.id === id ? prevState : i)
+            }));
+          }
+        }
+        
+        return { undone: true, action, collection: col, description };
+     },
+     
+     // Clear undo history
+     clearUndoStack: () => {
+        setUndoStack([]);
+     },
      add: async (col, item) => {
         const colKey = col === 'misc_expenses' ? 'misc' : col;
         if (mode === 'cloud') await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, `album_${col}`), { ...item, createdAt: serverTimestamp() });
         else setData(p => ({...p, [colKey]: [...(p[colKey] || []), {id:crypto.randomUUID(), ...item}]}));
      },
-     update: async (col, id, item) => {
+     update: async (col, id, item, skipUndo = false) => {
          const colKey = col === 'misc_expenses' ? 'misc' : col;
+         // Capture snapshot for undo (unless explicitly skipped or internal operation)
+         if (!skipUndo) {
+           const existing = data[colKey]?.find(i => i.id === id);
+           if (existing) {
+             actions.captureSnapshot('update', col, id, existing, `Update ${colKey.replace(/s$/, '')}`);
+           }
+         }
          if (mode === 'cloud') await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, `album_${col}`, id), item);
          else setData(p => {
              return {...p, [colKey]: (p[colKey] || []).map(i => i.id === id ? { ...i, ...item } : i)};
          });
      },
-     delete: async (col, id) => {
+     delete: async (col, id, skipUndo = false) => {
          const colKey = col === 'misc_expenses' ? 'misc' : col;
+         // Capture snapshot for undo before deleting
+         if (!skipUndo) {
+           const existing = data[colKey]?.find(i => i.id === id);
+           if (existing) {
+             actions.captureSnapshot('delete', col, id, existing, `Delete ${colKey.replace(/s$/, '')}`);
+           }
+         }
          actions.logAudit('delete', colKey, id);
          if (mode === 'cloud') await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, `album_${col}`, id));
          else setData(p => {
@@ -1216,6 +1287,11 @@ export const StoreProvider = ({ children }) => {
      },
 
      updateEvent: async (eventId, updates) => {
+       // Capture snapshot for undo
+       const existing = data.events?.find(e => e.id === eventId);
+       if (existing) {
+         actions.captureSnapshot('update', 'events', eventId, existing, `Update event "${existing.title || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId), updates);
        } else {
@@ -1227,6 +1303,11 @@ export const StoreProvider = ({ children }) => {
      },
 
      deleteEvent: async (eventId) => {
+       // Capture snapshot for undo
+       const existing = data.events?.find(e => e.id === eventId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'events', eventId, existing, `Delete event "${existing.title || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_events', eventId));
        } else {
@@ -1355,6 +1436,11 @@ export const StoreProvider = ({ children }) => {
      },
 
      updateTeamMember: async (memberId, updates) => {
+      // Capture snapshot for undo
+      const existing = data.teamMembers?.find(m => m.id === memberId);
+      if (existing) {
+        actions.captureSnapshot('update', 'teamMembers', memberId, existing, `Update team member "${existing.name || 'Untitled'}"`);
+      }
       const normalizedUpdates = {
         ...updates,
         contacts: {
@@ -1376,6 +1462,11 @@ export const StoreProvider = ({ children }) => {
     },
 
      deleteTeamMember: async (memberId) => {
+       // Capture snapshot for undo
+       const existing = data.teamMembers?.find(m => m.id === memberId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'teamMembers', memberId, existing, `Delete team member "${existing.name || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_teamMembers', memberId));
        } else {
@@ -1456,6 +1547,10 @@ export const StoreProvider = ({ children }) => {
      
     updateSong: async (songId, updates) => {
       const song = data.songs.find(s => s.id === songId);
+      // Capture snapshot for undo
+      if (song) {
+        actions.captureSnapshot('update', 'songs', songId, song, `Update song "${song.title || 'Untitled'}"`);
+      }
       const updatedSong = song ? propagateSongMetadata({ ...song, ...updates }) : updates;
       if (mode === 'cloud') {
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId), updatedSong);
@@ -1468,6 +1563,11 @@ export const StoreProvider = ({ children }) => {
     },
      
      deleteSong: async (songId) => {
+       // Capture snapshot for undo
+       const existing = data.songs?.find(s => s.id === songId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'songs', songId, existing, `Delete song "${existing.title || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_songs', songId));
        } else {
@@ -2010,6 +2110,11 @@ export const StoreProvider = ({ children }) => {
      },
      
      updateGlobalTask: async (taskId, updates) => {
+       // Capture snapshot for undo
+       const existing = data.globalTasks?.find(t => t.id === taskId);
+       if (existing) {
+         actions.captureSnapshot('update', 'globalTasks', taskId, existing, `Update task "${existing.taskName || existing.title || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks', taskId), updates);
        } else {
@@ -2021,6 +2126,11 @@ export const StoreProvider = ({ children }) => {
      },
      
      deleteGlobalTask: async (taskId) => {
+       // Capture snapshot for undo
+       const existing = data.globalTasks?.find(t => t.id === taskId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'globalTasks', taskId, existing, `Delete task "${existing.taskName || existing.title || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_globalTasks', taskId));
        } else {
@@ -2232,6 +2342,12 @@ export const StoreProvider = ({ children }) => {
      },
      
     updateRelease: async (releaseId, updates) => {
+      // Capture snapshot for undo before any changes
+      const releaseForUndo = data.releases.find(r => r.id === releaseId);
+      if (releaseForUndo) {
+        actions.captureSnapshot('update', 'releases', releaseId, releaseForUndo, `Update release "${releaseForUndo.name || 'Untitled'}"`);
+      }
+      
       // Helper to generate physical release tasks
       const generatePhysicalTasks = (releaseDate, existingTasks = []) => {
         const physicalTaskTypes = PHYSICAL_RELEASE_TASK_TYPES.map(t => t.type);
@@ -2326,6 +2442,11 @@ export const StoreProvider = ({ children }) => {
     },
      
      deleteRelease: async (releaseId) => {
+       // Capture snapshot for undo
+       const existing = data.releases?.find(r => r.id === releaseId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'releases', releaseId, existing, `Delete release "${existing.name || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_releases', releaseId));
        } else {
@@ -3088,6 +3209,11 @@ export const StoreProvider = ({ children }) => {
      },
 
      updateExpense: async (expenseId, updates) => {
+       // Capture snapshot for undo
+       const existing = data.expenses?.find(e => e.id === expenseId);
+       if (existing) {
+         actions.captureSnapshot('update', 'expenses', expenseId, existing, `Update expense "${existing.name || 'Untitled'}"`);
+       }
        if (mode === 'cloud') {
          await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_expenses', expenseId), updates);
        } else {
@@ -3099,6 +3225,11 @@ export const StoreProvider = ({ children }) => {
      },
 
      deleteExpense: async (expenseId) => {
+       // Capture snapshot for undo
+       const existing = data.expenses?.find(e => e.id === expenseId);
+       if (existing) {
+         actions.captureSnapshot('delete', 'expenses', expenseId, existing, `Delete expense "${existing.name || 'Untitled'}"`);
+       }
        actions.logAudit('delete', 'expense', expenseId);
        if (mode === 'cloud') {
          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'album_expenses', expenseId));
@@ -3385,7 +3516,7 @@ export const StoreProvider = ({ children }) => {
   const mods = data.settings?.mods || [];
 
   return (
-    <StoreContext.Provider value={{ data, actions, mode, stats, mods }}>
+    <StoreContext.Provider value={{ data, actions, mode, stats, mods, undoStack }}>
       {children}
     </StoreContext.Provider>
   );
