@@ -58,6 +58,7 @@ export const SongListView = ({ onSelectSong }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [];
 
   // Render grid card
@@ -1927,6 +1928,7 @@ export const ReleasesListView = ({ onSelectRelease }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [
     { field: 'type', label: 'All Types', options: RELEASE_TYPES.map(t => ({ value: t, label: t })) }
   ];
@@ -5043,6 +5045,7 @@ export const EventsListView = ({ onSelectEvent }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [
     { 
       field: 'type', 
@@ -5802,6 +5805,7 @@ export const ExpensesListView = ({ onSelectExpense }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [
     { 
       field: 'category', 
@@ -6164,6 +6168,7 @@ export const VideosListView = ({ onSelectVideo }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [
     { field: 'videoType', label: 'All Types', options: videoTypeOptions.map(t => ({ value: t.key, label: t.label })) }
   ];
@@ -7051,6 +7056,7 @@ export const GlobalTasksListView = ({ onSelectTask }) => {
   ];
 
   // Filter options
+  // eslint-disable-next-line no-unused-vars
   const filterOptions = [
     { 
       field: 'category', 
